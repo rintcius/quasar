@@ -303,6 +303,14 @@ object QueryFile {
         .map(cs => Process.emitAll(cs) flatMap (Process.emitAll(_)))
     }
 
+    /** Returns first value from evaluated LP */
+    def first(plan: Fix[LogicalPlan]): ExecM[Option[Data]] = for {
+      h  <- unsafe.eval(plan)
+      vs <- hoistToExec(unsafe.more(h))
+      _  <- toExec(unsafe.close(h))
+    } yield vs.headOption
+
+
     /** Returns a description of how the the given logical plan will be
       * executed.
       */
