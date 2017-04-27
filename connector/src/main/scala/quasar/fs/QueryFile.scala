@@ -306,10 +306,9 @@ object QueryFile {
     /** Returns first value from evaluated LP */
     def first(plan: Fix[LogicalPlan]): ExecM[Option[Data]] = for {
       h  <- unsafe.eval(plan)
-      vs <- hoistToExec(unsafe.more(h))
+      vs <- hoistToExec(unsafe.more(h)).ensuring(κ(toExec(unsafe.close(h))))
       _  <- toExec(unsafe.close(h))
     } yield vs.headOption
-
 
     /** Returns a description of how the the given logical plan will be
       * executed.
