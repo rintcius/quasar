@@ -292,12 +292,17 @@ object WorkflowBuilder {
 
   sealed abstract class StructureType[A] {
     val field: A
+    val idStatus: IdStatus
   }
   object StructureType {
     final case class Array[A](field: A, includeIndex: IdStatus)
-        extends StructureType[A]
+        extends StructureType[A] {
+      override val idStatus: IdStatus = includeIndex
+    }
     final case class Object[A](field: A, includeKey: IdStatus)
-        extends StructureType[A]
+        extends StructureType[A]{
+      override val idStatus: IdStatus = includeKey
+    }
 
     implicit val StructureTypeTraverse: Traverse[StructureType] =
       new Traverse[StructureType] {
@@ -487,18 +492,18 @@ object WorkflowBuilder {
     (queryModel: MongoQueryModel, base: Base, rest: Option[List[BsonField.Name]])
     (implicit ev0: WorkflowOpCoreF :<: WF)
       : (StructureType[DocVar], Fix[WF]) => Fix[WF] =
-    (field, acc) => {
-      (field, rest, queryModel) match {
+    (strType, acc) => {
+      (strType, rest, queryModel) match {
         case (StructureType.Array(field, quasar.qscript.ExcludeId), _, _) =>
           $unwind[WF](base.toDocVar \\ field, None, None).apply(acc)
         case (StructureType.Array(field, idStatus), Some(r), _) =>
           flattenFieldArrayUnwindProject(base, field, idStatus, r, acc)
-        case (StructureType.Array(field, idStatus), _, _) =>
-          flattenFieldMapReduce(base, field, idStatus).apply(acc)
+        case (StructureType.Array(_, _), _, _) =>
+          flattenFieldMapReduce(base, strType).apply(acc)
         case (StructureType.Object(field, idStatus), Some(r), MongoQueryModel.`3.4.4`) =>
           flattenFieldObject344(base, field, idStatus, r, acc)
-        case (StructureType.Object(field, idStatus), _, _) =>
-          flattenFieldMapReduce(base, field, idStatus).apply(acc)
+        case (StructureType.Object(_, _), _, _) =>
+          flattenFieldMapReduce(base, strType).apply(acc)
       }
     }
 
@@ -551,42 +556,53 @@ object WorkflowBuilder {
   }
 
   private def flattenFieldMapReduce[WF[_]: Coalesce]
-    (base: Base, field: DocVar, idStatus: IdStatus)
+    (base: Base, strType: StructureType[DocVar])
     (implicit ev0: WorkflowOpCoreF :<: WF)
-      : FixOp[WF] =
+      : FixOp[WF] = {
+    def mapArrayToInt(js: jscore.JsCore): jscore.JsCore = strType match {
+      case StructureType.Array(_, _) =>
+        jscore.Call(
+          jscore.Select(js, "map"),
+          List(jscore.Fun(
+            List(jscore.Name("x")),
+            jscore.Call(jscore.ident("parseInt"), List(jscore.ident("x"), jscore.Literal(Js.Num(10, false)))))))
+      case StructureType.Object(_, _) => js
+    }
     $simpleMap[WF](
-      idStatus match {
+      strType.idStatus match {
         case quasar.qscript.ExcludeId =>
-          NonEmptyList(FlatExpr((base.toDocVar \\ field).toJs))
+          NonEmptyList(FlatExpr((base.toDocVar \\ strType.field).toJs))
         case quasar.qscript.IncludeId =>
           NonEmptyList(
             SubExpr(
-              (base.toDocVar \\ field).toJs,
+              (base.toDocVar \\ strType.field).toJs,
               JsFn(jsBase,
                 jscore.Let(
                   jscore.Name("m"),
-                  (base.toDocVar \\ field).toJs(jscore.Ident(jsBase)),
+                  (base.toDocVar \\ strType.field).toJs(jscore.Ident(jsBase)),
                   jscore.Call(
                     jscore.Select(
-                      jscore.Call(
+                      //TODO this call to mapArrayToInt is untested for StructureType.Array
+                      mapArrayToInt(jscore.Call(
                         jscore.Select(jscore.ident("Object"), "keys"),
-                        List(jscore.ident("m"))),
+                        List(jscore.ident("m")))),
                       "map"),
                     List(jscore.Fun(List(jscore.Name("k")), jscore.Arr(List(
                       jscore.ident("k"),
                       jscore.Access(jscore.ident("m"), jscore.ident("k")))))))))),
-            FlatExpr((base.toDocVar \\ field).toJs))
+            FlatExpr((base.toDocVar \\ strType.field).toJs))
         case quasar.qscript.IdOnly =>
           NonEmptyList(
             SubExpr(
-              (base.toDocVar \\ field).toJs,
+              (base.toDocVar \\ strType.field).toJs,
               JsFn(jsBase,
-                jscore.Call(
+                mapArrayToInt(jscore.Call(
                   jscore.Select(jscore.ident("Object"), "keys"),
-                  List((base.toDocVar \\ field).toJs(jscore.Ident(jsBase)))))),
-            FlatExpr((base.toDocVar \\ field).toJs))
+                  List((base.toDocVar \\ strType.field).toJs(jscore.Ident(jsBase))))))),
+            FlatExpr((base.toDocVar \\ strType.field).toJs))
       },
       ListMap())
+  }
 
   def generateWorkflow[M[_]: Monad, F[_]: Coalesce](wb: WorkflowBuilder[F], queryModel: MongoQueryModel)
     (implicit M: MonadError_[M, PlannerError], ev0: WorkflowOpCoreF :<: F, ev1: RenderTree[WorkflowBuilder[F]], ev2: ExprOpOps.Uni[ExprOp])
