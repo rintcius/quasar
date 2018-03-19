@@ -26,6 +26,7 @@ import quasar.fs.{BackendEffect, PhysErr, Empty, PhysicalError}
 import quasar.fs.QueryFile.ResultHandle
 import quasar.fs.mount.BackendDef.DefinitionResult
 import quasar.fs.mount._
+import quasar.fs.mount.cache._, VCache._
 import quasar.main.metastore.jdbcMounter
 import quasar.metastore.{MetaStore, MetaStoreAccess}
 
@@ -44,6 +45,7 @@ object CompositeFileSystem {
   type QErrs_FsAsk_Task[A]   = Coproduct[FsAsk, QErrs_Task, A]
   type QErrs_FsAsk[A]        = Coproduct[FsAsk, QErrs, A]
   type QErrs_CnxIO_FsAsk[A]  = Coproduct[ConnectionIO, QErrs_FsAsk, A]
+  type QErrs_CnxIO_FsAsk_C[A]= Coproduct[VCacheKVS, QErrs_CnxIO_FsAsk, A]
   type QErrs_FsAsk_TaskM[A]  = Free[QErrs_FsAsk_Task, A]
 
   object QErrs_FsAsk_Task {
@@ -72,17 +74,43 @@ object CompositeFileSystem {
 
     runCore    <- CompositeFileSystem.interpreter[Mounting_QErrs_Task](hfsRef).liftM[MainErrT]
   } yield {
+
     val g: QErrs_CnxIO_FsAsk ~> QErrs_TaskM =
       (injectFT[Task, QErrs_Task] compose connectionIOToTask(metaRef)) :+:
       Read.constant[QErrs_TaskM, BackendDef[PhysFsEffM]](mountTypes)   :+:
       injectFT[QErrs, QErrs_Task]
-    val mounting: Mounting ~> QErrs_TaskM = foldMapNT(g) compose jdbcMounter[QErrs_CnxIO_FsAsk](hfsRef, mntdRef)
-    val f: Mounting_QErrs_Task ~> QErrs_TaskM =
-      mounting                   :+:
-      injectFT[Task, QErrs_Task] :+:
-      injectFT[QErrs, QErrs_Task]
-    val h: BackendEffect ~> QErrs_TaskM = foldMapNT(f) compose runCore
-    FS(h, mounting, mntdRef.read >>= closeAllFsMounts _)
+
+    val mounting: Mounting ~> QErrs_TaskM =
+      foldMapNT(g) compose jdbcMounter[QErrs_CnxIO_FsAsk](hfsRef, mntdRef)
+
+    val backend: BackendEffect ~> QErrs_TaskM =
+      runCore andThen flatMapSNT(
+        mounting :+:
+        injectFT[QErrs_Task, QErrs_Task]
+      )
+
+    val vcache: VCacheKVS ~> CFS_EffM =
+      CoreEff.vcacheInterp(metaRef) andThen flatMapSNT(
+        (backend andThen flatMapSNT(injectFT[QErrs_Task, CFS_Eff])) :+:
+        liftFT[CFS_Eff]
+      )
+
+    val cachedMounting: Mounting ~> CFS_EffM =
+      VCacheMounter[C_M_CFS_Eff] andThen flatMapSNT(
+        vcache :+:
+        (mounting andThen flatMapSNT(injectFT[QErrs_Task, CFS_Eff])) :+:
+        liftFT[CFS_Eff]
+      )
+
+    val f: Mounting_QErrs_Task ~> CFS_EffM =
+      cachedMounting :+:
+      injectFT[Task, CFS_Eff] :+:
+      injectFT[QErrs, CFS_Eff]
+
+    val cachedBackend: BackendEffect ~> CFS_EffM = foldMapNT(f) compose runCore
+
+    FS(cachedBackend, cachedMounting, vcache, mntdRef.read >>= closeAllFsMounts _)
+
   }
 
   def initWithMountsInMetaStore(loadConfig: BackendConfig, metaRef: TaskRef[MetaStore]): MainTask[FS] =

@@ -19,11 +19,13 @@ package quasar.main
 import slamdata.Predef.Unit
 import quasar.fs.BackendEffect
 import quasar.fs.mount.Mounting
+import quasar.fs.mount.cache.VCache
 
 import scalaz.~>
 import scalaz.concurrent.Task
 
 final case class FS(
-  core: BackendEffect ~> QErrs_TaskM,
-  mounting: Mounting ~> QErrs_TaskM,
+  core: BackendEffect ~> CFS_EffM,
+  mounting: Mounting ~> CFS_EffM,
+  caching: VCache.VCacheKVS ~> CFS_EffM,
   shutdown: Task[Unit])

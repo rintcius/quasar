@@ -17,7 +17,7 @@
 package quasar.fs.mount.cache
 
 import slamdata.Predef._
-import quasar.contrib.pathy.AFile
+import quasar.contrib.pathy.{AFile, APath}
 import quasar.effect.{Failure, KeyValueStore, Read, Write}
 import quasar.fp.free.injectFT
 import quasar.fs.{FileSystemError, FileSystemFailure, ManageFile}
@@ -25,7 +25,8 @@ import quasar.fs.FileSystemError.PathErr
 import quasar.fs.PathError.PathNotFound
 import quasar.metastore._, KeyValueStore._, MetaStoreAccess._
 
-import java.time.{Duration, Instant}
+import java.time.{Duration => JDuration, Instant}
+import scala.concurrent.duration.Duration
 
 import doobie.imports.ConnectionIO
 import scalaz._, Scalaz._
@@ -37,6 +38,30 @@ object VCache {
     type Ops[S[_]] = KeyValueStore.Ops[AFile, ViewCache, S]
 
     def Ops[S[_]](implicit S0: VCacheKVS :<: S): Ops[S] = KeyValueStore.Ops[AFile, ViewCache, S]
+  }
+
+  type VCacheMk = Map[APath, (Duration, AFile)]
+
+  object VCacheMk {
+    def empty: VCacheMk = Map.empty
+  }
+
+  implicit val semigroupVCacheMkV: Semigroup[(Duration, AFile)] =
+    new Semigroup[(Duration, AFile)] {
+      override def append(f1: (Duration, AFile), f2: => (Duration, AFile)): (Duration, AFile) = f2
+    }
+
+  type VCacheMkR[A] = Read[VCacheMk, A]
+  type VCacheMkW[A] = Write[VCacheMk, A]
+
+  object VCacheMkR {
+    type Ops[S[_]] = Read.Ops[VCacheMk, S]
+
+    def Ops[S[_]](implicit S0: VCacheMkR :<: S): Ops[S] = Read.Ops[VCacheMk, S]
+  }
+
+  object VCacheMkW {
+    type Ops[S[_]] = Write.Ops[VCacheMk, S]
   }
 
   type VCacheExpR[A] = Read[MinOption[Expiration], A]
@@ -88,7 +113,6 @@ object VCache {
     } yield r
 
   def interp[S[_]](implicit
-    W: VCacheExpW.Ops[S],
     S0: ManageFile :<: S,
     S1: FileSystemFailure :<: S,
     S2: ConnectionIO :<: S
@@ -102,10 +126,10 @@ object VCache {
             vc >>= (c => c.lastUpdate ∘ (lu =>
               Expiration(
                 \/.fromTryCatchNonFatal(
-                  lu.plus(Duration.ofSeconds(c.maxAgeSeconds))
+                  lu.plus(JDuration.ofSeconds(c.maxAgeSeconds))
                 ) | Instant.MAX))))
 
-        W.tell(expirations).as(vc)
+        vc.point[Free[S, ?]]
       }
     case Put(k, v) =>
       deleteVCacheFilesThen(k, insertOrUpdateViewCache(k, v))

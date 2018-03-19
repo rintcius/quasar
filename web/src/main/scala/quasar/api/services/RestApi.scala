@@ -26,9 +26,8 @@ import quasar.fp.free.foldMapNT
 import quasar.fs._
 import quasar.fs.mount._
 import quasar.fs.mount.module.Module
-import quasar.fs.mount.cache.VCache, VCache.{VCacheExpR, VCacheKVS}
+import quasar.fs.mount.cache.VCache, VCache._
 import quasar.main.MetaStoreLocation
-import quasar.fs.mount.cache.VCache, VCache.VCacheKVS
 
 import scala.concurrent.duration._
 import scala.collection.immutable.ListMap
@@ -58,8 +57,8 @@ object RestApi {
         S11: Analyze :<: S,
         S12: MetaStoreLocation :<: S,
         S13: VCacheKVS :<: S,
-        S15: VCacheExpR :<: S,
-        S14: Timing :<: S,
+        S14: VCacheMkW :<: S,
+        S15: Timing :<: S,
         SE: ScopeExecution[Free[S, ?], T]
       ): Map[String, QHttpService[S]] =
     ListMap(
@@ -67,7 +66,7 @@ object RestApi {
       "/estimate/fs"  -> query.analysis.service[S],
       "/data/fs"      -> data.service[S],
       "/metadata/fs"  -> metadata.service[S],
-      "/mount/fs"     -> mount.service[S],
+      "/mount/fs"     -> VCacheMiddleware(mount.service[S]),
       "/query/fs"     -> query.execute.service[S, T](executionIdRef),
       "/invoke/fs"    -> invoke.service[S],
       "/schema/fs"    -> analyze.schema.service[S],

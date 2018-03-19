@@ -24,7 +24,7 @@ import quasar.fp.free._
 import quasar.fs.InMemory
 import quasar.fs.InMemory.InMemState
 import quasar.fs.mount._
-import quasar.fs.mount.cache.VCache
+import quasar.fs.mount.cache.VCache, VCache._
 import quasar.metastore.{MetaStore, MetaStoreFixture}
 
 import scalaz._, Scalaz._
@@ -72,7 +72,7 @@ object Fixture {
     persist: quasar.db.DbConnectionConfig => MainTask[Unit] = _ => ().point[MainTask]
   ): Task[(CoreEff ~> QErrs_TaskM, Task[(InMemState, Map[APath, MountConfig])])] =
     for {
-      r         <- TaskRef(Tags.Min(Option.empty[VCache.Expiration]))
+      r         <- TaskRef(VCacheMk.empty)
       metaRef   <- metaRefT
       result    <- inMemFSInspect(state, mounts)
       (fs, ref) = result

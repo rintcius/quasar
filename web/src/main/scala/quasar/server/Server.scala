@@ -29,7 +29,7 @@ import quasar.effect.{Read, ScopeExecution, TimingRepository, Write}
 import quasar.fp._
 import quasar.fp.free._
 import quasar.fp.numeric.Natural
-import quasar.fs.mount.cache.VCache, VCache.{VCacheExpR, VCacheExpW}
+import quasar.fs.mount.cache.VCache, VCache._
 import quasar.main._
 import quasar.server.Http4sUtils.{openBrowser, waitForUserEnter}
 
@@ -111,16 +111,16 @@ object Server {
     import RestApi._
 
     def interp: Task[CoreEffIORW ~> FailedResponseOr] =
-      TaskRef(Tags.Min(none[VCache.Expiration])) ∘ (r =>
+      TaskRef(VCacheMk.empty) ∘ (r =>
         foldMapNT(
-          (liftMT[Task, FailedResponseT] compose Read.fromTaskRef(r))  :+:
-          (liftMT[Task, FailedResponseT] compose Write.fromTaskRef(r)) :+:
-          liftMT[Task, FailedResponseT]                                :+:
+          (liftMT[Task, FailedResponseT] compose Read.fromTaskRef[VCacheMk](r))  :+:
+          (liftMT[Task, FailedResponseT] compose Write.fromTaskRef[VCacheMk](r)) :+:
+          liftMT[Task, FailedResponseT]                                          :+:
           qErrsToResponseT[Task]
         ) compose (
-          injectFT[VCacheExpR, QErrs_CRW_Task] :+:
-          injectFT[VCacheExpW, QErrs_CRW_Task] :+:
-          injectFT[Task, QErrs_CRW_Task]       :+:
+          injectFT[VCacheMkR, QErrs_CRW_Task] :+:
+          injectFT[VCacheMkW, QErrs_CRW_Task] :+:
+          injectFT[Task, QErrs_CRW_Task]      :+:
           eval))
 
     for {

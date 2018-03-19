@@ -17,19 +17,15 @@
 package quasar.api.services
 
 import slamdata.Predef.{ -> => _, _ }
-import quasar.api._, ToApiError.ops._
+import quasar.api._
 import quasar.contrib.pathy._
-import quasar.effect.{KeyValueStore, Timing}
-import quasar.fp._, ski._
+import quasar.effect.Timing
+import quasar.fp._
 import quasar.fs.mount._
-import quasar.fs.mount.cache.{VCache, ViewCache}, VCache.VCacheKVS
-import quasar.fs.ManageFile
 
 import argonaut._, Argonaut._
 import org.http4s._, Method.MOVE
 import org.http4s.dsl._
-import org.http4s.CacheDirective.`max-age`
-import org.http4s.headers.`Cache-Control`
 import pathy.Path, Path._
 import pathy.argonaut.PosixCodecJson._
 import scalaz._, Scalaz._
@@ -42,11 +38,9 @@ object mount {
     implicit
     M: Mounting.Ops[S],
     S0: Task :<: S,
-    S1: ManageFile :<: S,
-    S2: MountingFailure :<: S,
-    S3: PathMismatchFailure :<: S,
-    S4: VCacheKVS :<: S,
-    S5: Timing :<: S
+    S1: MountingFailure :<: S,
+    S2: PathMismatchFailure :<: S,
+    S3: Timing :<: S
   ): QHttpService[S] =
     QHttpService {
       case GET -> AsPath(path) =>
@@ -85,16 +79,10 @@ object mount {
         })
 
       case DELETE -> AsPath(p) =>
-        val deleteViewIfExists: OptionT[Free[S, ?], Unit] =
-          OptionT(refineType(p).toOption.η[Free[S, ?]]) >>= (f =>
-            vcache.get(f) >> (vcache.delete(f).liftM[OptionT]))
-
-        respond((M.unmount(p) *> deleteViewIfExists.run).as(s"deleted ${printPath(p)}"))
+        respond((M.unmount(p)).as(s"deleted ${printPath(p)}"))
     }
 
   ////
-
-  private def vcache[S[_]](implicit S0: VCacheKVS :<: S) = KeyValueStore.Ops[AFile, ViewCache, S]
 
   private def move[S[_], T](
     src: AbsPath[T],
@@ -104,13 +92,9 @@ object mount {
   )(implicit
     M: Mounting.Ops[S],
     S0: MountingFailure :<: S,
-    S1: PathMismatchFailure :<: S,
-    S2: VCacheKVS :<: S
+    S1: PathMismatchFailure :<: S
   ): EitherT[Free[S, ?], ApiError, String] =
     parse(dstStr).map(unsafeSandboxAbs).cata(dst =>
-      ((refineType(src) ⊛ refineType(dst))((s, d) =>
-        vcache.get(s) >>= (vc => (vcache.put(d, vc) >> vcache.delete(s)).liftM[OptionT])
-      ) | ().η[OptionT[Free[S, ?], ?]]).run.liftM[ApiErrT] >>
       M.remount[T](src, dst)
         .as(s"moved ${printPath(src)} to ${printPath(dst)}")
         .liftM[ApiErrT],
@@ -125,12 +109,10 @@ object mount {
     replaceIfExists: Boolean
   )(implicit
     M:  Mounting.Ops[S],
-    MF: ManageFile.Ops[S],
     T:  Timing.Ops[S],
     S0: Task :<: S,
     S1: MountingFailure :<: S,
-    S2: PathMismatchFailure :<: S,
-    S3: VCacheKVS :<: S
+    S2: PathMismatchFailure :<: S
   ): EitherT[Free[S, ?], ApiError, Boolean] =
     for {
       body  <- free.lift(EntityDecoder.decodeString(req))
@@ -145,50 +127,6 @@ object mount {
                    BadRequest, msg).left))
       exists <- M.lookupType(path).run.isDefined.liftM[ApiErrT]
       _      <- (replaceIfExists && exists).fold(M.replace(path, bConf), M.mount(path, bConf)).liftM[ApiErrT]
-      maxAge =  req.headers.get(`Cache-Control`).flatMap(_.values.list.collectFirst {
-                  case `max-age`(s) => s
-                })
-      _      <- (refineType(path).toOption ⊛ MountConfig.viewConfig.getOption(bConf).map(MountConfig.ViewConfig.tupled) ⊛ maxAge)(createOrUpdateViewCache[S])
-                  .getOrElse(().point[EitherT[Free[S, ?], ApiError, ?]])
     } yield exists
 
-  private def createOrUpdateViewCache[S[_]](
-    viewPath: AFile,
-    viewConfig: MountConfig.ViewConfig,
-    maxAge: scala.concurrent.duration.Duration
-  )(implicit
-    MF: ManageFile.Ops[S],
-    T:  Timing.Ops[S],
-    S0: Task :<: S,
-    S1: VCacheKVS :<: S
-  ): EitherT[Free[S, ?], ApiError, Unit] =
-    for {
-      dataFile      <- MF.tempFile(viewPath).leftMap(_.toApiError)
-      refreshAfter  <- T.timestamp.liftM[ApiErrT]
-      newViewCache  =  ViewCache.mk(viewConfig, maxAge.toSeconds, refreshAfter, dataFile)
-      _             <- vcache.get(viewPath).fold(
-                          κ(vcache.modify(viewPath, modifyViewCache(newViewCache))),
-                          vcache.put(viewPath, newViewCache)).join.liftM[ApiErrT]
-    } yield ()
-
-  private def modifyViewCache(nw: ViewCache)(old: ViewCache): ViewCache =
-    // TODO we should not recreate the cache if the ViewConfig hasn't changed
-    // However, we first need to invalidate caches when an underlying view or
-    // module changes, otherwise caches don't get invalidated when they should.
-    // When this is implemented we can use something like this:
-    // if (MountConfig.equal.equal(nw.viewConfig, old.viewConfig))
-    //   // only update maxAgeSeconds and refreshAfter (relative to maxAgeSeconds)
-    //   old.copy(
-    //     maxAgeSeconds = nw.maxAgeSeconds,
-    //     refreshAfter = old.refreshAfter.plusSeconds(nw.maxAgeSeconds - old.maxAgeSeconds))
-    // else
-    //   nw
-    if (MountConfig.equal.equal(nw.viewConfig, old.viewConfig))
-      // Let's keep the old cacheReads & lastUpdate if toplevel definition
-      // is unchanged
-      nw.copy(
-        cacheReads = old.cacheReads,
-        lastUpdate = old.lastUpdate)
-    else
-      nw
 }

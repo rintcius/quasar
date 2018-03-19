@@ -73,6 +73,19 @@ object ViewCache {
   def expireAt(ts: Instant, maxAge: Duration): Throwable \/ Instant =
     \/.fromTryCatchNonFatal(ts.plus(JDuration.ofMillis((maxAge.toMillis.toDouble * 0.8).toLong)))
 
+  def repair(vc: ViewCache, refreshAfter: Instant): ViewCache =
+    vc.copy(
+      refreshAfter = refreshAfter,
+      status = Status.Pending,
+      errorMsg = none
+    )
+
+  def fail(vc: ViewCache, msg: String): ViewCache =
+    vc.copy(
+      status = Status.Failed,
+      errorMsg = msg.some
+    )
+
   implicit val equal: Equal[ViewCache] = {
     implicit val equalInstant: Equal[Instant] = Equal.equalA
 

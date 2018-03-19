@@ -23,13 +23,13 @@ import quasar.contrib.scalaz.catchable._
 import quasar.contrib.scalaz.concurrent._
 import quasar.contrib.scalaz.eitherT._
 import quasar.db.DbConnectionConfig
-import quasar.effect.{Failure, Read, Write}
+import quasar.effect.{Failure, Read, Timing, Write}
 import quasar.fp._
 import quasar.fp.free._
 import quasar.fp.numeric._
 import quasar.fs.{FileSystemError, PhysicalError}
 import quasar.fs.mount.{Mounting, MountingError}
-import quasar.fs.mount.cache.VCache
+import quasar.fs.mount.cache.VCache, VCache._
 import quasar.fs.mount.module.Module
 import quasar.metastore.MetaStore.ShouldInitialize
 import quasar.metastore._
@@ -44,13 +44,19 @@ import scalaz.concurrent.Task
   * @param interp
   * @param shutdown Trigger the underlying connector drivers to shutdown cleanly.
   */
-final case class Quasar(interp: CoreEff ~> QErrs_CRW_TaskM, shutdown: Task[Unit]) {
+final case class Quasar(interp0: CoreEff ~> CFS_EffM, shutdown: Task[Unit]) {
+
+  val interp: CoreEff ~> QErrs_CRW_TaskM =
+    interp0 andThen flatMapSNT(
+      (Timing.toTask andThen injectFT[Task, QErrs_CRW_Task]) :+:
+      liftFT[QErrs_CRW_Task])
+
   val taskInter: Task[CoreEff ~> Task] =
-    Quasar.toTask ∘ (_ compose interp)
+    Quasar.toTask ∘ (_ compose interp0)
 
   def interpWithErrs: Task[CoreEff ~> EitherT[Task, QuasarError, ?]] = {
     val lift = liftMT[Task, QuasarErrT]
-    TaskRef(Tags.Min(none[VCache.Expiration])).map{ r =>
+    TaskRef(VCacheMk.empty).map{ r =>
       val preserveErrors: QErrs_CRW_TaskM ~> EitherT[Task, QuasarError, ?] =
         foldMapNT(
           (Read.fromTaskRef(r) andThen lift) :+:
@@ -111,7 +117,7 @@ object Quasar {
     for {
       finalEval  <- CoreEff.defaultImpl(fsThing, metaRef, persist)
       tTask      <- toTask
-      loggedEval =  flatMapSNT(QErrs_CRW_Task.logFatalErrors) compose finalEval
+      loggedEval =  flatMapSNT(CFS_Eff.logFatalErrors) compose finalEval
       cacheCtx   <- Caching.viewCacheRefreshCtx(foldMapNT(
                       reflNT[Task]                :+:
                       connectionIOToTask(metaRef) :+:
@@ -119,11 +125,12 @@ object Quasar {
       _          <- cacheCtx.start
     } yield Quasar(loggedEval, cacheCtx.shutdown)
 
-  val toTask: Task[QErrs_CRW_TaskM ~> Task] =
-    TaskRef(Tags.Min(none[VCache.Expiration])) ∘ (r =>
+  val toTask: Task[CFS_EffM ~> Task] =
+    TaskRef(VCacheMk.empty) ∘ (r =>
       foldMapNT(
-        Read.fromTaskRef(r)  :+:
-        Write.fromTaskRef(r) :+:
+        Timing.toTask :+:
+        Read.fromTaskRef[VCacheMk](r)  :+:
+        Write.fromTaskRef[VCacheMk](r) :+:
         reflNT[Task]         :+:
         QErrs.toCatchable[Task]))
 }
