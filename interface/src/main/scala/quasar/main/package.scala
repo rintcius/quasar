@@ -496,7 +496,7 @@ package object main extends Logging {
 
   object CFS_Eff {
     val logFatalErrors: CFS_Eff ~> CFS_EffM =
-      FatalErrorLogger.log0[Task, CFS_Eff]
+      FatalErrorLogger.log0[Task, CFS_Eff](log)
   }
 
   object QErrs_CRW_Task {

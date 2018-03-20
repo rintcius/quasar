@@ -16,7 +16,6 @@
 
 package quasar.main
 
-import slamdata.Predef._
 import quasar.effect._
 import quasar.fp.free._
 import quasar.fs._
@@ -25,73 +24,89 @@ import org.slf4s.Logger
 import scalaz.{Failure => _, _}
 
 @simulacrum.typeclass trait FatalErrorLogger[IN[_]] {
-  def log[F[_]: Applicative: Capture, S[_]](
+  type S[_]
+
+  def log[F[_]: Applicative: Capture](
+    logger: Logger)(
     implicit
-    F: F :<: S,
-    IN: IN :<: S)
+    F: F :<: S)
       : IN ~> Free[S, ?]
 }
 
 object FatalErrorLogger extends FatalErrorLoggerInstances {
-  def log[IN[_], F[_]: Applicative: Capture, S[_]](
+
+  type Aux[IN[_], Sʹ[_]] = FatalErrorLogger[IN] {
+    type S[A] = Sʹ[A]
+  }
+
+  def log[IN[_], F[_]: Applicative: Capture, Sʹ[_]](
+    logger: Logger)(
     implicit
-    F: F :<: S,
-    IN: IN :<: S)
-      : IN ~> Free[S, ?] =
-    FatalErrorLogger[IN].log[F, S]
+    IN: FatalErrorLogger.Aux[IN, Sʹ],
+    F: F :<: Sʹ)
+      : IN ~> Free[Sʹ, ?] =
+    IN.log[F](logger)
 
   def log0[F[_]: Applicative: Capture, S[_]](
+    logger: Logger)(
     implicit
     F: F :<: S)
       : S ~> Free[S, ?] =
-    log[S, F, S]
+    log[S, F, S](logger)
 
 }
 
 sealed abstract class FatalErrorLoggerInstances extends FatalErrorLoggerInstancesʹ {
 
-  implicit def physicalError(logger: Logger): FatalErrorLogger[Failure[PhysicalError, ?]] =
+  implicit def physicalError[Sʹ[_]](
+    implicit
+    IN: Failure[PhysicalError, ?] :<: Sʹ)
+      : FatalErrorLogger.Aux[Failure[PhysicalError, ?], Sʹ] =
     new FatalErrorLogger[Failure[PhysicalError, ?]] {
-      override def log[F[_]: Applicative: Capture, S[_]](
+      type S[A] = Sʹ[A]
+
+      override def log[F[_]: Applicative: Capture](
+        logger: Logger)(
         implicit
-        F: F :<: S,
-        IN: Failure[PhysicalError, ?] :<: S)
+        F: F :<: S)
           : Failure[PhysicalError, ?] ~> Free[S, ?] =
         logging.logPhysicalError[F, S](logger)
     }
 
-  implicit def coproduct[G[_], H[_]](
+  implicit def coproduct[G[_], H[_], Sʹ[_]](
     implicit
-    G: FatalErrorLogger[G],
-    H: FatalErrorLogger[H])
+    G: FatalErrorLogger.Aux[G, Sʹ],
+    H: FatalErrorLogger.Aux[H, Sʹ])
       : FatalErrorLogger[Coproduct[G, H, ?]] =
     new FatalErrorLogger[Coproduct[G, H, ?]] {
-      override def log[F[_]: Applicative: Capture, S[_]](
+      type S[A] = Sʹ[A]
+
+      override def log[F[_]: Applicative: Capture](
+        logger: Logger)(
         implicit
-        F: F :<: S,
-        IN: Coproduct[G, H, ?] :<: S)
+        F: F :<: S)
           : Coproduct[G, H, ?] ~> Free[S, ?] = {
 
-        @SuppressWarnings(Array("org.wartremover.warts.NonUnitStatements"))
-        implicit val GS: G :<: S = slamdata.Predef.???
-        @SuppressWarnings(Array("org.wartremover.warts.NonUnitStatements"))
-        implicit val HS: H :<: S = slamdata.Predef.???
-
         λ[Coproduct[G, H, ?] ~> Free[S, ?]](_.run.fold(
-          G.log[F, S],
-          H.log[F, S]
+          G.log[F](logger),
+          H.log[F](logger)
         ))
       }
     }
 }
 
 sealed abstract class FatalErrorLoggerInstancesʹ {
-  implicit def default[IN[_]]: FatalErrorLogger[IN] =
+  implicit def default[IN[_], Sʹ[_]](
+    implicit
+    IN: IN :<: Sʹ)
+      : FatalErrorLogger.Aux[IN, Sʹ] =
     new FatalErrorLogger[IN] {
-      override def log[F[_]: Applicative: Capture, S[_]](
+      type S[A] = Sʹ[A]
+
+      override def log[F[_]: Applicative: Capture](
+        logger: Logger)(
         implicit
-        F: F :<: S,
-        IN: IN :<: S)
+        F: F :<: S)
           : IN ~> Free[S, ?] =
         injectFT[IN, S]
     }
