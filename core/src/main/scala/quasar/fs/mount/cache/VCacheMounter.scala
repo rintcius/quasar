@@ -55,12 +55,17 @@ object VCacheMounter {
       (OptionT(refineType(path).toOption.η[Free[S, ?]]) >>= (f =>
         vcache.get(f) >> (vcache.delete(f).liftM[OptionT]))).run.void
 
+    //TODO can probably be removed
     def reresolveCaches: Free[S, Unit] =
       for {
         vcs <- vcaches
         ts <- T.timestamp
         res <- vcs.map { case (f, vc) => reresolveCache(f, vc, ts) }.sequence.void
       } yield res
+
+    //TODO do this asynchronously?
+    @SuppressWarnings(Array("org.wartremover.warts.NonUnitStatements"))
+    def recalcDependentCaches(path: APath, config: Option[MountConfig]): Free[S, Unit] = ???
 
     def reresolveCache(file: AFile, vc: ViewCache, refreshAfter: Instant): Free[S, Unit] = {
       for {
@@ -104,7 +109,16 @@ object VCacheMounter {
     def vc(query: ScopedExpr[Fix[Sql]], vars: quasar.Variables): MountConfig.ViewConfig =
       MountConfig.viewConfig(query, vars).asInstanceOf[MountConfig.ViewConfig]
 
-    def writeCache(file: AFile, viewConfig: MountConfig.ViewConfig) =
+    @SuppressWarnings(Array("org.wartremover.warts.AsInstanceOf"))
+    def writeCache(path: APath, config: MountConfig): OptionT[Free[S, ?], WriteStatus] =
+      (path, config) match {
+        //FIXME
+        case (f, MountConfig.viewConfig(q, v)) /* if (f.isInstanceOf[AFile])*/ =>
+          writeVCache_(f.asInstanceOf[AFile], vc(q, v))
+        case _ => OptionT(Free.point(none))
+      }
+
+    def writeVCache_(file: AFile, viewConfig: MountConfig.ViewConfig) =
       for {
         newViewCache <- OptionT(mkCache(file, viewConfig))
         writeStatus <- OptionT(writeVCache(file, newViewCache).map(_.some))
@@ -139,15 +153,23 @@ object VCacheMounter {
 
         case l@LookupConfig(path) => mount.lift(l)
 
-        case m@MountView(loc, query, vars) => mount.lift(m) <* (writeCache(loc, vc(query, vars)).run *> reresolveCaches)
+        case m@MountView(loc, query, vars) =>
+          mount.lift(m) <* (writeCache(loc, vc(query, vars)).run *>
+            recalcDependentCaches(loc, MountConfig.viewConfig(query, vars).some))
 
-        case m@MountFileSystem(loc, typ, uri) => mount.lift(m) <* reresolveCaches
+        case m@MountFileSystem(loc, typ, uri) => mount.lift(m) <*
+          recalcDependentCaches(loc, MountConfig.fileSystemConfig(typ, uri).some)
 
-        case m@MountModule(loc, statements) => mount.lift(m) <* reresolveCaches
+        case m@MountModule(loc, statements) => mount.lift(m) <*
+          recalcDependentCaches(loc, MountConfig.moduleConfig(statements).some)
 
-        case u@Unmount(path) => mount.lift(u) <* (deleteCache(path) *> reresolveCaches)
+        case u@Unmount(path) => mount.lift(u) <* (deleteCache(path) *>
+          recalcDependentCaches(path, none))
 
-        case r@Remount(src, dst) => mount.lift(r) <* reresolveCaches
+        case r@Remount(src, dst) => mount.lift(r) //TODO <* recalcDependentCaches
+
+        case r@Replace(path, config) => mount.lift(m) <* (writeCache(path, config).run *>
+          recalcDependentCaches(path, config.some))
       }
     }
   }

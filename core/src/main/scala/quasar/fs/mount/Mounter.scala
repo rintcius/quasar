@@ -45,6 +45,7 @@ object Mounter {
   }
 
   /** `Mounting` interpreter */
+  @SuppressWarnings(Array("org.wartremover.warts.NonUnitStatements"))
   def apply[F[_]: Monad](
     mount: MountRequest => MntErrT[F, Unit],
     unmount: MountRequest => F[Unit],
@@ -146,6 +147,8 @@ object Mounter {
           // if it's being moved to a path that is below it's current path. i.e. moving /foo/ to /foo/bar/
           failIfExisting(dst) >> moveNested.liftM[MntErrT] >> handleRemount(src, dst)
         }.run
+
+      case Replace(path, config) => ???
     }
   }
 

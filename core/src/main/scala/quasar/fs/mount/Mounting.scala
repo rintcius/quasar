@@ -64,6 +64,9 @@ object Mounting {
   final case class Remount[T](from: Path[Abs,T,Sandboxed], to: Path[Abs,T,Sandboxed])
     extends Mounting[MountingError \/ Unit]
 
+  final case class Replace(path: APath, config: MountConfig)
+    extends Mounting[MountingError \/ Unit]
+
   /** Indicates the wrong type of path (file vs. dir) was supplied to the `mount`
     * convenience function.
     */
@@ -196,7 +199,7 @@ object Mounting {
       S0: MountingFailure :<: S,
       S1: PathMismatchFailure :<: S
     ): FreeS[Unit] =
-      modify(loc, loc, κ(config))
+      MountingFailure.Ops[S].unattempt(lift(Replace(loc, config)))
 
     /** Remove the mount at the given path. */
     def unmount(path: APath)(implicit S0: MountingFailure :<: S): FreeS[Unit] =
