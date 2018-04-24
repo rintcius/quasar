@@ -960,8 +960,8 @@ class PlannerSql2ExactSpec extends
         $match(Selector.And(
           Selector.Doc(
             BsonField.Name("city") -> Selector.Type(BsonType.Text)),
-          Selector.Doc(ListMap[BsonField, Selector.SelectorExpr](
-            BsonField.Name("city") -> Selector.NotExpr(Selector.Regex("^B[AEIOU]+LD.*", false, true, false, false))))))))
+          Selector.Doc(ListMap[BsonField, Selector.CondExpr](
+            BsonField.Name("city") -> Selector.NotCExpr(Selector.Regex("^B[AEIOU]+LD.*", false, true, false, false))))))))
     }
 
     "plan filter with !~*" in {
@@ -970,8 +970,8 @@ class PlannerSql2ExactSpec extends
         $match(Selector.And(
           Selector.Doc(
             BsonField.Name("city") -> Selector.Type(BsonType.Text)),
-          Selector.Doc(ListMap[BsonField, Selector.SelectorExpr](
-            BsonField.Name("city") -> Selector.NotExpr(Selector.Regex("^B[AEIOU]+LD.*", true, true, false, false))))))))
+          Selector.Doc(ListMap[BsonField, Selector.CondExpr](
+            BsonField.Name("city") -> Selector.NotCExpr(Selector.Regex("^B[AEIOU]+LD.*", true, true, false, false))))))))
     }
 
     "plan filter with alternative ~" in {
@@ -1038,10 +1038,10 @@ class PlannerSql2ExactSpec extends
            Selector.And(
              isNumeric(BsonField.Name("pop")),
              Selector.Or(
-               Selector.Doc(ListMap[BsonField, Selector.SelectorExpr](
-                 BsonField.Name("pop") -> Selector.NotExpr(Selector.Gt(Bson.Int32(0))))),
-               Selector.Doc(ListMap[BsonField, Selector.SelectorExpr](
-                 BsonField.Name("pop") -> Selector.NotExpr(Selector.Lt(Bson.Int32(1000))))))))))
+               Selector.Doc(ListMap[BsonField, Selector.CondExpr](
+                 BsonField.Name("pop") -> Selector.NotCExpr(Selector.Gt(Bson.Int32(0))))),
+               Selector.Doc(ListMap[BsonField, Selector.CondExpr](
+                 BsonField.Name("pop") -> Selector.NotCExpr(Selector.Lt(Bson.Int32(1000))))))))))
     }
 
     "plan filter with not and equality" in {
@@ -1049,8 +1049,8 @@ class PlannerSql2ExactSpec extends
         beWorkflow(chain[Workflow](
           $read(collection("db", "zips")),
           $match(
-            Selector.Doc(ListMap[BsonField, Selector.SelectorExpr](
-              BsonField.Name("pop") -> Selector.NotExpr(Selector.Eq(Bson.Int32(0))))))))
+            Selector.Doc(ListMap[BsonField, Selector.CondExpr](
+              BsonField.Name("pop") -> Selector.NotCExpr(Selector.Eq(Bson.Int32(0))))))))
     }
 
     "plan filter with \"is not null\"" in {
@@ -1058,8 +1058,8 @@ class PlannerSql2ExactSpec extends
         beWorkflow(chain[Workflow](
           $read(collection("db", "zips")),
           $match(
-            Selector.Doc(ListMap[BsonField, Selector.SelectorExpr](
-              BsonField.Name("city") -> Selector.Expr(Selector.Neq(Bson.Null)))))))
+            Selector.Doc(ListMap[BsonField, Selector.CondExpr](
+              BsonField.Name("city") -> Selector.CExpr(Selector.Neq(Bson.Null)))))))
     }
 
     "filter on constant true" in {
@@ -1930,9 +1930,9 @@ class PlannerSql2ExactSpec extends
         reshape("0" -> $field("_id")),
         Obj(ListMap(Name("0") -> Select(ident("value"), "_id"))).right,
         chain[Workflow](_,
-          $match(Selector.Doc(ListMap[BsonField, Selector.SelectorExpr](
-            JoinHandler.LeftName -> Selector.NotExpr(Selector.Size(0)),
-            JoinHandler.RightName -> Selector.NotExpr(Selector.Size(0))))),
+          $match(Selector.Doc(ListMap[BsonField, Selector.CondExpr](
+            JoinHandler.LeftName -> Selector.NotCExpr(Selector.Size(0)),
+            JoinHandler.RightName -> Selector.NotCExpr(Selector.Size(0))))),
           $unwind(DocField(JoinHandler.RightName), None, None),
           $unwind(DocField(JoinHandler.LeftName), None, None),
           $project(

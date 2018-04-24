@@ -62,7 +62,7 @@ object selector {
   def defaultSelector[T[_[_]]]: PartialSelector[T] = (
     { case List(field) =>
       Selector.Doc(ListMap(
-        field -> Selector.Expr(Selector.Eq(Bson.Bool(true)))))
+        field -> Selector.CExpr(Selector.Eq(Bson.Bool(true)))))
     },
     List(Here[T]()))
 
@@ -230,9 +230,9 @@ object selector {
           Output =
         (x, y) match {
           case (_, IsBson(v2)) =>
-            \/-(({ case List(f1) => Selector.Doc(ListMap(f1 -> Selector.Expr(f(v2)))) }, List(There(0, Here[T]()))))
+            \/-(({ case List(f1) => Selector.Doc(ListMap(f1 -> Selector.CExpr(f(v2)))) }, List(There(0, Here[T]()))))
           case (IsBson(v1), _) =>
-            \/-(({ case List(f2) => Selector.Doc(ListMap(f2 -> Selector.Expr(r(v1)))) }, List(There(1, Here[T]()))))
+            \/-(({ case List(f2) => Selector.Doc(ListMap(f2 -> Selector.CExpr(r(v1)))) }, List(There(1, Here[T]()))))
 
           case (_, _) => -\/(InternalError fromMsg node.map(_._1).shows)
         }
@@ -279,7 +279,7 @@ object selector {
 
           case MFC(Search(_, IsText(patt), IsBool(b))) =>
             \/-(({ case List(f1) =>
-              Selector.Doc(ListMap(f1 -> Selector.Expr(Selector.Regex(patt, b, true, false, false)))) },
+              Selector.Doc(ListMap(f1 -> Selector.CExpr(Selector.Regex(patt, b, true, false, false)))) },
               List(There(0, Here[T]()))))
 
           case MFC(Between(_, IsBson(lower), IsBson(upper))) =>
