@@ -153,14 +153,25 @@ class QScriptCorePlanner[T[_[_]]: BirecursiveT: EqualT: ShowT: RenderTreeT] exte
                     exprOp.accumulator(ai._1))).toListMap)),
               repair)
         }).join
+
     case Sort(src, bucket, order) =>
       val (keys, dirs) = (bucket.toIList.map((_, SortDir.asc)) <::: order).unzip
       keys.traverse(handleFreeMap[T, M, EX](cfg.funcHandler, cfg.staticHandler, _))
         .map(ks => WB.sortBy(src, ks.toList, dirs.toList))
+
     case Filter(src0, cond) => {
-      val selectors = getSelector[T, M, EX, Hole](
-        cond, defaultSelector[T].right, sel.selector[T](cfg.bsonVersion) ∘ (_ <+> defaultSelector[T].right))
-      val typeSelectors = getSelector[T, M, EX, Hole](
+      val fallbackSelector: M[Output[T]] =
+        processMapFuncExpr[T, M, EX, Hole](
+          cfg.funcHandler, cfg.staticHandler)(cond)(κ(fixExprOpCore[EX].$$ROOT)) ∘
+          exprSelector[T, ExprOp]
+
+      val selectors: M[Output[T]] = fallbackSelector ∘ (fbs =>
+        getSelector[T, M, EX, Hole](
+          cond,
+          defaultSelector[T].right,
+          sel.selector[T](cfg.bsonVersion) ∘ (_ <+> fbs <+> defaultSelector[T].right)))
+
+      val typeSelectors: Output[T] = getSelector[T, M, EX, Hole](
         cond, InternalError.fromMsg(s"not a typecheck").left , typeSelector[T])
 
       def filterBuilder(src: WorkflowBuilder[WF], partialSel: PartialSelector[T]):
@@ -171,22 +182,23 @@ class QScriptCorePlanner[T[_[_]]: BirecursiveT: EqualT: ShowT: RenderTreeT] exte
           .map(WB.filter(src, _, sel))
       }
 
-      (selectors.toOption, typeSelectors.toOption) match {
-        case (None, Some(typeSel)) => filterBuilder(src0, typeSel)
-        case (Some(sel), None) => filterBuilder(src0, sel)
-        case (Some(sel), Some(typeSel)) => filterBuilder(src0, typeSel) >>= (filterBuilder(_, sel))
-        case _ =>
-          handleFreeMap[T, M, EX](cfg.funcHandler, cfg.staticHandler, cond).map {
-            // TODO: Postpone decision until we know whether we are going to
-            //       need mapReduce anyway.
-            case cond @ HasThat(_) => WB.filter(src0, List(cond), {
-              case f :: Nil => Selector.Doc(f -> Selector.Eq(Bson.Bool(true)))
-            })
-            case \&/.This(js) => WB.filter(src0, Nil, {
-              case Nil => Selector.Where(js(jscore.ident("this")).toJs)
-            })
-          }
-      }
+      ((selectors |@| typeSelectors.point[M])((s, t) =>
+        (s.toOption, t.toOption) match {
+          case (None, Some(typeSel)) => filterBuilder(src0, typeSel)
+          case (Some(sel), None) => filterBuilder(src0, sel)
+          case (Some(sel), Some(typeSel)) => filterBuilder(src0, typeSel) >>= (filterBuilder(_, sel))
+          case _ =>
+            handleFreeMap[T, M, EX](cfg.funcHandler, cfg.staticHandler, cond).map {
+              // TODO: Postpone decision until we know whether we are going to
+              //       need mapReduce anyway.
+              case cond @ HasThat(_) => WB.filter(src0, List(cond), {
+                case f :: Nil => Selector.Doc(f -> Selector.Eq(Bson.Bool(true)))
+              })
+              case \&/.This(js) => WB.filter(src0, Nil, {
+                case Nil => Selector.Where(js(jscore.ident("this")).toJs)
+              })
+            }
+        })).join
     }
     case Union(src, lBranch, rBranch) =>
       (rebaseWB[T, M, WF, EX](cfg, lBranch, src) ⊛

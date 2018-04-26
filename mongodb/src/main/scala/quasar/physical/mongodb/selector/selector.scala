@@ -48,6 +48,7 @@ sealed abstract class Selector {
       case And(left, right) => (left.mapUpFieldsM(f) |@| right.mapUpFieldsM(f))(And(_, _))
       case Or(left, right)  => (left.mapUpFieldsM(f) |@| right.mapUpFieldsM(f))(Or(_, _))
       case Nor(left, right) => (left.mapUpFieldsM(f) |@| right.mapUpFieldsM(f))(Nor(_, _))
+      case Expr(_)          => this.point[M] //TODO
       case Where(_)         => this.point[M] // FIXME: need to rename fields referenced in the JS (#383)
     }
 
@@ -67,6 +68,7 @@ sealed abstract class Selector {
       case Selector.And(l, r) => Selector.Or(loop(l), loop(r))
       case Selector.Or(l, r)  => Selector.Nor(l, r)
       case Selector.Nor(l, r) => Selector.Or(l, r)
+      case Selector.Expr(x)   => Selector.Expr(x) //TODO
       case Selector.Where(x)  => Selector.Where(Js.UnOp("!", x))
     }
 
@@ -84,6 +86,7 @@ object Selector {
         case and: And     => NonTerminal("And" :: SelectorNodeType, None, and.flatten.map(render))
         case or: Or       => NonTerminal("Or" :: SelectorNodeType, None, or.flatten.map(render))
         case nor: Nor     => NonTerminal("Nor" :: SelectorNodeType, None, nor.flatten.map(render))
+        case expr: Expr   => NonTerminal("Expr" :: SelectorNodeType, None, Nil) //TODO
         case where: Where => Terminal("Where" :: SelectorNodeType, Some(where.bson.toJs.pprint(0)))
         case Doc(pairs)   => {
           val children = pairs.map {
@@ -143,6 +146,10 @@ object Selector {
                     (if (dotAll)          "s" else "")
       Bson.Regex(pattern, options)
     }
+  }
+
+  final case class Expr(expr: Bson) extends Selector {
+    def bson = Bson.Doc(ListMap("$expr" -> expr))
   }
 
   // Note: $where can actually appear within a Doc (as in

@@ -66,6 +66,15 @@ object selector {
     },
     List(Here[T]()))
 
+  def exprSelector[T[_[_]]: BirecursiveT: ShowT: RenderTreeT, EX[_]: Traverse]
+    (expr: Fix[EX])
+    (implicit ev: expression.ExprOpOps.Uni[EX])
+      : Output[T] = {
+    val alg = expression.ExprOpOps[EX].bson
+    val p: PartialSelector[T] = ({ case Nil => Selector.Expr(expr.cata(alg)) }, Nil)
+    p.right
+  }
+
   def invoke2Nel[T[_[_]]]
     (x: Output[T], y: Output[T])
     (f: (Selector, Selector) => Selector)
