@@ -161,14 +161,19 @@ class QScriptCorePlanner[T[_[_]]: BirecursiveT: EqualT: ShowT: RenderTreeT] exte
         .map(ks => WB.sortBy(src, ks.toList, dirs.toList))
 
     case Filter(src0, cond) => {
-      val fallbackSelector: FreeMap[T] => M[Output[T]] =
-        exprSelector[T, M](getExpr[T, M, EX](cfg.funcHandler, cfg.staticHandler))
 
-      val selectors: M[Output[T]] = fallbackSelector(cond) ∘ (fbs =>
+      val fallbackSelector: M[Output[T]] =
+        if (cfg.queryModel gte MongoQueryModel.`3.6`)
+          exprSelector[T, M](getExpr[T, M, EX](cfg.funcHandler, cfg.staticHandler))(cond) >>=
+            (s => (s <+> defaultSelector[T].right).point[M])
+        else
+          defaultSelector[T].right.point[M]
+
+      val selectors: M[Output[T]] = fallbackSelector ∘ (fbs =>
         getSelector[T, M, EX, Hole](
           cond,
           defaultSelector[T].right,
-          sel.selector[T](cfg.bsonVersion) ∘ (_ <+> fbs <+> defaultSelector[T].right)))
+          sel.selector[T](cfg.bsonVersion) ∘ (_ <+> fbs)))
 
       val typeSelectors: Output[T] = getSelector[T, M, EX, Hole](
         cond, InternalError.fromMsg(s"not a typecheck").left , typeSelector[T])
