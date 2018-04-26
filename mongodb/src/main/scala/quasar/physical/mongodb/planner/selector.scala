@@ -21,7 +21,7 @@ import quasar._, Type._
 import quasar.contrib.matryoshka._
 import quasar.fp._
 import quasar.fp.ski._
-import quasar.fs.{Planner => QPlanner}, QPlanner._
+import quasar.fs.{FileSystemError, MonadFsErr, Planner => QPlanner}, QPlanner._
 import quasar.physical.mongodb._
 import quasar.physical.mongodb.expression.ExprOp
 import quasar.physical.mongodb.selector.Selector
@@ -66,13 +66,16 @@ object selector {
     },
     List(Here[T]()))
 
-  def exprSelector[T[_[_]]: BirecursiveT: ShowT: RenderTreeT, EX[_]: Traverse]
-    (expr: Fix[EX])
-    (implicit ev: expression.ExprOpOps.Uni[EX])
-      : Output[T] = {
-    val alg = expression.ExprOpOps[EX].bson
-    val p: PartialSelector[T] = ({ case Nil => Selector.Expr(expr.cata(alg)) }, Nil)
-    p.right
+  def exprSelector[T[_[_]]: BirecursiveT: ShowT: RenderTreeT, M[_]: Applicative]
+    (handler: FreeMap[T] => M[Fix[ExprOp]])
+    (fm: FreeMap[T])
+    (implicit ME: MonadFsErr[M])
+      : M[Output[T]] = {
+    val alg = expression.ExprOpOps[ExprOp].bson
+    val expr: M[FileSystemError \/ Fix[ExprOp]] = ME.attempt(handler(fm))
+    expr ∘ (_.bimap[PlannerError, PartialSelector[T]](
+      err => InternalError.fromMsg(err.shows),
+      ex => ({ case Nil => Selector.Expr(ex.cata(alg)) }, Nil)))
   }
 
   def invoke2Nel[T[_[_]]]

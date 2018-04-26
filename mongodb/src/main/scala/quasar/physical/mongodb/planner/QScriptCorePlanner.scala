@@ -161,12 +161,10 @@ class QScriptCorePlanner[T[_[_]]: BirecursiveT: EqualT: ShowT: RenderTreeT] exte
         .map(ks => WB.sortBy(src, ks.toList, dirs.toList))
 
     case Filter(src0, cond) => {
-      val fallbackSelector: M[Output[T]] =
-        processMapFuncExpr[T, M, EX, Hole](
-          cfg.funcHandler, cfg.staticHandler)(κ(fixExprOpCore[EX].$$ROOT))(cond) ∘
-          exprSelector[T, ExprOp]
+      val fallbackSelector: FreeMap[T] => M[Output[T]] =
+        exprSelector[T, M](getExpr[T, M, EX](cfg.funcHandler, cfg.staticHandler))
 
-      val selectors: M[Output[T]] = fallbackSelector ∘ (fbs =>
+      val selectors: M[Output[T]] = fallbackSelector(cond) ∘ (fbs =>
         getSelector[T, M, EX, Hole](
           cond,
           defaultSelector[T].right,
