@@ -1,5 +1,3 @@
-import github.GithubPlugin._
-
 import scala.Predef._
 import quasar.project._
 
@@ -202,22 +200,6 @@ lazy val publishTestsSettings = Seq(
   publishArtifact in (Test, packageBin) := true
 )
 
-lazy val githubReleaseSettings =
-  githubSettings ++ Seq(
-    GithubKeys.assets := Seq(assembly.value),
-    GithubKeys.repoSlug := "quasar-analytics/quasar",
-    GithubKeys.releaseName := "quasar " + GithubKeys.tag.value,
-    releaseVersionFile := file("version.sbt"),
-    releaseUseGlobalVersion := true,
-    releaseProcess := Seq[ReleaseStep](
-      checkSnapshotDependencies,
-      inquireVersions,
-      runTest,
-      setReleaseVersion,
-      commitReleaseVersion,
-      pushChanges)
-  )
-
 def isolatedBackendSettings(classnames: String*) = Seq(
   isolatedBackends in Global ++=
     classnames.map(_ -> (fullClasspath in Compile).value.files),
@@ -247,12 +229,12 @@ lazy val root = project.in(file("."))
   .settings(excludeTypelevelScalaLibrary)
   .aggregate(
 
-       foundation,
-//     /     \    \
-    effect, ejson, js, // <- _______
-//    |        \   /                \
-              common,
-//    |       /      \                \
+       foundation, //___
+//    /    \      \     \
+    api, effect, ejson, js, //______
+//       /     \   /                \
+               common,
+//     /      /      \                \
         frontend,    precog,
 //    |/    /    \       |             |
      fs, sql, datagen, blueeyes,
@@ -302,6 +284,16 @@ lazy val foundation = project
     libraryDependencies ++= Dependencies.foundation)
   .settings(excludeTypelevelScalaLibrary)
   .enablePlugins(AutomateHeaderPlugin, BuildInfoPlugin)
+
+/** Types and interfaces describing Quasar's functionality. */
+lazy val api = project
+  .settings(name := "quasar-api-internal")
+  .dependsOn(foundation % BothScopes)
+  .settings(libraryDependencies ++= Dependencies.api)
+  .settings(commonSettings)
+  .settings(targetSettings)
+  .settings(excludeTypelevelScalaLibrary)
+  .enablePlugins(AutomateHeaderPlugin)
 
 /** A fixed-point implementation of the EJson spec. This should probably become
   * a standalone library.
@@ -448,7 +440,6 @@ lazy val couchbase = project
   .settings(commonSettings)
   .settings(targetSettings)
   .settings(libraryDependencies ++= Dependencies.couchbase)
-  .settings(githubReleaseSettings)
   .settings(isolatedBackendSettings("quasar.physical.couchbase.Couchbase$"))
   .settings(excludeTypelevelScalaLibrary)
   .enablePlugins(AutomateHeaderPlugin)
@@ -462,7 +453,6 @@ lazy val marklogic = project
   .settings(targetSettings)
   .settings(resolvers += "MarkLogic" at "http://developer.marklogic.com/maven2")
   .settings(libraryDependencies ++= Dependencies.marklogic)
-  .settings(githubReleaseSettings)
   .settings(isolatedBackendSettings("quasar.physical.marklogic.MarkLogic$"))
   .settings(excludeTypelevelScalaLibrary)
   .enablePlugins(AutomateHeaderPlugin)
@@ -484,7 +474,6 @@ lazy val mongodb = project
       Wart.AsInstanceOf,
       Wart.Equals,
       Wart.Overloading))
-  .settings(githubReleaseSettings)
   .settings(isolatedBackendSettings("quasar.physical.mongodb.MongoDb$"))
   .settings(excludeTypelevelScalaLibrary)
   .enablePlugins(AutomateHeaderPlugin)
@@ -521,7 +510,6 @@ lazy val repl = project
   .settings(name := "quasar-repl")
   .dependsOn(interface)
   .settings(commonSettings)
-  .settings(githubReleaseSettings)
   .settings(targetSettings)
   .settings(backendRewrittenRunSettings)
   .settings(
@@ -538,7 +526,6 @@ lazy val web = project
   .dependsOn(interface % BothScopes)
   .settings(commonSettings)
   .settings(publishTestsSettings)
-  .settings(githubReleaseSettings)
   .settings(targetSettings)
   .settings(backendRewrittenRunSettings)
   .settings(

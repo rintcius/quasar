@@ -164,25 +164,25 @@ class QScriptCorePlanner[T[_[_]]: BirecursiveT: EqualT: ShowT: RenderTreeT] exte
 
       val fallbackSelector: M[Output[T]] =
         if (cfg.queryModel gte MongoQueryModel.`3.6`)
-          exprSelector[T, M](getExpr[T, M, EX](cfg.funcHandler, cfg.staticHandler))(cond) >>=
+          exprSelector[T, M](getExpr[T, M, EX](cfg.funcHandler, cfg.staticHandler))(cond.linearize) >>=
             (s => (s <+> defaultSelector[T].right).point[M])
         else
           defaultSelector[T].right.point[M]
 
       val selectors: M[Output[T]] = fallbackSelector ∘ (fbs =>
         getSelector[T, M, EX, Hole](
-          cond,
+          cond.linearize,
           defaultSelector[T].right,
           sel.selector[T](cfg.bsonVersion) ∘ (_ <+> fbs)))
 
       val typeSelectors: Output[T] = getSelector[T, M, EX, Hole](
-        cond, InternalError.fromMsg(s"not a typecheck").left , typeSelector[T])
+        cond.linearize, InternalError.fromMsg(s"not a typecheck").left , typeSelector[T])
 
       def filterBuilder(src: WorkflowBuilder[WF], partialSel: PartialSelector[T]):
           M[WorkflowBuilder[WF]] = {
         val (sel, inputs) = partialSel
 
-        inputs.traverse(f => handleFreeMap[T, M, EX](cfg.funcHandler, cfg.staticHandler, f(cond)))
+        inputs.traverse(f => handleFreeMap[T, M, EX](cfg.funcHandler, cfg.staticHandler, f(cond.linearize)))
           .map(WB.filter(src, _, sel))
       }
 
@@ -192,7 +192,7 @@ class QScriptCorePlanner[T[_[_]]: BirecursiveT: EqualT: ShowT: RenderTreeT] exte
           case (Some(sel), None) => filterBuilder(src0, sel)
           case (Some(sel), Some(typeSel)) => filterBuilder(src0, typeSel) >>= (filterBuilder(_, sel))
           case _ =>
-            handleFreeMap[T, M, EX](cfg.funcHandler, cfg.staticHandler, cond).map {
+            handleFreeMap[T, M, EX](cfg.funcHandler, cfg.staticHandler, cond.linearize).map {
               // TODO: Postpone decision until we know whether we are going to
               //       need mapReduce anyway.
               case cond @ HasThat(_) => WB.filter(src0, List(cond), {
