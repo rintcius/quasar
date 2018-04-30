@@ -21,7 +21,7 @@ import quasar._, Type._
 import quasar.contrib.matryoshka._
 import quasar.fp._
 import quasar.fp.ski._
-import quasar.fs.{FileSystemError, MonadFsErr, Planner => QPlanner}, QPlanner._
+import quasar.fs.{MonadFsErr, Planner => QPlanner}, QPlanner._
 import quasar.physical.mongodb._
 import quasar.physical.mongodb.expression.ExprOp
 import quasar.physical.mongodb.selector.Selector
@@ -70,13 +70,10 @@ object selector {
     (handler: FreeMap[T] => M[Fix[ExprOp]])
     (fm: FreeMap[T])
     (implicit ME: MonadFsErr[M])
-      : M[Output[T]] = {
-    val alg = expression.ExprOpOps[ExprOp].bson
-    val expr: M[FileSystemError \/ Fix[ExprOp]] = ME.attempt(handler(fm))
-    expr ∘ (_.bimap[PlannerError, PartialSelector[T]](
+      : M[Output[T]] =
+    ME.attempt(handler(fm)) ∘ (_.bimap[PlannerError, PartialSelector[T]](
       err => InternalError.fromMsg(err.shows),
-      ex => ({ case Nil => Selector.Expr(ex.cata(alg)) }, Nil)))
-  }
+      ex => ({ case Nil => Selector.Expr(ex) }, Nil)))
 
   def invoke2Nel[T[_[_]]]
     (x: Output[T], y: Output[T])
