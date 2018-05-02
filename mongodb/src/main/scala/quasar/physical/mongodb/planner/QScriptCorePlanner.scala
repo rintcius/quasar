@@ -178,13 +178,13 @@ class QScriptCorePlanner[T[_[_]]: BirecursiveT: EqualT: ShowT: RenderTreeT] exte
       val typeSelectors: Output[T] = getSelector[T, M, EX, Hole](
         cond.linearize, InternalError.fromMsg(s"not a typecheck").left , typeSelector[T])
 
-      def filterBuilder(src: WorkflowBuilder[WF], partialSel: PartialSelector[T]):
-          M[WorkflowBuilder[WF]] = {
-        val (sel, inputs) = partialSel
-
-        inputs.traverse(f => handleFreeMap[T, M, EX](cfg.funcHandler, cfg.staticHandler, f(cond.linearize)))
-          .map(WB.filter(src, _, sel))
-      }
+      def filterBuilder(src: WorkflowBuilder[WF], partialSel: PartialSelector[T])
+          : M[WorkflowBuilder[WF]] =
+        getFilterBuilder.filterBuilder(
+          { fm: FreeMap[T] => handleFreeMap[T, M, EX](cfg.funcHandler, cfg.staticHandler, fm) },
+          src,
+          partialSel,
+          cond.linearize)
 
       ((selectors |@| typeSelectors.point[M])((s, t) =>
         (s.toOption, t.toOption) match {
