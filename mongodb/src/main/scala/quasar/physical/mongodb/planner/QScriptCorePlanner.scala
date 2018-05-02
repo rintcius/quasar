@@ -162,35 +162,39 @@ class QScriptCorePlanner[T[_[_]]: BirecursiveT: EqualT: ShowT: RenderTreeT] exte
 
     case Filter(src0, cond) => {
 
-      val fallbackSelector: M[Output[T]] =
+      def fallbackSelector(fm: FreeMap[T]): M[Output[T]] =
         if (cfg.queryModel gte MongoQueryModel.`3.6`)
-          exprSelector[T, M](getExpr[T, M, EX](cfg.funcHandler, cfg.staticHandler))(cond.linearize) >>=
+          exprSelector[T, M](getExpr[T, M, EX](cfg.funcHandler, cfg.staticHandler))(fm) >>=
             (s => (s <+> defaultSelector[T].right).point[M])
         else
           defaultSelector[T].right.point[M]
 
-      val selectors: M[Output[T]] = fallbackSelector ∘ (fbs =>
+      def selectors(fm: FreeMap[T]): M[Output[T]] = fallbackSelector(fm) ∘ (fbs =>
         getSelector[T, M, EX, Hole](
-          cond.linearize,
+          fm,
           defaultSelector[T].right,
           sel.selector[T](cfg.bsonVersion) ∘ (_ <+> fbs)))
 
-      val typeSelectors: Output[T] = getSelector[T, M, EX, Hole](
-        cond.linearize, InternalError.fromMsg(s"not a typecheck").left , typeSelector[T])
+      def typeSelectors(fm: FreeMap[T]): Output[T] = getSelector[T, M, EX, Hole](
+        fm, InternalError.fromMsg(s"not a typecheck").left , typeSelector[T])
 
-      def filterBuilder(src: WorkflowBuilder[WF], partialSel: PartialSelector[T])
+      def filterBuilder(
+        src: WorkflowBuilder[WF],
+        partialSel: PartialSelector[T],
+        fm: FreeMap[T])
           : M[WorkflowBuilder[WF]] =
         getFilterBuilder.filterBuilder(
-          { fm: FreeMap[T] => handleFreeMap[T, M, EX](cfg.funcHandler, cfg.staticHandler, fm) },
+          { fm0: FreeMap[T] => handleFreeMap[T, M, EX](cfg.funcHandler, cfg.staticHandler, fm0) },
           src,
           partialSel,
-          cond.linearize)
+          fm)
 
-      ((selectors |@| typeSelectors.point[M])((s, t) =>
+      ((selectors(cond.linearize) |@| typeSelectors(cond.linearize).point[M])((s, t) =>
         (s.toOption, t.toOption) match {
-          case (None, Some(typeSel)) => filterBuilder(src0, typeSel)
-          case (Some(sel), None) => filterBuilder(src0, sel)
-          case (Some(sel), Some(typeSel)) => filterBuilder(src0, typeSel) >>= (filterBuilder(_, sel))
+          case (None, Some(typeSel)) => filterBuilder(src0, typeSel, cond.linearize)
+          case (Some(sel), None) => filterBuilder(src0, sel, cond.linearize)
+          case (Some(sel), Some(typeSel)) =>
+            filterBuilder(src0, typeSel, cond.linearize) >>= (filterBuilder(_, sel, cond.linearize))
           case _ =>
             handleFreeMap[T, M, EX](cfg.funcHandler, cfg.staticHandler, cond.linearize).map {
               // TODO: Postpone decision until we know whether we are going to
