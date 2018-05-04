@@ -19,9 +19,8 @@ package quasar.physical.mongodb.planner
 import slamdata.Predef._
 import quasar._, Type._
 import quasar.contrib.matryoshka._
-import quasar.fp._
 import quasar.fp.ski._
-import quasar.fs.{MonadFsErr, Planner => QPlanner}, QPlanner._
+import quasar.fs.MonadFsErr
 import quasar.physical.mongodb._
 import quasar.physical.mongodb.expression.ExprOp
 import quasar.physical.mongodb.selector.Selector
@@ -56,7 +55,7 @@ object selector {
   type PartialSelector[T[_[_]]] =
     (PartialFunction[List[BsonField], Selector], List[InputFinder[T]])
 
-  type Output[T[_[_]]] = PlannerError \/ PartialSelector[T]
+  type Output[T[_[_]]] = Option[PartialSelector[T]]
 
   def defaultSelector[T[_[_]]]: PartialSelector[T] = (
     { case List(field) =>
@@ -70,8 +69,7 @@ object selector {
     (fm: FreeMap[T])
     (implicit ME: MonadFsErr[M])
       : M[Output[T]] =
-    ME.attempt(handler(fm)) ∘ (_.bimap[PlannerError, PartialSelector[T]](
-      err => InternalError.fromMsg(err.shows),
+    ME.attempt(handler(fm)) ∘ (_.toOption) ∘ (_.map(
       ex => ({ case Nil => Selector.Expr(ex) }, Nil)))
 
   def invoke2Nel[T[_[_]]]
@@ -89,14 +87,14 @@ object selector {
     (x: Output[T], y: Output[T])
     (f: (Selector, Selector) => Selector)
       : Output[T] =
-    (x.toOption, y.toOption) match {
+    (x, y) match {
       case (Some((f1, p1)), Some((f2, p2)))=>
         invoke2Nel(x, y)(f)
       case (Some((f1, p1)), None) =>
-        (f1, p1.map(There(0, _))).right
+        (f1, p1.map(There(0, _))).some
       case (None, Some((f2, p2))) =>
-        (f2, p2.map(There(1, _))).right
-      case _ => InternalError.fromMsg("No selectors in either side of a binary MapFunc").left
+        (f2, p2.map(There(1, _))).some
+      case _ => none
     }
 
   def typeSelector[T[_[_]]: RecursiveT: ShowT]:
@@ -156,15 +154,17 @@ object selector {
                 Type.LocalDateTime | Type.LocalDate | Type.LocalTime =>
               ((f: BsonField) => Selector.Doc(f -> Selector.Type(BsonType.Date)))
           }
-        selCheck(typ).fold[Output[T]](
-          -\/(InternalError.fromMsg(node.map(_._1).shows)))(
-          f =>
-          \/-(cont._2.fold[PartialSelector[T]](
-            κ(({ case List(field) => f(field) }, List(There(0, Here[T]())))),
-            { case (f2, p2) => ({ case head :: tail => Selector.And(f(head), f2(tail)) }, There(0, Here[T]()) :: p2.map(There(1, _)))
-            })))
 
-      case _ => -\/(InternalError fromMsg node.map(_._1).shows)
+        def g(f: BsonField => Selector): PartialSelector[T] =
+          cont._2.fold[PartialSelector[T]](
+            ({ case List(field) => f(field) }, List(There(0, Here[T]()))))(
+            { case (f2, p2) => (
+              { case head :: tail => Selector.And(f(head), f2(tail)) },
+              There(0, Here[T]()) :: p2.map(There(1, _)))})
+
+        selCheck(typ).map(g)
+
+      case _ => none
     }
   }
 
@@ -240,11 +240,11 @@ object selector {
           Output[T] =
         (x, y) match {
           case (_, IsBson(v2)) =>
-            \/-(({ case List(f1) => Selector.Doc(ListMap(f1 -> Selector.CExpr(f(v2)))) }, List(There(0, Here[T]()))))
+            Some(({ case List(f1) => Selector.Doc(ListMap(f1 -> Selector.CExpr(f(v2)))) }, List(There(0, Here[T]()))))
           case (IsBson(v1), _) =>
-            \/-(({ case List(f2) => Selector.Doc(ListMap(f2 -> Selector.CExpr(r(v1)))) }, List(There(1, Here[T]()))))
+            Some(({ case List(f2) => Selector.Doc(ListMap(f2 -> Selector.CExpr(r(v1)))) }, List(There(1, Here[T]()))))
 
-          case (_, _) => -\/(InternalError fromMsg node.map(_._1).shows)
+          case (_, _) => none
         }
 
       val flipCore: MapFuncCore[T, _] => Option[MapFuncCore[T, _]] = {
@@ -265,10 +265,10 @@ object selector {
       }
 
       def reversibleRelop(x: (T[MapFunc[T, ?]], Output[T]), y: (T[MapFunc[T, ?]], Output[T]))(f: MapFunc[T, _]): Output[T] =
-        (relFunc(f) ⊛ flip(f).flatMap(relFunc))(relop(x, y)(_, _)).getOrElse(-\/(InternalError fromMsg "couldn’t decipher operation"))
+        (relFunc(f) ⊛ flip(f).flatMap(relFunc))(relop(x, y)(_, _)).join
 
       func match {
-        case MFC(Constant(_)) => \/-(default)
+        case MFC(Constant(_)) => default.some
         case MFC(And(a, b))   => invoke2Nel(a._2, b._2)(Selector.And.apply _)
         case MFC(Or(a, b))    => invoke2Nel(a._2, b._2)(Selector.Or.apply _)
 
@@ -288,12 +288,12 @@ object selector {
               x => Selector.ElemMatch(\/-(Selector.In(Bson.Arr(List(x))))))
 
           case MFC(Search(_, IsText(patt), IsBool(b))) =>
-            \/-(({ case List(f1) =>
+            Some(({ case List(f1) =>
               Selector.Doc(ListMap(f1 -> Selector.CExpr(Selector.Regex(patt, b, true, false, false)))) },
               List(There(0, Here[T]()))))
 
           case MFC(Between(_, IsBson(lower), IsBson(upper))) =>
-            \/-(({ case List(f) => Selector.And(
+            Some(({ case List(f) => Selector.And(
               Selector.Doc(f -> Selector.Gte(lower)),
               Selector.Doc(f -> Selector.Lte(upper)))
             },
@@ -307,7 +307,7 @@ object selector {
           case MFC(Guard(_, typ, (_, cont), (Embed(MFC(MakeArray(Embed(MFC(Undefined()))))), _))) =>
             cont.map { case (sel, inputs) => (sel, inputs.map(There(1, _))) }
 
-          case _ => -\/(InternalError fromMsg node.map(_._1).shows)
+          case _ => none
         }
       }
     }

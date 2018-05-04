@@ -165,18 +165,18 @@ class QScriptCorePlanner[T[_[_]]: BirecursiveT: EqualT: ShowT: RenderTreeT] exte
       def fallbackSelector(fm: FreeMap[T]): M[Output[T]] =
         if (cfg.queryModel gte MongoQueryModel.`3.6`)
           exprSelector[T, M](getExpr[T, M, EX](cfg.funcHandler, cfg.staticHandler))(fm) >>=
-            (s => (s <+> defaultSelector[T].right).point[M])
+            (s => (s <+> defaultSelector[T].some).point[M])
         else
-          defaultSelector[T].right.point[M]
+          defaultSelector[T].some.point[M]
 
       def selectors(fm: FreeMap[T]): M[Output[T]] = fallbackSelector(fm) ∘ (fbs =>
         getSelector[T, M, EX, Hole](
           fm,
-          defaultSelector[T].right,
+          defaultSelector[T].some,
           sel.selector[T](cfg.bsonVersion) ∘ (_ <+> fbs)))
 
       def typeSelectors(fm: FreeMap[T]): Output[T] = getSelector[T, M, EX, Hole](
-        fm, InternalError.fromMsg(s"not a typecheck").left , typeSelector[T])
+        fm, none, typeSelector[T])
 
       def filterBuilder(
         src: WorkflowBuilder[WF],
