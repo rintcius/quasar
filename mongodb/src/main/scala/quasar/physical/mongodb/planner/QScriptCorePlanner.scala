@@ -189,8 +189,8 @@ class QScriptCorePlanner[T[_[_]]: BirecursiveT: EqualT: ShowT: RenderTreeT] exte
           partialSel,
           fm)
 
-      ((selectors(cond.linearize) |@| typeSelectors(cond.linearize).point[M])((s, t) =>
-        (s.toOption, t.toOption) match {
+      ((selectors(cond.linearize) |@| typeSelectors(cond.linearize).point[M])(
+        {
           case (None, Some(typeSel)) => filterBuilder(src0, typeSel, cond.linearize)
           case (Some(sel), None) => filterBuilder(src0, sel, cond.linearize)
           case (Some(sel), Some(typeSel)) =>
