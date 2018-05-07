@@ -36,7 +36,6 @@ import quasar.physical.mongodb.planner.exprOp._
 import quasar.physical.mongodb.planner.workflow._
 import quasar.physical.mongodb.planner.javascript._
 import quasar.physical.mongodb.planner.selector._
-import quasar.physical.mongodb.selector.Selector
 import quasar.physical.mongodb.workflow._
 import quasar.qscript._
 
@@ -195,17 +194,7 @@ class QScriptCorePlanner[T[_[_]]: BirecursiveT: EqualT: ShowT: RenderTreeT] exte
           case (Some(sel), None) => filterBuilder(src0, sel, cond.linearize)
           case (Some(sel), Some(typeSel)) =>
             filterBuilder(src0, typeSel, cond.linearize) >>= (filterBuilder(_, sel, cond.linearize))
-          case _ =>
-            handleFreeMap[T, M, EX](cfg.funcHandler, cfg.staticHandler, cond.linearize).map {
-              // TODO: Postpone decision until we know whether we are going to
-              //       need mapReduce anyway.
-              case cond @ HasThat(_) => WB.filter(src0, List(cond), {
-                case f :: Nil => Selector.Doc(f -> Selector.Eq(Bson.Bool(true)))
-              })
-              case \&/.This(js) => WB.filter(src0, Nil, {
-                case Nil => Selector.Where(js(jscore.ident("this")).toJs)
-              })
-            }
+          case (None, None) => src0.point[M]
         })).join
     }
     case Union(src, lBranch, rBranch) =>
