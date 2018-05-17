@@ -162,18 +162,11 @@ class QScriptCorePlanner[T[_[_]]: BirecursiveT: EqualT: ShowT: RenderTreeT] exte
 
     case Filter(src0, cond) => {
 
-      def fallbackSelector(fm: FreeMap[T]): M[Output[T]] =
-        if (cfg.queryModel gte MongoQueryModel.`3.6`)
-          exprSelector[T, M](getExpr[T, M, EX](cfg.funcHandler, cfg.staticHandler))(fm) >>=
-            (s => (s <+> defaultSelector[T].some).point[M])
-        else
-          defaultSelector[T].some.point[M]
-
-      def selectors(fm: FreeMap[T]): M[Output[T]] = fallbackSelector(fm) ∘ (fbs =>
+      def selectors(fm: FreeMap[T]): Output[T] =
         getSelector[T, M, EX, Hole](
           fm,
           defaultSelector[T].some,
-          sel.selector[T](cfg.bsonVersion) ∘ (_ <+> fbs)))
+          sel.selector[T](cfg.bsonVersion) ∘ (_ <+> defaultSelector[T].some))
 
       def typeSelectors(fm: FreeMap[T]): Output[T] = getSelector[T, M, EX, Hole](
         fm, none, typeSelector[T])
@@ -189,24 +182,23 @@ class QScriptCorePlanner[T[_[_]]: BirecursiveT: EqualT: ShowT: RenderTreeT] exte
           partialSel,
           fm)
 
-      ((selectors(cond.linearize) |@| typeSelectors(cond.linearize).point[M])(
-        {
-          case (None, Some(typeSel)) => filterBuilder(src0, typeSel, cond.linearize)
-          case (Some(sel), None) => filterBuilder(src0, sel, cond.linearize)
-          case (Some(sel), Some(typeSel)) =>
-            filterBuilder(src0, typeSel, cond.linearize) >>= (filterBuilder(_, sel, cond.linearize))
-          case _ =>
-            handleFreeMap[T, M, EX](cfg.funcHandler, cfg.staticHandler, cond.linearize).map {
-              // TODO: Postpone decision until we know whether we are going to
-              //       need mapReduce anyway.
-              case cond @ HasThat(_) => WB.filter(src0, List(cond), {
-                case f :: Nil => Selector.Doc(f -> Selector.Eq(Bson.Bool(true)))
-              })
-              case \&/.This(js) => WB.filter(src0, Nil, {
-                case Nil => Selector.Where(js(jscore.ident("this")).toJs)
-              })
-            }
-        })).join
+      (selectors(cond.linearize), typeSelectors(cond.linearize)) match {
+        case (None, Some(typeSel)) => filterBuilder(src0, typeSel, cond.linearize)
+        case (Some(sel), None) => filterBuilder(src0, sel, cond.linearize)
+        case (Some(sel), Some(typeSel)) =>
+          filterBuilder(src0, typeSel, cond.linearize) >>= (filterBuilder(_, sel, cond.linearize))
+        case _ =>
+          handleFreeMap[T, M, EX](cfg.funcHandler, cfg.staticHandler, cond.linearize).map {
+            // TODO: Postpone decision until we know whether we are going to
+            //       need mapReduce anyway.
+            case cond @ HasThat(_) => WB.filter(src0, List(cond), {
+              case f :: Nil => Selector.Doc(f -> Selector.Eq(Bson.Bool(true)))
+            })
+            case \&/.This(js) => WB.filter(src0, Nil, {
+              case Nil => Selector.Where(js(jscore.ident("this")).toJs)
+            })
+          }
+      }
     }
     case Union(src, lBranch, rBranch) =>
       (rebaseWB[T, M, WF, EX](cfg, lBranch, src) ⊛

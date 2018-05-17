@@ -20,7 +20,6 @@ import slamdata.Predef._
 import quasar._, Type._
 import quasar.contrib.matryoshka._
 import quasar.fp.ski._
-import quasar.fs.MonadFsErr
 import quasar.physical.mongodb._
 import quasar.physical.mongodb.expression.ExprOp
 import quasar.physical.mongodb.selector.Selector
@@ -63,14 +62,6 @@ object selector {
         field -> Selector.CExpr(Selector.Eq(Bson.Bool(true)))))
     },
     List(Here[T]()))
-
-  def exprSelector[T[_[_]]: BirecursiveT: ShowT: RenderTreeT, M[_]: Applicative]
-    (handler: FreeMap[T] => M[Fix[ExprOp]])
-    (fm: FreeMap[T])
-    (implicit ME: MonadFsErr[M])
-      : M[Output[T]] =
-    ME.attempt(handler(fm)) ∘ (_.toOption) ∘ (_.map(
-      ex => ({ case Nil => Selector.Expr(ex) }, Nil)))
 
   def invoke2Nel[T[_[_]]]
     (x: Output[T], y: Output[T])

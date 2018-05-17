@@ -1432,13 +1432,6 @@ class PlannerSql2ExactSpec extends
           ExcludeId)))
     }
 
-    "$expr-based filter" in {
-      plan(sqlE"select * from zips where city <> state") must
-      beWorkflow(chain[Workflow](
-        $read(collection("db", "zips")),
-        $match(Selector.Expr($neq($field("city"), $field("state"))))))
-    }
-
     "prefer projection+filter over nested JS filter (3.4)" in {
       plan3_4(sqlE"select * from zips where city <> state and pop < 10000", defaultStats, defaultIndexes, emptyDoc) must
       beWorkflow0(chain[Workflow](

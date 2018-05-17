@@ -18,17 +18,13 @@ package quasar.physical.mongodb.selector
 
 import slamdata.Predef._
 import quasar._
-import quasar.RenderTree.ops._
 import quasar.fp._
 import quasar.javascript._
 import quasar.physical.mongodb.{Bson, BsonField, BsonType}
-import quasar.physical.mongodb.expression._
 
 import scala.Any
 
 import matryoshka._
-import matryoshka.data._
-import matryoshka.implicits._
 import scalaz._, Scalaz._
 
 sealed abstract class Selector {
@@ -53,7 +49,6 @@ sealed abstract class Selector {
       case And(left, right) => (left.mapUpFieldsM(f) |@| right.mapUpFieldsM(f))(And(_, _))
       case Or(left, right)  => (left.mapUpFieldsM(f) |@| right.mapUpFieldsM(f))(Or(_, _))
       case Nor(left, right) => (left.mapUpFieldsM(f) |@| right.mapUpFieldsM(f))(Nor(_, _))
-      case Expr(expr)       => expr.cataM(ExprOpOps[ExprOp].mapUpFieldsM(f)) ∘ (Expr(_))
       case Where(_)         => this.point[M] // FIXME: need to rename fields referenced in the JS (#383)
     }
 
@@ -73,7 +68,6 @@ sealed abstract class Selector {
       case Selector.And(l, r) => Selector.Or(loop(l), loop(r))
       case Selector.Or(l, r)  => Selector.Nor(l, r)
       case Selector.Nor(l, r) => Selector.Or(l, r)
-      case Selector.Expr(x)   => Selector.Expr(fixExprOp.$not(x))
       case Selector.Where(x)  => Selector.Where(Js.UnOp("!", x))
     }
 
@@ -91,7 +85,6 @@ object Selector {
         case and: And     => NonTerminal("And" :: SelectorNodeType, None, and.flatten.map(render))
         case or: Or       => NonTerminal("Or" :: SelectorNodeType, None, or.flatten.map(render))
         case nor: Nor     => NonTerminal("Nor" :: SelectorNodeType, None, nor.flatten.map(render))
-        case expr: Expr   => NonTerminal("Expr" :: SelectorNodeType, None, expr.expr.render :: Nil)
         case where: Where => Terminal("Where" :: SelectorNodeType, Some(where.bson.toJs.pprint(0)))
         case Doc(pairs)   => {
           val children = pairs.map {
@@ -151,11 +144,6 @@ object Selector {
                     (if (dotAll)          "s" else "")
       Bson.Regex(pattern, options)
     }
-  }
-
-  final case class Expr(expr: Fix[ExprOp]) extends Selector {
-    val alg = ExprOpOps[ExprOp].bson
-    def bson = Bson.Doc(ListMap("$expr" -> expr.cata(alg)))
   }
 
   // Note: $where can actually appear within a Doc (as in
