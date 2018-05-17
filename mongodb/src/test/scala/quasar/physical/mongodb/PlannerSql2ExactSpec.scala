@@ -1415,7 +1415,7 @@ class PlannerSql2ExactSpec extends
       skipped("qz-3686")
     }
 
-    "no $expr-based filter & prefer projection+filter over JS filter (3.4)" in {
+    "prefer projection+filter over JS filter (3.4)" in {
       plan3_4(sqlE"select * from zips where city <> state", defaultStats, defaultIndexes, emptyDoc) must
       beWorkflow(chain[Workflow](
         $read(collection("db", "zips")),
