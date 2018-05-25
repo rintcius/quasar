@@ -1881,15 +1881,15 @@ object Slice {
     }
   }
 
-  def fromJValues(values: Stream[JValue]): Slice =
+  def fromJValues(values: Vector[JValue]): Slice =
     fromRValues(values.flatMap(RValue.fromJValue))
 
-  def fromRValues(values: Stream[RValue]): Slice = {
+  def fromRValues(values: Vector[RValue]): Slice = {
     val sliceSize = values.size
 
-    @tailrec def buildColArrays(from: Stream[RValue], into: Map[ColumnRef, ArrayColumn[_]], sliceIndex: Int): (Map[ColumnRef, ArrayColumn[_]], Int) = {
+    @tailrec def buildColArrays(from: Vector[RValue], into: Map[ColumnRef, ArrayColumn[_]], sliceIndex: Int): (Map[ColumnRef, ArrayColumn[_]], Int) = {
       from match {
-        case jv #:: xs =>
+        case jv +: xs =>
           val refs = updateRefs(jv, into, sliceIndex, sliceSize)
           buildColArrays(xs, refs, sliceIndex + 1)
         case _ =>

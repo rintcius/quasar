@@ -611,10 +611,10 @@ trait ColumnarTableModule[M[+ _]]
       }
     }
 
-    def fromRValues(values: Stream[RValue], maxSliceSize: Option[Int] = None): Table = {
+    def fromRValues(values: Vector[RValue], maxSliceSize: Option[Int] = None): Table = {
       val sliceSize = maxSliceSize.getOrElse(Config.maxSliceSize)
 
-      def makeSlice(data: Stream[RValue]): (Slice, Stream[RValue]) = {
+      def makeSlice(data: Vector[RValue]): (Slice, Vector[RValue]) = {
         val (prefix, suffix) = data.splitAt(sliceSize)
 
         (Slice.fromRValues(prefix), suffix)
@@ -624,7 +624,7 @@ trait ColumnarTableModule[M[+ _]]
         StreamT.unfoldM(values) { events =>
           M.point {
             (!events.isEmpty) option {
-              makeSlice(events.toStream)
+              makeSlice(events)
             }
           }
         },

@@ -81,7 +81,7 @@ class SliceSpec extends Specification with ScalaCheck {
         ]""".stripMargin)
 
       val data = array match {
-        case JArray(rows) => rows.toStream
+        case JArray(rows) => rows.toVector
         case _ => ???
       }
 
@@ -98,7 +98,7 @@ class SliceSpec extends Specification with ScalaCheck {
         ]""".stripMargin)
 
       val keyData = keyArray match {
-        case JArray(rows) => rows.toStream
+        case JArray(rows) => rows.toVector
         case _ => ???
       }
 
