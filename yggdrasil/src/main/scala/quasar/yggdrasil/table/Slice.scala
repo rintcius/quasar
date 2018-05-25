@@ -1881,10 +1881,10 @@ object Slice {
     }
   }
 
-  def fromJValues(values: Vector[JValue]): Slice =
+  def fromJValues(values: Vector[JValue]): Vector[Slice] =
     fromRValues(values.flatMap(RValue.fromJValue))
 
-  def fromRValues(values: Vector[RValue]): Slice = {
+  def fromRValues(values: Vector[RValue]): Vector[Slice] = {
     val sliceSize = values.size
 
     @tailrec def buildColArrays(from: Vector[RValue], into: Map[ColumnRef, ArrayColumn[_]], sliceIndex: Int): (Map[ColumnRef, ArrayColumn[_]], Int) = {
@@ -1897,9 +1897,9 @@ object Slice {
       }
     }
 
-    new Slice {
+    Vector(new Slice {
       val (columns, size) = buildColArrays(values, Map.empty[ColumnRef, ArrayColumn[_]], 0)
-    }
+    })
   }
 
   /**

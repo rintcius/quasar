@@ -87,8 +87,8 @@ class SliceSpec extends Specification with ScalaCheck {
 
       val target = Slice.fromJValues(data)
 
-      // Note the monitonically decreasing sequence
-      // associated with the keys, due having repated
+      // Note the monotonically decreasing sequence
+      // associated with the keys, due to repeated
       // states being sorted in descending order.
       val keyArray = JParser.parseUnsafe("""[
           [ "CA", 0 ],
@@ -102,9 +102,13 @@ class SliceSpec extends Specification with ScalaCheck {
         case _ => ???
       }
 
-      val key = Slice.fromJValues(keyData)
+      val key = {
+        val slices = Slice.fromJValues(keyData)
+        slices.size mustEqual 1
+        slices(0)
+      }
 
-      val result = target.sortWith(key, SortDescending)._1.toJsonElements.toVector
+      val result = target.map(_.sortWith(key, SortDescending)._1.toJsonElements.toVector)
 
       val expectedArray = JParser.parseUnsafe("""[
         { "city": "LOPEZ", "state": "WA" },
@@ -118,7 +122,7 @@ class SliceSpec extends Specification with ScalaCheck {
         case _ => ???
       }
 
-      result mustEqual expected
+      result mustEqual Vector(expected)
     }
 
       // Commented out for now. sortWith is correct semantically, but it ruins
