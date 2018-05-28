@@ -1787,7 +1787,8 @@ object Slice {
     }
   }
 
-  def updateRefs(rv: RValue, into: Map[ColumnRef, ArrayColumn[_]], sliceIndex: Int, sliceSize: Int): Map[ColumnRef, ArrayColumn[_]] = {
+  def updateRefs(rv: RValue, into: Map[ColumnRef, ArrayColumn[_]], sliceIndex: Int, nrRows: Int): Map[ColumnRef, ArrayColumn[_]] = {
+
     rv.flattenWithPath.foldLeft(into) {
       case (acc, (cpath, CUndefined)) => acc
       case (acc, (cpath, cvalue)) =>
@@ -1795,84 +1796,85 @@ object Slice {
 
         val updatedColumn: ArrayColumn[_] = cvalue match {
           case CBoolean(b) =>
-            acc.getOrElse(ref, ArrayBoolColumn.empty()).asInstanceOf[ArrayBoolColumn].unsafeTap { c =>
-              c.update(sliceIndex, b)
-            }
+            val c = acc.getOrElse(ref, ArrayBoolColumn.empty()).asInstanceOf[ArrayBoolColumn]
+            c.update(sliceIndex, b)
+            c
 
           case CLong(d) =>
-            acc.getOrElse(ref, ArrayLongColumn.empty(sliceSize)).asInstanceOf[ArrayLongColumn].unsafeTap { c =>
-              c.update(sliceIndex, d.toLong)
-            }
+            val c = acc.getOrElse(ref, ArrayLongColumn.empty(nrRows)).asInstanceOf[ArrayLongColumn]
+            c.update(sliceIndex, d.toLong)
+            c
 
           case CDouble(d) =>
-            acc.getOrElse(ref, ArrayDoubleColumn.empty(sliceSize)).asInstanceOf[ArrayDoubleColumn].unsafeTap { c =>
-              c.update(sliceIndex, d.toDouble)
-            }
+            val c = acc.getOrElse(ref, ArrayDoubleColumn.empty(nrRows)).asInstanceOf[ArrayDoubleColumn]
+            c.update(sliceIndex, d.toDouble)
+            c
 
           case CNum(d) =>
-            acc.getOrElse(ref, ArrayNumColumn.empty(sliceSize)).asInstanceOf[ArrayNumColumn].unsafeTap { c =>
-              c.update(sliceIndex, d)
-            }
+            val c = acc.getOrElse(ref, ArrayNumColumn.empty(nrRows)).asInstanceOf[ArrayNumColumn]
+            c.update(sliceIndex, d)
+            c
 
           case CString(s) =>
-            acc.getOrElse(ref, ArrayStrColumn.empty(sliceSize)).asInstanceOf[ArrayStrColumn].unsafeTap { c =>
-              c.update(sliceIndex, s)
-            }
+            val c = acc.getOrElse(ref, ArrayStrColumn.empty(nrRows)).asInstanceOf[ArrayStrColumn]
+            c.update(sliceIndex, s)
+            c
 
           case COffsetDateTime(d) =>
-            acc.getOrElse(ref, ArrayOffsetDateTimeColumn.empty(sliceSize)).asInstanceOf[ArrayOffsetDateTimeColumn].unsafeTap { c =>
-              c.update(sliceIndex, d)
-            }
+            val c = acc.getOrElse(ref, ArrayOffsetDateTimeColumn.empty(nrRows)).asInstanceOf[ArrayOffsetDateTimeColumn]
+            c.update(sliceIndex, d)
+            c
 
           case COffsetTime(d) =>
-            acc.getOrElse(ref, ArrayOffsetTimeColumn.empty(sliceSize)).asInstanceOf[ArrayOffsetTimeColumn].unsafeTap { c =>
-              c.update(sliceIndex, d)
-            }
+            val c = acc.getOrElse(ref, ArrayOffsetTimeColumn.empty(nrRows)).asInstanceOf[ArrayOffsetTimeColumn]
+            c.update(sliceIndex, d)
+            c
 
           case COffsetDate(d) =>
-            acc.getOrElse(ref, ArrayOffsetDateColumn.empty(sliceSize)).asInstanceOf[ArrayOffsetDateColumn].unsafeTap { c =>
-              c.update(sliceIndex, d)
-            }
+            val c = acc.getOrElse(ref, ArrayOffsetDateColumn.empty(nrRows)).asInstanceOf[ArrayOffsetDateColumn]
+            c.update(sliceIndex, d)
+            c
 
           case CLocalDateTime(d) =>
-            acc.getOrElse(ref, ArrayLocalDateTimeColumn.empty(sliceSize)).asInstanceOf[ArrayLocalDateTimeColumn].unsafeTap { c =>
-              c.update(sliceIndex, d)
-            }
+            val c = acc.getOrElse(ref, ArrayLocalDateTimeColumn.empty(nrRows)).asInstanceOf[ArrayLocalDateTimeColumn]
+            c.update(sliceIndex, d)
+            c
 
           case CLocalTime(d) =>
-            acc.getOrElse(ref, ArrayLocalTimeColumn.empty(sliceSize)).asInstanceOf[ArrayLocalTimeColumn].unsafeTap { c =>
-              c.update(sliceIndex, d)
-            }
+            val c = acc.getOrElse(ref, ArrayLocalTimeColumn.empty(nrRows)).asInstanceOf[ArrayLocalTimeColumn]
+            c.update(sliceIndex, d)
+            c
 
           case CLocalDate(d) =>
-            acc.getOrElse(ref, ArrayLocalDateColumn.empty(sliceSize)).asInstanceOf[ArrayLocalDateColumn].unsafeTap { c =>
-              c.update(sliceIndex, d)
-            }
+            val c = acc.getOrElse(ref, ArrayLocalDateColumn.empty(nrRows)).asInstanceOf[ArrayLocalDateColumn]
+            c.update(sliceIndex, d)
+            c
 
           case CInterval(p) =>
-            acc.getOrElse(ref, ArrayIntervalColumn.empty(sliceSize)).asInstanceOf[ArrayIntervalColumn].unsafeTap { c =>
-              c.update(sliceIndex, p)
-            }
+            val c = acc.getOrElse(ref, ArrayIntervalColumn.empty(nrRows)).asInstanceOf[ArrayIntervalColumn]
+            c.update(sliceIndex, p)
+            c
 
           case CArray(arr, cType) =>
-            acc.getOrElse(ref, ArrayHomogeneousArrayColumn.empty(sliceSize)(cType)).asInstanceOf[ArrayHomogeneousArrayColumn[cType.tpe]].unsafeTap { c =>
-              c.update(sliceIndex, arr)
-            }
+            val c = acc.getOrElse(ref, ArrayHomogeneousArrayColumn.empty(nrRows)(cType)).asInstanceOf[ArrayHomogeneousArrayColumn[cType.tpe]]
+            c.update(sliceIndex, arr)
+            c
 
           case CEmptyArray =>
-            acc.getOrElse(ref, MutableEmptyArrayColumn.empty()).asInstanceOf[MutableEmptyArrayColumn].unsafeTap { c =>
-              c.update(sliceIndex, true)
-            }
+            val c = acc.getOrElse(ref, MutableEmptyArrayColumn.empty()).asInstanceOf[MutableEmptyArrayColumn]
+            c.update(sliceIndex, true)
+            c
 
           case CEmptyObject =>
-            acc.getOrElse(ref, MutableEmptyObjectColumn.empty()).asInstanceOf[MutableEmptyObjectColumn].unsafeTap { c =>
-              c.update(sliceIndex, true)
-            }
+            val c = acc.getOrElse(ref, MutableEmptyObjectColumn.empty()).asInstanceOf[MutableEmptyObjectColumn]
+            c.update(sliceIndex, true)
+            c
 
           case CNull =>
-            acc.getOrElse(ref, MutableNullColumn.empty()).asInstanceOf[MutableNullColumn].unsafeTap { c =>
-              c.update(sliceIndex, true)
-            }
+            val c = acc.getOrElse(ref, MutableNullColumn.empty()).asInstanceOf[MutableNullColumn]
+            c.update(sliceIndex, true)
+            c
+
           case x =>
             sys.error(s"Unexpected arg $x")
         }
