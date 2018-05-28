@@ -18,10 +18,10 @@ package quasar.precog.common
 
 object ByteSize {
   // see https://www.javamex.com/tutorials/memory/object_memory_usage.shtml
-  val boolean = 1
   val long = 8
   val double = 8
 
+  val boolean = 0
   val null_ = 0
   val emptyObject = 0
   val emptyArray = 0
@@ -31,8 +31,6 @@ object ByteSize {
   val bigDecimal = 100
   val string = 100
 
-  val array = 1000
-
   val offsetDateTime = 100
   val offsetDate = 100
   val offsetTime = 100
@@ -40,4 +38,6 @@ object ByteSize {
   val localTime = 100
   val localDate = 100
   val dateTimeInterval = 100
+
+  val array = 1000
 }
