@@ -1883,25 +1883,44 @@ object Slice {
     }
   }
 
-  def fromJValues(values: Vector[JValue]): Vector[Slice] =
-    fromRValues(values.flatMap(RValue.fromJValue))
+  def fromJValues(values: Vector[JValue], maxBytes: Long = Config.maxSliceBytes): Vector[Slice] =
+    fromRValues(values.flatMap(RValue.fromJValue), maxBytes)
 
-  def fromRValues(values: Vector[RValue]): Vector[Slice] = {
-    val sliceSize = values.size
+  def fromRValues(values: Vector[RValue], maxBytes: Long = Config.maxSliceBytes): Vector[Slice] = {
+    val nrRows = values.size
 
-    @tailrec def buildColArrays(from: Vector[RValue], into: Map[ColumnRef, ArrayColumn[_]], sliceIndex: Int): (Map[ColumnRef, ArrayColumn[_]], Int) = {
+    @tailrec def buildColArrays(from: Vector[RValue], into: Map[ColumnRef, ArrayColumn[_]], sliceRowIndex: Int, currentSliceBytes: Long)
+        : (Map[ColumnRef, ArrayColumn[_]], Int, Vector[RValue]) =
       from match {
         case jv +: xs =>
-          val refs = updateRefs(jv, into, sliceIndex, sliceSize)
-          buildColArrays(xs, refs, sliceIndex + 1)
+          val nextCurrentSliceBytes = currentSliceBytes + jv.byteSize
+          if (nextCurrentSliceBytes <= maxBytes) {
+            val refs = updateRefs(jv, into, sliceRowIndex, nrRows)
+            buildColArrays(xs, refs, sliceRowIndex + 1, currentSliceBytes + jv.byteSize)
+          } else
+            (into, sliceRowIndex, from)
         case _ =>
-          (into, sliceIndex)
+          (into, sliceRowIndex, Vector.empty)
       }
+
+    def buildSlice(values: Vector[RValue]): (Slice, Vector[RValue]) = {
+      val (cs, sz, restValues) =
+        buildColArrays(values, Map.empty[ColumnRef, ArrayColumn[_]], 0, 0L)
+      val slice = new Slice {
+        val columns = cs
+        val size = sz
+      }
+      (slice, restValues)
     }
 
-    Vector(new Slice {
-      val (columns, size) = buildColArrays(values, Map.empty[ColumnRef, ArrayColumn[_]], 0)
-    })
+    def buildSlices(values: Vector[RValue]): Vector[Slice] =
+      if (values.isEmpty) Vector.empty
+      else {
+        val (slice, restValues) = buildSlice(values)
+        slice +: buildSlices(restValues)
+      }
+
+    buildSlices(values)
   }
 
   /**

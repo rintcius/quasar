@@ -27,12 +27,10 @@ import quasar.time.DateGenerators
 import quasar.yggdrasil.TableModule.SortDescending
 
 import scala.util.Random
-import org.scalacheck.{Arbitrary, Gen}
-import Gen.listOfN
 
-class SliceSpec extends Specification with ScalaCheck {
-  import ArbitrarySlice._
+import org.scalacheck.{Arbitrary, Gen}, Gen.listOfN
 
+class SliceSpec extends Specification with ScalaCheck with RCValueGenerators {
   import ArbitrarySlice._
 
   implicit def cValueOrdering: Ordering[CValue] = CValue.CValueOrder.toScalaOrdering
@@ -57,7 +55,7 @@ class SliceSpec extends Specification with ScalaCheck {
     })(collection.breakOut)
   }
 
-  def toCValues(slice: Slice) = sortableCValues(slice, Vector.empty) map (_._2)
+  def toCValues(slice: Slice): List[List[CValue]] = sortableCValues(slice, Vector.empty) map (_._2)
 
   def fakeSort(slice: Slice, sortKey: Vector[CPath]) =
     sortableCValues(slice, sortKey).sortBy(_._1).map(_._2)
@@ -70,6 +68,31 @@ class SliceSpec extends Specification with ScalaCheck {
 
   def stripUndefineds(cvals: List[CValue]): Set[CValue] =
     (cvals filter (_ != CUndefined)).toSet
+
+  def sliceByteSize(slice: Slice): Long = {
+    val cs = slice.columns.values.map(_.asInstanceOf[ArrayColumn[_]])
+    cs.map(_.byteSize).foldLeft(0L)(_ + _)
+  }
+
+  def testFromRValues(values: Vector[CValue]) = {
+    val vByteSizes = values.map(_.byteSize)
+    val byteSize = vByteSizes.foldLeft(0L)(_ + _)
+    val maxRValueBytes = vByteSizes.foldLeft(0L)(Math.max(_, _))
+
+    val slices = Slice.fromRValues(values, maxRValueBytes)
+
+    if (values.isEmpty) slices.size must be_==(0)
+    else slices.size must be_>(0)
+
+    slices.map(s => sliceByteSize(s)).foldLeft(0L)(_ + _) must_==(byteSize)
+    slices.map(s => toCValues(s)).foldLeft(List.empty[CValue])(_ ++ _.flatten) must_==(values.toList)
+  }
+
+  "fromRValues" should {
+    "construct slices from a single CString" in testFromRValues(Vector(CString("x")))
+
+    "construct slices from arbitrary CValues" in Prop.forAll(genCValues)(testFromRValues(_))
+  }
 
   "sortBy" should {
     "stably sort a slice by a projection" in {
