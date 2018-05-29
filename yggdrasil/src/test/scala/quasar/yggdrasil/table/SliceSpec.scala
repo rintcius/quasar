@@ -84,7 +84,7 @@ class SliceSpec extends Specification with ScalaCheck with RCValueGenerators {
   }
 
   def testFromRValues(values: Vector[CValue]) = {
-    val vByteSizes = values.map(_.byteSize)
+    val vByteSizes = values.map(ByteSize.fromRValue)
     val totalByteSize = vByteSizes.foldLeft(0L)(_ + _)
     val maxRValueBytes = vByteSizes.foldLeft(0L)(Math.max(_, _))
 
@@ -94,7 +94,7 @@ class SliceSpec extends Specification with ScalaCheck with RCValueGenerators {
   }
 
   def testFromRValuesFittingIn1Slice(values: Vector[CValue]) = {
-    val vByteSizes = values.map(_.byteSize)
+    val vByteSizes = values.map(ByteSize.fromRValue)
     val totalByteSize = vByteSizes.foldLeft(0L)(_ + _)
 
     // test with a slice that's just big enough to hold the values

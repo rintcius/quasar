@@ -1893,10 +1893,10 @@ object Slice {
         : (Map[ColumnRef, ArrayColumn[_]], Int, Vector[RValue]) =
       from match {
         case jv +: xs =>
-          val nextCurrentSliceBytes = currentSliceBytes + jv.byteSize
+          val nextCurrentSliceBytes = currentSliceBytes + ByteSize.fromRValue(jv)
           if (nextCurrentSliceBytes <= maxBytes) {
             val refs = updateRefs(jv, into, sliceRowIndex, nrRows)
-            buildColArrays(xs, refs, sliceRowIndex + 1, currentSliceBytes + jv.byteSize)
+            buildColArrays(xs, refs, sliceRowIndex + 1, nextCurrentSliceBytes)
           } else
             (into, sliceRowIndex, from)
         case _ =>

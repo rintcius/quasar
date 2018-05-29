@@ -33,8 +33,6 @@ sealed trait RValue { self =>
 
   def \(fieldName: String): RValue
 
-  def byteSize: Long
-
   def unsafeInsert(path: CPath, value: RValue): RValue = {
     RValue.unsafeInsert(self, path, value)
   }
@@ -171,7 +169,6 @@ case class RObject(fields: Map[String, RValue]) extends RValue {
   def toJValue                     = JObject(fields mapValues (_.toJValue) toMap)
   def toJValueRaw                  = JObject(fields mapValues (_.toJValueRaw) toMap)
   def \(fieldName: String): RValue = fields(fieldName)
-  val byteSize = fields.values.map(_.byteSize).foldLeft(0L)(_ + _)
 }
 
 object RObject {
@@ -183,7 +180,6 @@ case class RArray(elements: List[RValue]) extends RValue {
   def toJValue                     = JArray(elements map { _.toJValue })
   def toJValueRaw                  = JArray(elements map { _.toJValueRaw })
   def \(fieldName: String): RValue = CUndefined
-  val byteSize = elements.map(_.byteSize).foldLeft(0L)(_ + _)
 }
 
 object RArray {
@@ -516,8 +512,6 @@ case class CArray[A](value: Array[A], cType: CArrayType[A]) extends CWrappedValu
   }
 
   override def toString: String = value.mkString("CArray(Array(", ", ", "), " + cType.toString + ")")
-
-  val byteSize = ByteSize.array
 }
 
 case object CArray {
@@ -550,7 +544,6 @@ case class CArrayType[A](elemType: CValueType[A]) extends CValueType[Array[A]] {
 //
 case class CString(value: String) extends CWrappedValue[String] {
   val cType = CString
-  val byteSize = ByteSize.string
 }
 
 case object CString extends CValueType[String] {
@@ -565,7 +558,6 @@ case object CString extends CValueType[String] {
 //
 sealed abstract class CBoolean(val value: Boolean) extends CWrappedValue[Boolean] {
   val cType = CBoolean
-  val byteSize = ByteSize.boolean
 }
 
 case object CTrue  extends CBoolean(true)
@@ -585,7 +577,6 @@ case object CBoolean extends CValueType[Boolean] {
 //
 case class CLong(value: Long) extends CNumericValue[Long] {
   val cType = CLong
-  val byteSize = ByteSize.long
 }
 
 case object CLong extends CNumericType[Long] {
@@ -599,7 +590,6 @@ case object CLong extends CNumericType[Long] {
 
 case class CDouble(value: Double) extends CNumericValue[Double] {
   val cType = CDouble
-  val byteSize = ByteSize.double
 }
 
 case object CDouble extends CNumericType[Double] {
@@ -613,7 +603,6 @@ case object CDouble extends CNumericType[Double] {
 
 case class CNum(value: BigDecimal) extends CNumericValue[BigDecimal] {
   val cType = CNum
-  val byteSize = ByteSize.bigDecimal
 }
 
 case object CNum extends CNumericType[BigDecimal] {
@@ -630,7 +619,6 @@ case object CNum extends CNumericType[BigDecimal] {
 //
 case class COffsetDateTime(value: OffsetDateTime) extends CWrappedValue[OffsetDateTime] {
   val cType = COffsetDateTime
-  val byteSize = ByteSize.offsetDateTime
 }
 
 case object COffsetDateTime extends CValueType[OffsetDateTime] {
@@ -642,7 +630,6 @@ case object COffsetDateTime extends CValueType[OffsetDateTime] {
 
 case class COffsetDate(value: OffsetDate) extends CWrappedValue[OffsetDate] {
   val cType = COffsetDate
-  val byteSize = ByteSize.offsetDate
 }
 
 case object COffsetDate extends CValueType[OffsetDate] {
@@ -654,7 +641,6 @@ case object COffsetDate extends CValueType[OffsetDate] {
 
 case class COffsetTime(value: OffsetTime) extends CWrappedValue[OffsetTime] {
   val cType = COffsetTime
-  val byteSize = ByteSize.offsetTime
 }
 
 case object COffsetTime extends CValueType[OffsetTime] {
@@ -666,7 +652,6 @@ case object COffsetTime extends CValueType[OffsetTime] {
 
 case class CLocalDateTime(value: LocalDateTime) extends CWrappedValue[LocalDateTime] {
   val cType = CLocalDateTime
-  val byteSize = ByteSize.localDateTime
 }
 
 case object CLocalDateTime extends CValueType[LocalDateTime] {
@@ -678,7 +663,6 @@ case object CLocalDateTime extends CValueType[LocalDateTime] {
 
 case class CLocalTime(value: LocalTime) extends CWrappedValue[LocalTime] {
   val cType = CLocalTime
-  val byteSize = ByteSize.localTime
 }
 
 case object CLocalTime extends CValueType[LocalTime] {
@@ -690,7 +674,6 @@ case object CLocalTime extends CValueType[LocalTime] {
 
 case class CLocalDate(value: LocalDate) extends CWrappedValue[LocalDate] {
   val cType = CLocalDate
-  val byteSize = ByteSize.localDate
 }
 
 case object CLocalDate extends CValueType[LocalDate] {
@@ -702,7 +685,6 @@ case object CLocalDate extends CValueType[LocalDate] {
 
 case class CInterval(value: DateTimeInterval) extends CWrappedValue[DateTimeInterval] {
   val cType = CInterval
-  val byteSize = ByteSize.dateTimeInterval
 }
 
 case object CInterval extends CValueType[DateTimeInterval] {
@@ -719,21 +701,18 @@ case object CNull extends CNullType with CNullValue {
   def readResolve() = CNull
   def toJValue      = JNull
   def toJValueRaw   = JNull
-  val byteSize      = ByteSize.null_
 }
 
 case object CEmptyObject extends CNullType with CNullValue {
   def readResolve() = CEmptyObject
   def toJValue      = JObject(Nil)
   def toJValueRaw   = JObject(Nil)
-  val byteSize      = ByteSize.emptyObject
 }
 
 case object CEmptyArray extends CNullType with CNullValue {
   def readResolve() = CEmptyArray
   def toJValue      = JArray(Nil)
   def toJValueRaw   = JArray(Nil)
-  val byteSize      = ByteSize.emptyArray
 }
 
 //
@@ -743,5 +722,4 @@ case object CUndefined extends CNullType with CNullValue {
   def readResolve() = CUndefined
   def toJValue      = JUndefined
   def toJValueRaw   = JUndefined
-  val byteSize      = ByteSize.undefined
 }
