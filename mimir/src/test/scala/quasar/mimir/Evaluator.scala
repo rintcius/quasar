@@ -319,7 +319,7 @@ trait EvaluatorModule[M[+ _]]
 
               case CUndefined => Table.empty
 
-              case rv => Table.fromRValues(Stream(rv))
+              case rv => Table.fromRValues0(Vector(rv))
             }
 
             val spec = buildConstantWrapSpec(Leaf(Source))
