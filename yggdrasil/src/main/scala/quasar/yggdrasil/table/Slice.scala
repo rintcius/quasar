@@ -1883,10 +1883,10 @@ object Slice {
     }
   }
 
-  def fromJValues(values: Vector[JValue], maxBytes: Long = Config.maxSliceBytes): Vector[Slice] =
+  def fromJValues(values: Vector[JValue], maxBytes: Long = Config.maxSliceBytes): Stream[Slice] =
     fromRValues(values.flatMap(RValue.fromJValue), maxBytes)
 
-  def fromRValues(values: Vector[RValue], maxBytes: Long = Config.maxSliceBytes): Vector[Slice] = {
+  def fromRValues(values: Vector[RValue], maxBytes: Long = Config.maxSliceBytes): Stream[Slice] = {
     val nrRows = values.size
 
     @tailrec def buildColArrays(from: Vector[RValue], into: Map[ColumnRef, ArrayColumn[_]], sliceRowIndex: Int, currentSliceBytes: Long)
@@ -1913,8 +1913,8 @@ object Slice {
       (slice, restValues)
     }
 
-    def buildSlices(values: Vector[RValue]): Vector[Slice] =
-      if (values.isEmpty) Vector.empty
+    def buildSlices(values: Vector[RValue]): Stream[Slice] =
+      if (values.isEmpty) Stream.empty
       else {
         val (slice, restValues) = buildSlice(values)
         slice +: buildSlices(restValues)
