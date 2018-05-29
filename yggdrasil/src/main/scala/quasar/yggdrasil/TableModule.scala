@@ -151,7 +151,8 @@ trait TableModule[M[+ _]] extends TransSpecModule {
     def constEmptyObject: Table
     def constEmptyArray: Table
 
-    def fromRValues(values: Vector[RValue], maxSliceSize: Option[Int] = None): Table
+    def fromRValues(values: Vector[RValue], maxSliceBytes: Long): Table
+    def fromRValues0(values: Vector[RValue]): Table = fromRValues(values, Config.maxSliceBytes)
 
     def merge[N[+ _]](grouping: GroupingSpec)(body: (RValue, GroupId => M[Table]) => N[Table])(implicit nt: N ~> M): M[Table]
     def align(sourceLeft: Table, alignOnL: TransSpec1, sourceRight: Table, alignOnR: TransSpec1): M[(Table, Table)]
