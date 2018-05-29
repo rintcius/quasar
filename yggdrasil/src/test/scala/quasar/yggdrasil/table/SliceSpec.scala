@@ -29,6 +29,7 @@ import quasar.yggdrasil.TableModule.SortDescending
 import scala.util.Random
 
 import org.scalacheck.{Arbitrary, Gen}, Gen.listOfN
+import org.specs2.matcher.Matcher
 
 class SliceSpec extends Specification with ScalaCheck with RCValueGenerators {
   import ArbitrarySlice._
@@ -74,24 +75,42 @@ class SliceSpec extends Specification with ScalaCheck with RCValueGenerators {
     cs.map(_.byteSize).foldLeft(0L)(_ + _)
   }
 
-  def testFromRValues(values: Vector[CValue]) = {
-    val vByteSizes = values.map(_.byteSize)
-    val byteSize = vByteSizes.foldLeft(0L)(_ + _)
-    val maxRValueBytes = vByteSizes.foldLeft(0L)(Math.max(_, _))
-
-    val slices = Slice.fromRValues(values, maxRValueBytes)
-
+  def assertSlices(values: Vector[CValue], slices: Vector[Slice], expectedSliceSize: Matcher[Int], expectedByteSize: Long) = {
     if (values.isEmpty) slices.size must be_==(0)
-    else slices.size must be_>(0)
+    else slices.size must expectedSliceSize
 
-    slices.map(s => sliceByteSize(s)).foldLeft(0L)(_ + _) must_==(byteSize)
+    slices.map(s => sliceByteSize(s)).foldLeft(0L)(_ + _) must_==(expectedByteSize)
     slices.map(s => toCValues(s)).foldLeft(List.empty[CValue])(_ ++ _.flatten) must_==(values.toList)
   }
 
-  "fromRValues" should {
-    "construct slices from a single CString" in testFromRValues(Vector(CString("x")))
+  def testFromRValues(values: Vector[CValue]) = {
+    val vByteSizes = values.map(_.byteSize)
+    val totalByteSize = vByteSizes.foldLeft(0L)(_ + _)
+    val maxRValueBytes = vByteSizes.foldLeft(0L)(Math.max(_, _))
 
-    "construct slices from arbitrary CValues" in Prop.forAll(genCValues)(testFromRValues(_))
+    // test with a slice size that's just big enough to hold the biggest value
+    val slices = Slice.fromRValues(values, maxRValueBytes)
+    assertSlices(values, slices, be_>(0), totalByteSize)
+  }
+
+  def testFromRValuesFittingIn1Slice(values: Vector[CValue]) = {
+    val vByteSizes = values.map(_.byteSize)
+    val totalByteSize = vByteSizes.foldLeft(0L)(_ + _)
+
+    // test with a slice that's just big enough to hold the values
+    val slices = Slice.fromRValues(values, totalByteSize)
+    assertSlices(values, slices, be_==(1), totalByteSize)
+  }
+
+  "fromRValues" should {
+    "construct slices from a simple vector" in {
+      "fits in 1 slice" >> testFromRValuesFittingIn1Slice(Vector(CString("x"), CNum(42)))
+      "multiple slices" >> testFromRValues(Vector(CString("x"), CNum(42)))
+    }
+
+    "construct slices from arbitrary values" in Prop.forAll(genCValues){ values =>
+      testFromRValues(values) and testFromRValuesFittingIn1Slice(values)
+    }
   }
 
   "sortBy" should {
