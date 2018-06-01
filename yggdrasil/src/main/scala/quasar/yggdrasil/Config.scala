@@ -21,6 +21,7 @@ object Config {
 
   def hashJoins         = true
   def maxSliceSize: Int = 20000
+  def maxSliceBytes: Long = 1073741824 // 1GB
 
   // This is a slice size that we'd like our slices to be at least as large as.
   def minIdealSliceSize: Int = maxSliceSize / 4

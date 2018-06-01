@@ -27,12 +27,11 @@ import quasar.time.DateGenerators
 import quasar.yggdrasil.TableModule.SortDescending
 
 import scala.util.Random
-import org.scalacheck.{Arbitrary, Gen}
-import Gen.listOfN
 
-class SliceSpec extends Specification with ScalaCheck {
-  import ArbitrarySlice._
+import org.scalacheck.{Arbitrary, Gen}, Gen.listOfN
+import org.specs2.matcher.Matcher
 
+class SliceSpec extends Specification with ScalaCheck with RCValueGenerators {
   import ArbitrarySlice._
 
   implicit def cValueOrdering: Ordering[CValue] = CValue.CValueOrder.toScalaOrdering
@@ -57,7 +56,7 @@ class SliceSpec extends Specification with ScalaCheck {
     })(collection.breakOut)
   }
 
-  def toCValues(slice: Slice) = sortableCValues(slice, Vector.empty) map (_._2)
+  def toCValues(slice: Slice): List[List[CValue]] = sortableCValues(slice, Vector.empty) map (_._2)
 
   def fakeSort(slice: Slice, sortKey: Vector[CPath]) =
     sortableCValues(slice, sortKey).sortBy(_._1).map(_._2)
@@ -71,6 +70,49 @@ class SliceSpec extends Specification with ScalaCheck {
   def stripUndefineds(cvals: List[CValue]): Set[CValue] =
     (cvals filter (_ != CUndefined)).toSet
 
+  def sliceByteSize(slice: Slice): Long = {
+    val cs = slice.columns.values.map(_.asInstanceOf[ArrayColumn[_]])
+    cs.map(_.byteSize).foldLeft(0L)(_ + _)
+  }
+
+  def assertSlices(values: Vector[CValue], slices: Vector[Slice], expectedSliceSize: Matcher[Int], expectedByteSize: Long) = {
+    if (values.isEmpty) slices.size must be_==(0)
+    else slices.size must expectedSliceSize
+
+    slices.map(s => sliceByteSize(s)).foldLeft(0L)(_ + _) must_==(expectedByteSize)
+    slices.map(s => toCValues(s)).foldLeft(List.empty[CValue])(_ ++ _.flatten) must_==(values.toList)
+  }
+
+  def testFromRValues(values: Vector[CValue]) = {
+    val vByteSizes = values.map(ByteSize.fromRValue)
+    val totalByteSize = vByteSizes.foldLeft(0L)(_ + _)
+    val maxRValueBytes = vByteSizes.foldLeft(0L)(Math.max(_, _))
+
+    // test with a slice size that's just big enough to hold the biggest value
+    val slices = Slice.fromRValues(values, maxRValueBytes).toVector
+    assertSlices(values, slices, be_>(0), totalByteSize)
+  }
+
+  def testFromRValuesFittingIn1Slice(values: Vector[CValue]) = {
+    val vByteSizes = values.map(ByteSize.fromRValue)
+    val totalByteSize = vByteSizes.foldLeft(0L)(_ + _)
+
+    // test with a slice that's just big enough to hold the values
+    val slices = Slice.fromRValues(values, totalByteSize).toVector
+    assertSlices(values, slices, be_==(1), totalByteSize)
+  }
+
+  "fromRValues" should {
+    "construct slices from a simple vector" in {
+      "fits in 1 slice" >> testFromRValuesFittingIn1Slice(Vector(CString("x"), CNum(42)))
+      "multiple slices" >> testFromRValues(Vector(CString("x"), CNum(42)))
+    }
+
+    "construct slices from arbitrary values" in Prop.forAll(genCValues){ values =>
+      testFromRValues(values) and testFromRValuesFittingIn1Slice(values)
+    }
+  }
+
   "sortBy" should {
     "stably sort a slice by a projection" in {
       val array = JParser.parseUnsafe("""[
@@ -81,14 +123,14 @@ class SliceSpec extends Specification with ScalaCheck {
         ]""".stripMargin)
 
       val data = array match {
-        case JArray(rows) => rows.toStream
+        case JArray(rows) => rows.toVector
         case _ => ???
       }
 
       val target = Slice.fromJValues(data)
 
-      // Note the monitonically decreasing sequence
-      // associated with the keys, due having repated
+      // Note the monotonically decreasing sequence
+      // associated with the keys, due to repeated
       // states being sorted in descending order.
       val keyArray = JParser.parseUnsafe("""[
           [ "CA", 0 ],
@@ -98,13 +140,17 @@ class SliceSpec extends Specification with ScalaCheck {
         ]""".stripMargin)
 
       val keyData = keyArray match {
-        case JArray(rows) => rows.toStream
+        case JArray(rows) => rows.toVector
         case _ => ???
       }
 
-      val key = Slice.fromJValues(keyData)
+      val key = {
+        val slices = Slice.fromJValues(keyData)
+        slices.size mustEqual 1
+        slices(0)
+      }
 
-      val result = target.sortWith(key, SortDescending)._1.toJsonElements.toVector
+      val result = target.map(_.sortWith(key, SortDescending)._1.toJsonElements.toVector)
 
       val expectedArray = JParser.parseUnsafe("""[
         { "city": "LOPEZ", "state": "WA" },
@@ -118,7 +164,7 @@ class SliceSpec extends Specification with ScalaCheck {
         case _ => ???
       }
 
-      result mustEqual expected
+      result mustEqual Vector(expected)
     }
 
       // Commented out for now. sortWith is correct semantically, but it ruins
