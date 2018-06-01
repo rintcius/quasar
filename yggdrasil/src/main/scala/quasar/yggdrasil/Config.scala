@@ -20,7 +20,7 @@ object Config {
   val idSource = new FreshAtomicIdSource
 
   def hashJoins = true
-  def maxSliceSize: Int = 20000
+  def maxSliceSize: Int = 16384 // should be power of 2
   def maxSliceColumns: Int = 150
   def maxSliceBytes: Long = 104857600 // 100 MB
 
