@@ -83,33 +83,59 @@ class SliceSpec extends Specification with ScalaCheck with RCValueGenerators {
     slices.map(s => toCValues(s)).foldLeft(List.empty[CValue])(_ ++ _.flatten) must_==(values.toList)
   }
 
-  def testFromRValues(values: Vector[CValue]) = {
+  def valueCalcs(values: Vector[CValue]) = {
     val vByteSizes = values.map(ByteSize.fromRValue)
     val totalByteSize = vByteSizes.foldLeft(0L)(_ + _)
-    val maxRValueBytes = vByteSizes.foldLeft(0L)(Math.max(_, _))
+    // if we get lower than this then at least 1 single CValue won't fit in a slice
+    val minValidByteSize = vByteSizes.foldLeft(0L)(Math.max(_, _))
+
+    val columnsPerValue: Vector[Vector[ColumnRef]] = values.map(_.flattenWithPath.map { case (p, v) => ColumnRef(p, v.cType) })
+    val totalColumns = columnsPerValue.flatten.toSet.size
+    // if we get lower than this then at least 1 single CValue won't fit in a slice
+    val minValidColumns = columnsPerValue.map(_.size).foldLeft(0)(Math.max(_, _))
+
+    (minValidByteSize, totalByteSize, minValidColumns, totalColumns)
+  }
+
+  def testFromRValuesLowestValidSliceBytes(values: Vector[CValue]) = {
+    val (minValidByteSize, totalByteSize, _, totalColumns) = valueCalcs(values)
 
     // test with a slice size that's just big enough to hold the biggest value
-    val slices = Slice.fromRValues(values, maxRValueBytes).toVector
+    // i.e. the minimal value that's still valid
+    val slices = Slice.fromRValues(values, minValidByteSize, totalColumns).toVector
+    assertSlices(values, slices, be_>(0), totalByteSize)
+  }
+
+  def testFromRValuesLowestValidNrColumns(values: Vector[CValue]) = {
+    val (_, totalByteSize, minValidColumns, totalColumns) = valueCalcs(values)
+
+    // test with a slice config that has a maxNrColumns that is as low as possible while still valid
+    val slices = Slice.fromRValues(values, totalByteSize, minValidColumns).toVector
     assertSlices(values, slices, be_>(0), totalByteSize)
   }
 
   def testFromRValuesFittingIn1Slice(values: Vector[CValue]) = {
-    val vByteSizes = values.map(ByteSize.fromRValue)
-    val totalByteSize = vByteSizes.foldLeft(0L)(_ + _)
+    val (minValidByteSize, totalByteSize, minValidColumns, totalColumns) = valueCalcs(values)
 
     // test with a slice that's just big enough to hold the values
-    val slices = Slice.fromRValues(values, totalByteSize).toVector
+    val slices = Slice.fromRValues(values, totalByteSize, totalColumns).toVector
     assertSlices(values, slices, be_==(1), totalByteSize)
   }
 
   "fromRValues" should {
+
+    val v = Vector(CString("x"), CNum(42))
+
     "construct slices from a simple vector" in {
-      "fits in 1 slice" >> testFromRValuesFittingIn1Slice(Vector(CString("x"), CNum(42)))
-      "multiple slices" >> testFromRValues(Vector(CString("x"), CNum(42)))
+      "fits in 1 slice" >> testFromRValuesFittingIn1Slice(v)
+      "with minimal valid maxSliceColumns" >> testFromRValuesLowestValidNrColumns(v)
+      "with minimal valid maxSliceBytes" >> testFromRValuesLowestValidSliceBytes(v)
     }
 
     "construct slices from arbitrary values" in Prop.forAll(genCValues){ values =>
-      testFromRValues(values) and testFromRValuesFittingIn1Slice(values)
+      testFromRValuesLowestValidSliceBytes(values) and
+      testFromRValuesLowestValidNrColumns(values) and
+      testFromRValuesFittingIn1Slice(values)
     }
   }
 

@@ -1789,12 +1789,16 @@ object Slice {
     }
   }
 
-  def updateRefs(rv: RValue, into: Map[ColumnRef, ArrayColumn[_]], sliceIndex: Int, nrRows: Int): Map[ColumnRef, ArrayColumn[_]] = {
+  def updateRefs(
+    columnRefValues: Vector[(ColumnRef, CValue)],
+    into: Map[ColumnRef, ArrayColumn[_]],
+    sliceIndex: Int,
+    nrRows: Int)
+      : Map[ColumnRef, ArrayColumn[_]] = {
 
-    rv.flattenWithPath.foldLeft(into) {
-      case (acc, (cpath, CUndefined)) => acc
-      case (acc, (cpath, cvalue)) =>
-        val ref = ColumnRef(cpath, (cvalue.cType))
+    columnRefValues.foldLeft(into) {
+      case (acc, (ref, CUndefined)) => acc
+      case (acc, (ref, cvalue)) =>
 
         val updatedColumn: ArrayColumn[_] = cvalue match {
           case CBoolean(b) =>
@@ -1888,19 +1892,33 @@ object Slice {
   def fromJValues(values: Vector[JValue], maxBytes: Long = Config.maxSliceBytes): Stream[Slice] =
     fromRValues(values.flatMap(RValue.fromJValue), maxBytes)
 
-  def fromRValues(values: Vector[RValue], maxBytes: Long = Config.maxSliceBytes): Stream[Slice] = {
+  def fromRValues(
+    values: Vector[RValue],
+    maxBytes: Long = Config.maxSliceBytes,
+    maxColumns: Int = Config.maxSliceColumns): Stream[Slice] = {
+
     val nrRows = values.size
 
     @tailrec def buildColArrays(from: Vector[RValue], into: Map[ColumnRef, ArrayColumn[_]], sliceRowIndex: Int, currentSliceBytes: Long)
         : (Map[ColumnRef, ArrayColumn[_]], Int, Vector[RValue]) =
       from match {
         case jv +: xs =>
-          val nextCurrentSliceBytes = currentSliceBytes + ByteSize.fromRValue(jv)
-          if (nextCurrentSliceBytes <= maxBytes) {
-            val refs = updateRefs(jv, into, sliceRowIndex, nrRows)
-            buildColArrays(xs, refs, sliceRowIndex + 1, nextCurrentSliceBytes)
+          val nextSliceBytes = currentSliceBytes + ByteSize.fromRValue(jv)
+
+          if (nextSliceBytes <= maxBytes) {
+            val columnRefValues: Vector[(ColumnRef, CValue)] =
+              jv.flattenWithPath.map { case (p, v) => (ColumnRef(p, v.cType), v) }
+            val nextNrColumns = (columnRefValues.map(_._1) ++ into.keys).toSet.size
+
+            if (nextNrColumns <= maxColumns) {
+              val refs = updateRefs(columnRefValues, into, sliceRowIndex, nrRows)
+              buildColArrays(xs, refs, sliceRowIndex + 1, nextSliceBytes)
+            } else
+              (into, sliceRowIndex, from)
+
           } else
             (into, sliceRowIndex, from)
+
         case _ =>
           (into, sliceRowIndex, Vector.empty)
       }
