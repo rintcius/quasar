@@ -1889,33 +1889,27 @@ object Slice {
     }
   }
 
-  def fromJValues(values: Vector[JValue], maxBytes: Long = Config.maxSliceBytes): Stream[Slice] =
-    fromRValues(values.flatMap(RValue.fromJValue), maxBytes)
+  def fromJValues(values: Vector[JValue]): Stream[Slice] =
+    fromRValues(values.flatMap(RValue.fromJValue))
 
   def fromRValues(
     values: Vector[RValue],
-    maxBytes: Long = Config.maxSliceBytes,
-    maxColumns: Int = Config.maxSliceColumns): Stream[Slice] = {
+    maxColumns: Int = Config.maxSliceColumns)
+      : Stream[Slice] = {
 
     val nrRows = values.size
 
-    @tailrec def buildColArrays(from: Vector[RValue], into: Map[ColumnRef, ArrayColumn[_]], sliceRowIndex: Int, currentSliceBytes: Long)
+    @tailrec def buildColArrays(from: Vector[RValue], into: Map[ColumnRef, ArrayColumn[_]], sliceRowIndex: Int)
         : (Map[ColumnRef, ArrayColumn[_]], Int, Vector[RValue]) =
       from match {
         case jv +: xs =>
-          val nextSliceBytes = currentSliceBytes + ByteSize.fromRValue(jv)
+          val columnRefValues: Vector[(ColumnRef, CValue)] =
+            jv.flattenWithPath.map { case (p, v) => (ColumnRef(p, v.cType), v) }
+          val nextNrColumns = (columnRefValues.map(_._1) ++ into.keys).toSet.size
 
-          if (nextSliceBytes <= maxBytes) {
-            val columnRefValues: Vector[(ColumnRef, CValue)] =
-              jv.flattenWithPath.map { case (p, v) => (ColumnRef(p, v.cType), v) }
-            val nextNrColumns = (columnRefValues.map(_._1) ++ into.keys).toSet.size
-
-            if (nextNrColumns <= maxColumns) {
-              val refs = updateRefs(columnRefValues, into, sliceRowIndex, nrRows)
-              buildColArrays(xs, refs, sliceRowIndex + 1, nextSliceBytes)
-            } else
-              (into, sliceRowIndex, from)
-
+          if (nextNrColumns <= maxColumns) {
+            val refs = updateRefs(columnRefValues, into, sliceRowIndex, nrRows)
+            buildColArrays(xs, refs, sliceRowIndex + 1)
           } else
             (into, sliceRowIndex, from)
 
@@ -1925,7 +1919,7 @@ object Slice {
 
     def buildSlice(values: Vector[RValue]): (Slice, Vector[RValue]) = {
       val (cs, sz, restValues) =
-        buildColArrays(values, Map.empty[ColumnRef, ArrayColumn[_]], 0, 0L)
+        buildColArrays(values, Map.empty[ColumnRef, ArrayColumn[_]], 0)
       val slice = new Slice {
         val columns = cs
         val size = sz

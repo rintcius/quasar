@@ -616,9 +616,9 @@ trait ColumnarTableModule
       }
     }
 
-    def fromRValues(values: Vector[RValue], maxSliceBytes: Long): Table =
+    def fromRValues(values: Vector[RValue]): Table =
       Table (
-        StreamT.fromStream(Slice.fromRValues(values, maxSliceBytes).point[IO]),
+        StreamT.fromStream(Slice.fromRValues(values).point[IO]),
         ExactSize(values.length))
 
     def join(left: Table, right: Table, orderHint: Option[JoinOrder] = None)(leftKeySpec: TransSpec1,

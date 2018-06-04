@@ -33,7 +33,6 @@ trait DefinedAtIndex {
 
 trait ArrayColumn[@specialized(Boolean, Long, Double) A] extends DefinedAtIndex with ExtensibleColumn {
   def update(row: Int, value: A): Unit
-  def byteSize: Long
 }
 
 class ArrayHomogeneousArrayColumn[@specialized(Boolean, Long, Double) A](val defined: BitSet, values: Array[Array[A]])(val tpe: CArrayType[A])
@@ -45,8 +44,6 @@ class ArrayHomogeneousArrayColumn[@specialized(Boolean, Long, Double) A](val def
     defined.set(row)
     values(row) = value
   }
-
-  def byteSize: Long = defined.cardinality * ByteSize.array
 }
 
 object ArrayHomogeneousArrayColumn {
@@ -68,8 +65,6 @@ class ArrayBoolColumn(val defined: BitSet, val values: BitSet) extends ArrayColu
     defined.set(row)
     if (value) values.set(row) else values.clear(row)
   }
-
-  def byteSize: Long = defined.cardinality * ByteSize.boolean
 }
 
 object ArrayBoolColumn {
@@ -94,7 +89,6 @@ class ArrayLongColumn(val defined: BitSet, val values: Array[Long]) extends Arra
     defined.set(row)
     values(row) = value
   }
-  def byteSize: Long = defined.cardinality * ByteSize.long
 }
 
 object ArrayLongColumn {
@@ -113,8 +107,6 @@ class ArrayDoubleColumn(val defined: BitSet, values: Array[Double]) extends Arra
     defined.set(row)
     values(row) = value
   }
-
-  def byteSize: Long = defined.cardinality * ByteSize.double
 }
 
 object ArrayDoubleColumn {
@@ -133,8 +125,6 @@ class ArrayNumColumn(val defined: BitSet, val values: Array[BigDecimal]) extends
     defined.set(row)
     values(row) = value
   }
-
-  def byteSize: Long = defined.cardinality * ByteSize.bigDecimal
 }
 
 object ArrayNumColumn {
@@ -153,8 +143,6 @@ class ArrayStrColumn(val defined: BitSet, values: Array[String]) extends ArrayCo
     defined.set(row)
     values(row) = value
   }
-
-  def byteSize = defined.cardinality * ByteSize.string
 }
 
 object ArrayStrColumn {
@@ -173,8 +161,6 @@ class ArrayOffsetDateTimeColumn(val defined: BitSet, values: Array[OffsetDateTim
     defined.set(row)
     values(row) = value
   }
-
-  def byteSize: Long = defined.cardinality * ByteSize.offsetDateTime
 }
 
 object ArrayOffsetDateTimeColumn {
@@ -193,8 +179,6 @@ class ArrayOffsetTimeColumn(val defined: BitSet, values: Array[OffsetTime]) exte
     defined.set(row)
     values(row) = value
   }
-
-  def byteSize: Long = defined.cardinality * ByteSize.offsetTime
 }
 
 object ArrayOffsetTimeColumn {
@@ -213,8 +197,6 @@ class ArrayOffsetDateColumn(val defined: BitSet, values: Array[OffsetDate]) exte
     defined.set(row)
     values(row) = value
   }
-
-  def byteSize: Long = defined.cardinality * ByteSize.offsetDate
 }
 
 object ArrayOffsetDateColumn {
@@ -233,8 +215,6 @@ class ArrayLocalDateTimeColumn(val defined: BitSet, values: Array[LocalDateTime]
     defined.set(row)
     values(row) = value
   }
-
-  def byteSize: Long = defined.cardinality * ByteSize.localDateTime
 }
 
 object ArrayLocalDateTimeColumn {
@@ -253,8 +233,6 @@ class ArrayLocalTimeColumn(val defined: BitSet, values: Array[LocalTime]) extend
     defined.set(row)
     values(row) = value
   }
-
-  def byteSize: Long = defined.cardinality * ByteSize.localTime
 }
 
 object ArrayLocalTimeColumn {
@@ -273,8 +251,6 @@ class ArrayLocalDateColumn(val defined: BitSet, values: Array[LocalDate]) extend
     defined.set(row)
     values(row) = value
   }
-
-  def byteSize: Long = defined.cardinality * ByteSize.localDate
 }
 
 object ArrayLocalDateColumn {
@@ -293,8 +269,6 @@ class ArrayIntervalColumn(val defined: BitSet, values: Array[DateTimeInterval]) 
     defined.set(row)
     values(row) = value
   }
-
-  def byteSize: Long = defined.cardinality * ByteSize.dateTimeInterval
 }
 
 object ArrayIntervalColumn {
@@ -310,8 +284,6 @@ class MutableEmptyArrayColumn(val defined: BitSet) extends ArrayColumn[Boolean] 
   def update(row: Int, value: Boolean) = {
     if (value) defined.set(row) else defined.clear(row)
   }
-
-  def byteSize: Long = defined.cardinality * ByteSize.emptyArray
 }
 
 object MutableEmptyArrayColumn {
@@ -322,8 +294,6 @@ class MutableEmptyObjectColumn(val defined: BitSet) extends ArrayColumn[Boolean]
   def update(row: Int, value: Boolean) = {
     if (value) defined.set(row) else defined.clear(row)
   }
-
-  def byteSize: Long = defined.cardinality * ByteSize.emptyObject
 }
 
 object MutableEmptyObjectColumn {
@@ -334,8 +304,6 @@ class MutableNullColumn(val defined: BitSet) extends ArrayColumn[Boolean] with N
   def update(row: Int, value: Boolean) = {
     if (value) defined.set(row) else defined.clear(row)
   }
-
-  def byteSize: Long = defined.cardinality * ByteSize.null_
 }
 
 object MutableNullColumn {
