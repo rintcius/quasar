@@ -676,7 +676,7 @@ trait ReductionLibModule extends ColumnarTableLibModule {
       }
 
       def extract(res: Result): Table =
-        Table.fromRValues0(res.toVector)
+        Table.fromRValues(res.toVector, None)
 
       def extractValue(res: Result) = res
     }
@@ -717,7 +717,7 @@ trait ReductionLibModule extends ColumnarTableLibModule {
       }
 
       def extract(res: Result): Table =
-        Table.fromRValues0(res.toVector.map(_()))
+        Table.fromRValues(res.toVector.map(_()), None)
 
       def extractValue(res: Result) = res.map(_())
     }
@@ -748,7 +748,7 @@ trait ReductionLibModule extends ColumnarTableLibModule {
       }
 
       def extract(res: Result): Table =
-        Table.fromRValues0(extractValue(res).toVector)
+        Table.fromRValues(extractValue(res).toVector, Some(1))
 
       def extractValue(res: Result) = Some(RArray(res))
     }

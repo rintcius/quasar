@@ -1894,6 +1894,7 @@ object Slice {
 
   def fromRValues(
     values: Vector[RValue],
+    maxRows: Int = Config.maxSliceSize,
     maxColumns: Int = Config.maxSliceColumns)
       : Stream[Slice] = {
 
@@ -1918,13 +1919,14 @@ object Slice {
       }
 
     def buildSlice(values: Vector[RValue]): (Slice, Vector[RValue]) = {
+      val (values0, values1) = values.splitAt(maxRows)
       val (cs, sz, restValues) =
-        buildColArrays(values, Map.empty[ColumnRef, ArrayColumn[_]], 0)
+        buildColArrays(values0, Map.empty[ColumnRef, ArrayColumn[_]], 0)
       val slice = new Slice {
         val columns = cs
         val size = sz
       }
-      (slice, restValues)
+      (slice, values1 ++ restValues)
     }
 
     def buildSlices(values: Vector[RValue]): Stream[Slice] =
