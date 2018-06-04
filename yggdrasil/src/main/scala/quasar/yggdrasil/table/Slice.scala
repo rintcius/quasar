@@ -1899,6 +1899,7 @@ object Slice {
       : Stream[Slice] = {
 
     val nrRows = values.size
+    require(maxRows > 0, "maxRows must be positive")
 
     @tailrec def buildColArrays(from: Vector[RValue], into: Map[ColumnRef, ArrayColumn[_]], sliceRowIndex: Int)
         : (Map[ColumnRef, ArrayColumn[_]], Int, Vector[RValue]) =

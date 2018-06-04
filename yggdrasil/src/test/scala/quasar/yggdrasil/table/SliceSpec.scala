@@ -78,28 +78,38 @@ class SliceSpec extends Specification with ScalaCheck with RCValueGenerators {
   }
 
   def valueCalcs(values: Vector[CValue]) = {
+    val totalRows = values.size
 
     val columnsPerValue: Vector[Vector[ColumnRef]] = values.map(_.flattenWithPath.map { case (p, v) => ColumnRef(p, v.cType) })
     val totalColumns = columnsPerValue.flatten.toSet.size
     // if we get lower than this then at least 1 single CValue won't fit in a slice
     val minValidColumns = columnsPerValue.map(_.size).foldLeft(0)(Math.max(_, _))
 
-    (minValidColumns, totalColumns)
+    (totalRows, minValidColumns, totalColumns)
   }
 
   def testFromRValuesLowestValidNrColumns(values: Vector[CValue]) = {
-    val (minValidColumns, totalColumns) = valueCalcs(values)
+    val (totalRows, minValidColumns, totalColumns) = valueCalcs(values)
 
     // test with a slice config that has a maxNrColumns that is as low as possible while still valid
-    val slices = Slice.fromRValues(values, minValidColumns).toVector
+    val slices = Slice.fromRValues(values, maxRows = Math.max(totalRows, 1), maxColumns = minValidColumns).toVector
     assertSlices(values, slices, be_>(0))
   }
 
+  def testFromRValuesNrRowsOverflow(values: Vector[CValue]) = {
+    val (totalRows, _, totalColumns) = valueCalcs(values)
+    val maxSliceRows = Math.max(1, Math.ceil(totalRows.toDouble / 3).toInt)
+    val expectedNrSlices = Math.min(Math.ceil(totalRows.toDouble / maxSliceRows).toInt, 3)
+
+    val slices = Slice.fromRValues(values, maxRows = maxSliceRows, maxColumns = totalColumns).toVector
+    assertSlices(values, slices, be_==(expectedNrSlices))
+  }
+
   def testFromRValuesFittingIn1Slice(values: Vector[CValue]) = {
-    val (minValidColumns, totalColumns) = valueCalcs(values)
+    val (totalRows, minValidColumns, totalColumns) = valueCalcs(values)
 
     // test with a slice that's just big enough to hold the values
-    val slices = Slice.fromRValues(values, totalColumns).toVector
+    val slices = Slice.fromRValues(values, maxRows = Math.max(totalRows, 1), maxColumns = totalColumns).toVector
     assertSlices(values, slices, be_==(1))
   }
 
@@ -109,10 +119,12 @@ class SliceSpec extends Specification with ScalaCheck with RCValueGenerators {
 
     "construct slices from a simple vector" in {
       "fits in 1 slice" >> testFromRValuesFittingIn1Slice(v)
+      "nrRows overflow" >> testFromRValuesNrRowsOverflow(v)
       "with minimal valid maxSliceColumns" >> testFromRValuesLowestValidNrColumns(v)
     }
 
     "construct slices from arbitrary values" in Prop.forAll(genCValues){ values =>
+      testFromRValuesNrRowsOverflow(values) and
       testFromRValuesLowestValidNrColumns(values) and
       testFromRValuesFittingIn1Slice(values)
     }
