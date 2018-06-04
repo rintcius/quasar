@@ -1898,10 +1898,13 @@ object Slice {
     maxColumns: Int = Config.maxSliceColumns)
       : Stream[Slice] = {
 
-    val nrRows = values.size
     require(maxRows > 0, "maxRows must be positive")
 
-    @tailrec def buildColArrays(from: Vector[RValue], into: Map[ColumnRef, ArrayColumn[_]], sliceRowIndex: Int)
+    @tailrec def buildColArrays(
+      from: Vector[RValue],
+      into: Map[ColumnRef, ArrayColumn[_]],
+      sliceRowIndex: Int,
+      nrRows: Int)
         : (Map[ColumnRef, ArrayColumn[_]], Int, Vector[RValue]) =
       from match {
         case jv +: xs =>
@@ -1911,7 +1914,7 @@ object Slice {
 
           if (nextNrColumns <= maxColumns) {
             val refs = updateRefs(columnRefValues, into, sliceRowIndex, nrRows)
-            buildColArrays(xs, refs, sliceRowIndex + 1)
+            buildColArrays(xs, refs, sliceRowIndex + 1, nrRows)
           } else
             (into, sliceRowIndex, from)
 
@@ -1922,7 +1925,7 @@ object Slice {
     def buildSlice(values: Vector[RValue]): (Slice, Vector[RValue]) = {
       val (values0, values1) = values.splitAt(maxRows)
       val (cs, sz, restValues) =
-        buildColArrays(values0, Map.empty[ColumnRef, ArrayColumn[_]], 0)
+        buildColArrays(values0, Map.empty[ColumnRef, ArrayColumn[_]], 0, values0.size)
       val slice = new Slice {
         val columns = cs
         val size = sz
