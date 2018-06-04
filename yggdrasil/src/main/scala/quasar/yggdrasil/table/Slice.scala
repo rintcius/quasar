@@ -1933,14 +1933,14 @@ object Slice {
       (slice, values1 ++ restValues)
     }
 
-    def buildSlices(values: Vector[RValue]): Stream[Slice] =
-      if (values.isEmpty) Stream.empty
+    @tailrec def buildSlices(values: Vector[RValue], slices: Stream[Slice]): Stream[Slice] =
+      if (values.isEmpty) slices
       else {
         val (slice, restValues) = buildSlice(values)
-        slice +: buildSlices(restValues)
+        buildSlices(restValues, slices :+ slice)
       }
 
-    buildSlices(values)
+    buildSlices(values, Stream.empty)
   }
 
   /**
