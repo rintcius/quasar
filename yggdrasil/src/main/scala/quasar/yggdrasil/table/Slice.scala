@@ -1912,7 +1912,11 @@ object Slice {
             jv.flattenWithPath.map { case (p, v) => (ColumnRef(p, v.cType), v) }
           val nextNrColumns = (columnRefValues.map(_._1) ++ into.keys).toSet.size
 
-          if (nextNrColumns <= maxColumns) {
+          // NB: don't allow exceeding maxColumns
+          // EXCEPT if all these columns come from a single RValue
+          // Later we can hopefully get rid of this exception
+          // (e.g. once we have table specific configs)
+          if ((nextNrColumns <= maxColumns) || (into.isEmpty)) {
             val refs = updateRefs(columnRefValues, into, sliceRowIndex, nrRows)
             buildColArrays(xs, refs, sliceRowIndex + 1, nrRows)
           } else

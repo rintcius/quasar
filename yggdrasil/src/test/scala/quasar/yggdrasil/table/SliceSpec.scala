@@ -19,6 +19,7 @@ package quasar.yggdrasil.table
 import quasar.RCValueGenerators
 import quasar.blueeyes._
 import quasar.blueeyes.json._
+import quasar.fp.ski.ι
 import quasar.precog.BitSet
 import quasar.precog.TestSupport._
 import quasar.precog.common._
@@ -75,6 +76,7 @@ class SliceSpec extends Specification with ScalaCheck with RCValueGenerators {
     else slices.size must expectedSliceSize
 
     slices.map(s => toCValues(s)).foldLeft(List.empty[CValue])(_ ++ _.flatten) must_==(values.toList)
+    slices.map(s => toCValues(s).isEmpty).exists(ι) must_==(false)
   }
 
   def valueCalcs(values: Vector[CValue]) = {
@@ -82,21 +84,26 @@ class SliceSpec extends Specification with ScalaCheck with RCValueGenerators {
 
     val columnsPerValue: Vector[Vector[ColumnRef]] = values.map(_.flattenWithPath.map { case (p, v) => ColumnRef(p, v.cType) })
     val totalColumns = columnsPerValue.flatten.toSet.size
-    // if we get lower than this then at least 1 single CValue won't fit in a slice
-    val minValidColumns = columnsPerValue.map(_.size).foldLeft(0)(Math.max(_, _))
+    val nrColumnsBiggestValue = columnsPerValue.map(_.size).foldLeft(0)(Math.max(_, _))
 
-    (totalRows, minValidColumns, totalColumns)
+    (totalRows, nrColumnsBiggestValue, totalColumns)
   }
 
-  def testFromRValuesLowestValidNrColumns(values: Vector[CValue]) = {
-    val (totalRows, minValidColumns, totalColumns) = valueCalcs(values)
+  def testFromRValuesMaxSliceColumnsEqualsBiggestValue(values: Vector[CValue]) = {
+    val (totalRows, nrColumnsBiggestValue, totalColumns) = valueCalcs(values)
 
-    // test with a slice config that has a maxNrColumns that is as low as possible while still valid
-    val slices = Slice.fromRValues(values, maxRows = Math.max(totalRows, 1), maxColumns = minValidColumns).toVector
+    val slices = Slice.fromRValues(values, maxRows = Math.max(totalRows, 1), maxColumns = nrColumnsBiggestValue).toVector
     assertSlices(values, slices, be_>(0))
   }
 
-  def testFromRValuesNrRowsOverflow(values: Vector[CValue]) = {
+  def testFromRValuesMaxSliceColumnsLowerThanBiggestValue(values: Vector[CValue]) = {
+    val (totalRows, nrColumnsBiggestValue, totalColumns) = valueCalcs(values)
+
+    val slices = Slice.fromRValues(values, maxRows = Math.max(totalRows, 1), maxColumns = nrColumnsBiggestValue - 1).toVector
+    assertSlices(values, slices, be_>(0))
+  }
+
+  def testFromRValuesMaxSliceRowsOverflow(values: Vector[CValue]) = {
     val (totalRows, _, totalColumns) = valueCalcs(values)
     val maxSliceRows = Math.max(1, Math.ceil(totalRows.toDouble / 3).toInt)
     val expectedNrSlices = Math.min(Math.ceil(totalRows.toDouble / maxSliceRows).toInt, 3)
@@ -105,7 +112,7 @@ class SliceSpec extends Specification with ScalaCheck with RCValueGenerators {
     assertSlices(values, slices, be_==(expectedNrSlices))
   }
 
-  def testFromRValuesNrRows1(values: Vector[CValue]) = {
+  def testFromRValuesMaxSliceRows1(values: Vector[CValue]) = {
     val (totalRows, _, totalColumns) = valueCalcs(values)
     val maxSliceRows = 1
 
@@ -114,7 +121,7 @@ class SliceSpec extends Specification with ScalaCheck with RCValueGenerators {
   }
 
   def testFromRValuesFittingIn1Slice(values: Vector[CValue]) = {
-    val (totalRows, minValidColumns, totalColumns) = valueCalcs(values)
+    val (totalRows, _, totalColumns) = valueCalcs(values)
 
     // test with a slice that's just big enough to hold the values
     val slices = Slice.fromRValues(values, maxRows = Math.max(totalRows, 1), maxColumns = totalColumns).toVector
@@ -127,23 +134,28 @@ class SliceSpec extends Specification with ScalaCheck with RCValueGenerators {
 
     "construct slices from a simple vector" in {
       "fits in 1 slice" >> testFromRValuesFittingIn1Slice(v)
-      "nrRows overflow" >> testFromRValuesNrRowsOverflow(v)
-      "with minimal valid maxSliceColumns" >> testFromRValuesLowestValidNrColumns(v)
+      "maxSliceRows < nrRows" >> testFromRValuesMaxSliceRowsOverflow(v)
+      "maxSliceRows = 1" >> testFromRValuesMaxSliceRows1(v)
+      "maxSliceColumns = nrColumns of biggest value" >> testFromRValuesMaxSliceColumnsEqualsBiggestValue(v)
+      "maxSliceColumns < nrColumns of biggest value" >> testFromRValuesMaxSliceColumnsLowerThanBiggestValue(v)
     }
 
     val v1 = Vector.tabulate(10000)(CNum(_))
 
     "construct slices from a big vector" in {
       "fits in 1 slice" >> testFromRValuesFittingIn1Slice(v1)
-      "nrRows overflow" >> testFromRValuesNrRowsOverflow(v1)
-      "maxSliceRows = 1 overflow" >> testFromRValuesNrRows1(v1)
-      "with minimal valid maxSliceColumns" >> testFromRValuesLowestValidNrColumns(v1)
+      "maxSliceRows < nrRows" >> testFromRValuesMaxSliceRowsOverflow(v1)
+      "maxSliceRows = 1" >> testFromRValuesMaxSliceRows1(v1)
+      "maxSliceColumns = nrColumns of biggest value" >> testFromRValuesMaxSliceColumnsEqualsBiggestValue(v1)
+      "maxSliceColumns < nrColumns of biggest value" >> testFromRValuesMaxSliceColumnsLowerThanBiggestValue(v1)
     }
 
     "construct slices from arbitrary values" in Prop.forAll(genCValues){ values =>
-      testFromRValuesNrRowsOverflow(values) and
-      testFromRValuesLowestValidNrColumns(values) and
-      testFromRValuesFittingIn1Slice(values)
+      testFromRValuesFittingIn1Slice(values) and
+      testFromRValuesMaxSliceRowsOverflow(values) and
+      testFromRValuesMaxSliceRows1(values) and
+      testFromRValuesMaxSliceColumnsEqualsBiggestValue(values) and
+      testFromRValuesMaxSliceColumnsLowerThanBiggestValue(values)
     }
   }
 
