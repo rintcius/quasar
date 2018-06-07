@@ -823,20 +823,20 @@ trait ColumnarTableModule
       }
 
 
-      def step(currentRows: Int, acc: List[Slice], stream: StreamT[IO, Slice]): IO[StreamT.Step[Slice, StreamT[IO, Slice]]] = {
+      def step(currentRows: Int, currentSlices: List[Slice], stream: StreamT[IO, Slice]): IO[StreamT.Step[Slice, StreamT[IO, Slice]]] = {
         stream.uncons flatMap {
           case Some((head, tail)) =>
             if (head.size == 0) {
               // Skip empty slices.
-              step(currentRows, acc, tail)
+              step(currentRows, currentSlices, tail)
             } else {
               accumulateOrEmit(currentRows, head) match {
                 case -\/(nextRows) =>
                   // keep accumulating
-                  step(nextRows, head :: acc, tail)
+                  step(nextRows, head :: currentSlices, tail)
                 case \/-((fits, overflow)) =>
                   // emit
-                  val slice = concat(fits :: acc)
+                  val slice = concat(fits :: currentSlices)
                   val toProcess = overflow.map(_ :: tail).getOrElse(tail)
                   IO(StreamT.Yield(slice, StreamT(step(0, Nil, toProcess))))
                }
@@ -844,7 +844,7 @@ trait ColumnarTableModule
 
           case None =>
             if (currentRows > 0) {
-              IO(StreamT.Yield(concat(acc), StreamT.empty[IO, Slice]))
+              IO(StreamT.Yield(concat(currentSlices), StreamT.empty[IO, Slice]))
             } else {
               IO.pure(StreamT.Done)
             }
