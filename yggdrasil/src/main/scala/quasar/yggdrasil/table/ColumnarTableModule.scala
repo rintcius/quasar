@@ -808,32 +808,42 @@ trait ColumnarTableModule
           }
       }
 
-      def step(sliceSize: Int, acc: List[Slice], stream: StreamT[IO, Slice]): IO[StreamT.Step[Slice, StreamT[IO, Slice]]] = {
+      def accumulateOrEmit(currentRows: Int, slice: Slice)
+          : Int \/ (Slice, Option[Slice]) = {
+        val nextRows = currentRows + slice.size
+
+        if (nextRows < minLength)
+          -\/(nextRows)
+        else if (nextRows > maxLength) {
+          val splitAt = maxLength - currentRows
+          val (prefix, suffix) = slice.split(splitAt)
+          \/-((prefix, suffix.some))
+        } else
+          \/-((slice, None))
+      }
+
+
+      def step(currentRows: Int, acc: List[Slice], stream: StreamT[IO, Slice]): IO[StreamT.Step[Slice, StreamT[IO, Slice]]] = {
         stream.uncons flatMap {
           case Some((head, tail)) =>
             if (head.size == 0) {
               // Skip empty slices.
-              step(sliceSize, acc, tail)
-
-            } else if (sliceSize + head.size >= minLength) {
-              // We emit a slice, but the last slice added may fall on a stream boundary.
-              val splitAt = math.min(head.size, maxLength - sliceSize)
-              if (splitAt < head.size) {
-                val (prefix, suffix) = head.split(splitAt)
-                val slice            = concat(prefix :: acc)
-                IO(StreamT.Yield(slice, StreamT(step(0, Nil, suffix :: tail))))
-              } else {
-                val slice = concat(head :: acc)
-                IO(StreamT.Yield(slice, StreamT(step(0, Nil, tail))))
-              }
-
+              step(currentRows, acc, tail)
             } else {
-              // Just keep swimming (aka accumulating).
-              step(sliceSize + head.size, head :: acc, tail)
+              accumulateOrEmit(currentRows, head) match {
+                case -\/(nextRows) =>
+                  // keep accumulating
+                  step(nextRows, head :: acc, tail)
+                case \/-((fits, overflow)) =>
+                  // emit
+                  val slice = concat(fits :: acc)
+                  val toProcess = overflow.map(_ :: tail).getOrElse(tail)
+                  IO(StreamT.Yield(slice, StreamT(step(0, Nil, toProcess))))
+               }
             }
 
           case None =>
-            if (sliceSize > 0) {
+            if (currentRows > 0) {
               IO(StreamT.Yield(concat(acc), StreamT.empty[IO, Slice]))
             } else {
               IO.pure(StreamT.Done)
