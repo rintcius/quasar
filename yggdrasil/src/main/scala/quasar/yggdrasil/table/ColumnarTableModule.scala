@@ -790,7 +790,7 @@ trait ColumnarTableModule
       * For slices being loaded from ingest, it is often the case that we are missing a
       * few rows at the end, so we shouldn't be too strict.
       */
-    def canonicalize(length: Int, maxLength0: Option[Int] = None): Table = {
+    def canonicalize(length: Int, maxLength0: Option[Int]): Table = {
       val minLength = length
       val maxLength = maxLength0 getOrElse length
 
