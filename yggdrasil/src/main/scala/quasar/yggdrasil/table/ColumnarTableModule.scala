@@ -784,17 +784,17 @@ trait ColumnarTableModule
     }
 
     /**
-      * Returns a table where each slice (except maybe the last) has slice size `length`.
-      * Also removes slices of size zero. If an optional `maxLength0` size is provided,
-      * then the slices need only land in the range between `length` and `maxLength0`.
+      * Returns a table where each slice (except maybe the last) has slice size `sliceRows`.
+      * Also removes slices of size zero. If an optional `maxSliceRows` size is provided,
+      * then the slices need only land in the range between `sliceRows` and `maxSliceRows`.
       * For slices being loaded from ingest, it is often the case that we are missing a
       * few rows at the end, so we shouldn't be too strict.
       */
-    def canonicalize(length: Int, maxLength0: Option[Int]): Table = {
-      val minLength = length
-      val maxLength = maxLength0 getOrElse length
+    def canonicalize(sliceRows: Int, maxSliceRows: Option[Int]): Table = {
+      val minRows = sliceRows
+      val maxRows = maxSliceRows getOrElse sliceRows
 
-      require(maxLength > 0 && minLength >= 0 && maxLength >= minLength, "length bounds must be positive and ordered")
+      require(maxRows > 0 && minRows >= 0 && maxRows >= minRows, "rows bounds must be positive and ordered")
 
       def concat(rslices: List[Slice]): Slice = rslices.reverse match {
         case Nil          => Slice(Map.empty, 0)
@@ -812,16 +812,15 @@ trait ColumnarTableModule
           : Int \/ (Slice, Option[Slice]) = {
         val nextRows = currentRows + slice.size
 
-        if (nextRows < minLength)
+        if (nextRows < minRows)
           -\/(nextRows)
-        else if (nextRows > maxLength) {
-          val splitAt = maxLength - currentRows
+        else if (nextRows > maxRows) {
+          val splitAt = maxRows - currentRows
           val (prefix, suffix) = slice.split(splitAt)
           \/-((prefix, suffix.some))
         } else
           \/-((slice, None))
       }
-
 
       def step(currentRows: Int, currentSlices: List[Slice], stream: StreamT[IO, Slice]): IO[StreamT.Step[Slice, StreamT[IO, Slice]]] = {
         stream.uncons flatMap {

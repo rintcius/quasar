@@ -294,7 +294,7 @@ trait TableModule extends TransSpecModule {
 
     def take(count: Long): Table
 
-    def canonicalize(length: Int, maxLength0: Option[Int]): Table
+    def canonicalize(sliceRows: Int, maxSliceRows: Option[Int]): Table
 
     def schemas: IO[Set[JType]]
 
