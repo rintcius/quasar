@@ -790,7 +790,7 @@ trait ColumnarTableModule
       * For slices being loaded from ingest, it is often the case that we are missing a
       * few rows at the end, so we shouldn't be too strict.
       */
-    def canonicalize(sliceRows: Int, maxSliceRows: Option[Int]): Table = {
+    def canonicalize(sliceRows: Int, maxSliceRows: Option[Int], maxColumns: Int): Table = {
       val minRows = sliceRows
       val maxRows = maxSliceRows getOrElse sliceRows
 
@@ -808,49 +808,81 @@ trait ColumnarTableModule
           }
       }
 
-      def accumulateOrEmit(currentRows: Int, slice: Slice)
-          : Int \/ (Slice, Option[Slice]) = {
-        val nextRows = currentRows + slice.size
-
-        if (nextRows < minRows)
-          -\/(nextRows)
-        else if (nextRows > maxRows) {
+      def emitRowBoundary(currentRows: Int, nextRows: Int, slice: Slice)
+          : (Slice, Option[Slice]) =
+        if (nextRows > maxRows) {
           val splitAt = maxRows - currentRows
-          val (prefix, suffix) = slice.split(splitAt)
-          \/-((prefix, suffix.some))
+          val (fits, overflow) = slice.split(splitAt)
+          (fits, overflow.some)
         } else
-          \/-((slice, None))
+          (slice, None)
+
+      def emitColumnBoundary(currentCols: Set[ColumnRef], slice: Slice)
+          : (Slice, Option[Slice]) = {
+        (slice, None)
       }
 
-      def step(currentRows: Int, currentSlices: List[Slice], stream: StreamT[IO, Slice]): IO[StreamT.Step[Slice, StreamT[IO, Slice]]] = {
+      def emitRowOrColumnBoundary(currentRows: Int, currentCols: Set[ColumnRef], slice: Slice)
+          : (Slice, Option[Slice]) = {
+        val splitAt = maxRows - currentRows
+        val (rowFits, rowOverflow) = slice.split(splitAt)
+        val nextColsPrefix = currentCols ++ rowFits.columns.keys
+
+        if (nextColsPrefix.size <= maxColumns)
+          // row boundary was hit first
+          (rowFits, rowOverflow.some)
+        else
+          // colunn boundary was hit first
+          emitColumnBoundary(currentCols, rowFits)
+      }
+
+      def accumulateOrEmit(currentRows: Int, currentCols: Set[ColumnRef], slice: Slice)
+          : (Int, Set[ColumnRef]) \/ (Slice, Option[Slice]) = {
+        val nextRows = currentRows + slice.size
+        val nextCols = currentCols ++ slice.columns.keys
+
+        if (nextCols.size <= maxColumns)
+          if (nextRows < minRows)
+            -\/((nextRows, nextCols))
+          else
+            \/-(emitRowBoundary(currentRows, nextRows, slice))
+
+        else
+          if (nextRows <= maxRows)
+            \/-(emitColumnBoundary(currentCols, slice))
+          else
+            \/-(emitRowOrColumnBoundary(currentRows, currentCols, slice))
+      }
+
+      def step(currentRows: Int, currentCols: Set[ColumnRef], currentSlices: List[Slice], stream: StreamT[IO, Slice])
+          : IO[StreamT.Step[Slice, StreamT[IO, Slice]]] = {
+
         stream.uncons flatMap {
           case Some((head, tail)) =>
-            if (head.size == 0) {
+            if (head.size == 0)
               // Skip empty slices.
-              step(currentRows, currentSlices, tail)
-            } else {
-              accumulateOrEmit(currentRows, head) match {
-                case -\/(nextRows) =>
+              step(currentRows, currentCols, currentSlices, tail)
+            else
+              accumulateOrEmit(currentRows, currentCols, head) match {
+                case -\/((nextRows, nextColumns)) =>
                   // keep accumulating
-                  step(nextRows, head :: currentSlices, tail)
+                  step(nextRows, nextColumns, head :: currentSlices, tail)
                 case \/-((fits, overflow)) =>
                   // emit
                   val slice = concat(fits :: currentSlices)
                   val toProcess = overflow.map(_ :: tail).getOrElse(tail)
-                  IO(StreamT.Yield(slice, StreamT(step(0, Nil, toProcess))))
+                  IO(StreamT.Yield(slice, StreamT(step(0, Set.empty, Nil, toProcess))))
                }
-            }
 
           case None =>
-            if (currentRows > 0) {
+            if (currentRows > 0)
               IO(StreamT.Yield(concat(currentSlices), StreamT.empty[IO, Slice]))
-            } else {
+            else
               IO.pure(StreamT.Done)
-            }
         }
       }
 
-      Table(StreamT(step(0, Nil, slices)), size)
+      Table(StreamT(step(0, Set.empty, Nil, slices)), size)
     }
 
     /**
@@ -1425,8 +1457,8 @@ trait ColumnarTableModule
         }
 
         // We canonicalize the tables so that no slices are too small.
-        val left  = this.canonicalize(Config.minIdealSliceSize, Some(Config.maxSliceSize))
-        val right = that.canonicalize(Config.minIdealSliceSize, Some(Config.maxSliceSize))
+        val left  = this.canonicalize(Config.minIdealSliceSize, Some(Config.maxSliceSize), Config.maxSliceColumns)
+        val right = that.canonicalize(Config.minIdealSliceSize, Some(Config.maxSliceSize), Config.maxSliceColumns)
 
         left.slices.uncons flatMap {
           case Some((lhead, ltail)) =>

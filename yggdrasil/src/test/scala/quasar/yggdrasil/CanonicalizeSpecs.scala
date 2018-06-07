@@ -59,7 +59,7 @@ trait CanonicalizeSpec extends ColumnarTableModuleTestSupport with Specification
       val minLength = Gen.choose(0, size / 2).sample.get
       val maxLength = minLength + Gen.choose(1, size / 2 + 1).sample.get
 
-      val canonicalizedTable = table.canonicalize(minLength, Some(maxLength))
+      val canonicalizedTable = table.canonicalize(minLength, Some(maxLength), 10000)
       val slices = canonicalizedTable.slices.toStream.unsafeRunSync map (_.size)
       if (size > 0) {
         slices.init must contain(like[Int]({ case size: Int => size must beBetween(minLength, maxLength) })).forall
@@ -78,7 +78,7 @@ trait CanonicalizeSpec extends ColumnarTableModuleTestSupport with Specification
       val size = sample.data.size
       val length = Gen.choose(1, size + 3).sample.get
 
-      val canonicalizedTable = table.canonicalize(length, None)
+      val canonicalizedTable = table.canonicalize(length, None, 10000)
       val resultSlices = canonicalizedTable.slices.toStream.unsafeRunSync
       val resultSizes = resultSlices.map(_.size)
 
@@ -94,7 +94,7 @@ trait CanonicalizeSpec extends ColumnarTableModuleTestSupport with Specification
   }.set(minTestsOk =  1000)
 
   def testCanonicalize = {
-    val result = table.canonicalize(3, None)
+    val result = table.canonicalize(3, None, 25)
 
     val slices = result.slices.toStream.unsafeRunSync
     val sizes = slices.map(_.size)
@@ -103,11 +103,11 @@ trait CanonicalizeSpec extends ColumnarTableModuleTestSupport with Specification
   }
 
   def testCanonicalizeZero = {
-    table.canonicalize(0, None) must throwA[IllegalArgumentException]
+    table.canonicalize(0, None, 1) must throwA[IllegalArgumentException]
   }
 
   def testCanonicalizeBoundary = {
-    val result = table.canonicalize(5, None)
+    val result = table.canonicalize(5, None, 25)
 
     val slices = result.slices.toStream.unsafeRunSync
     val sizes = slices.map(_.size)
@@ -116,7 +116,7 @@ trait CanonicalizeSpec extends ColumnarTableModuleTestSupport with Specification
   }
 
   def testCanonicalizeOverBoundary = {
-    val result = table.canonicalize(12, None)
+    val result = table.canonicalize(12, None, 25)
 
     val slices = result.slices.toStream.unsafeRunSync
     val sizes = slices.map(_.size)
@@ -136,7 +136,7 @@ trait CanonicalizeSpec extends ColumnarTableModuleTestSupport with Specification
       Stream(emptySlice)
 
     val newTable     = Table(StreamT.fromStream(IO.pure(slices)), table.size)
-    val result       = newTable.canonicalize(4, None)
+    val result       = newTable.canonicalize(4, None, 25)
     val resultSlices = result.slices.toStream.unsafeRunSync
     val resultSizes  = resultSlices.map(_.size)
 
@@ -145,7 +145,7 @@ trait CanonicalizeSpec extends ColumnarTableModuleTestSupport with Specification
 
   def testCanonicalizeEmpty = {
     val table  = Table.empty
-    val result = table.canonicalize(3, None)
+    val result = table.canonicalize(3, None, 1)
     val slices = result.slices.toStream.unsafeRunSync
     val sizes  = slices.map(_.size)
 
