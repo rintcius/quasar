@@ -79,7 +79,7 @@ class SliceSpec extends Specification with ScalaCheck with RCValueGenerators {
     slices.map(s => toCValues(s).isEmpty).exists(ι) must_==(false)
   }
 
-  def valueCalcs(values: Vector[CValue]) = {
+  def valueCalcs(values: Vector[CValue]): (Int, Int, Int) = {
     val totalRows = values.size
 
     val columnsPerValue: Vector[Vector[ColumnRef]] = values.map(_.flattenWithPath.map { case (p, v) => ColumnRef(p, v.cType) })
