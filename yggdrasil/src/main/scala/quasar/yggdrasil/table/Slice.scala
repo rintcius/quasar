@@ -1934,7 +1934,7 @@ object Slice {
         val columns = cs
         val size = sz
       }
-      (slice, values1 ++ restValues)
+      (slice, restValues ++ values1)
     }
 
     @tailrec def buildSlices(values: Vector[RValue], slices: Stream[Slice]): Stream[Slice] =

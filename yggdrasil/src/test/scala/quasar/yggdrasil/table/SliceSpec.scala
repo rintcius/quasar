@@ -128,6 +128,21 @@ class SliceSpec extends Specification with ScalaCheck with RCValueGenerators {
     assertSlices(values, slices, be_==(1))
   }
 
+
+  def testFromRValuesTemplate(input: JValue, maxRows: Int, maxCols: Int, expectedNrRows: Stream[Int], expectedNrCols: Stream[Int]) = {
+    val data: Vector[RValue] = input match {
+      case JArray(rows) => rows.toVector.flatMap(RValue.fromJValue)
+      case _ => ???
+    }
+
+    val result: Stream[Slice] = Slice.fromRValues(data, maxRows, maxCols)
+
+    result.map(s => toCValues(s)).foldLeft(List.empty[CValue])(_ ++ _.flatten).filter(_ != CUndefined) mustEqual(
+      data.toList.map(_.flattenWithPath.map(_._2)).flatten)
+    result.map(_.size) mustEqual expectedNrRows
+    result.map(_.columns.size) mustEqual expectedNrCols
+  }
+
   "fromRValues" should {
 
     val v = Vector(CString("x"), CNum(42))
@@ -156,6 +171,76 @@ class SliceSpec extends Specification with ScalaCheck with RCValueGenerators {
       testFromRValuesMaxSliceRows1(values) and
       testFromRValuesMaxSliceColumnsEqualsBiggestValue(values) and
       testFromRValuesMaxSliceColumnsLowerThanBiggestValue(values)
+    }
+
+    "construct slices with various bounds" in {
+
+      val testInput1: JValue = JParser.parseUnsafe("""[
+          {"foo":1, "bar1": 1},
+          {"foo":2, "bar2": 2}
+        ]""".stripMargin)
+
+      "rows just fits in 1 slice (simple)" >>
+        testFromRValuesTemplate(testInput1, 2, 10000, Stream(2), Stream(3))
+
+      "columns just fits in 1 slice (simple)" >>
+        testFromRValuesTemplate(testInput1, 1000, 3, Stream(2), Stream(3))
+
+      "columns and rows just fits in 1 slice (simple)" >>
+        testFromRValuesTemplate(testInput1, 2, 3, Stream(2), Stream(3))
+
+      "columns boundary hit (simple)" >>
+        testFromRValuesTemplate(testInput1, 1000, 2, Stream(1, 1), Stream(2, 2))
+
+      "rows boundary hit (simple)" >>
+        testFromRValuesTemplate(testInput1, 1, 1000, Stream(1, 1), Stream(2, 2))
+
+      "columns boundary exceeded in 1 row (simple)" >>
+        testFromRValuesTemplate(testInput1, 1000, 1, Stream(1, 1), Stream(2, 2))
+
+      val testInput2: JValue = JParser.parseUnsafe("""[
+          {"foo":1},
+          {"foo":2, "bar2": 2},
+          {"foo":3, "bar3": 3, "baz": 3},
+          {"foo":4, "bar4": 4, "baz": 4},
+          {"foo":5, "bar5": 5},
+          {"foo":6},
+          {"foo":7, "bar7": 7, "baz": 7, "quux": 7},
+          {"foo":8, "baz": 8},
+          {"foo":9, "bar9": 9},
+          {"foo":10},
+          {"foo":11, "baz": 11},
+          {"foo":12, "baz": 12},
+          {"foo":13, "baz": 13},
+          {"foo":14, "bar14": 14}
+        ]""".stripMargin)
+
+      "fits in 1 slice" >>
+        testFromRValuesTemplate(testInput2, 1000, 1000, Stream(14), Stream(10))
+
+      "columns just fits in 1 slice" >>
+        testFromRValuesTemplate(testInput2, 1000, 11, Stream(14), Stream(10))
+
+      "rows just fits in 1 slice" >>
+        testFromRValuesTemplate(testInput2, 14, 1000, Stream(14), Stream(10))
+
+      "rows and columns just fits in 1 slice" >>
+        testFromRValuesTemplate(testInput2, 14, 10, Stream(14), Stream(10))
+
+      "columns boundary hit" >>
+        testFromRValuesTemplate(testInput2, 1000, 9, Stream(13, 1), Stream(9, 2))
+
+      "rows boundary hit" >>
+        testFromRValuesTemplate(testInput2, 13, 1000, Stream(13, 1), Stream(9, 2))
+
+      "columns boundary exceeded in 1 row" >>
+        testFromRValuesTemplate(testInput2, 1000, 3, Stream(2, 1, 1, 2, 1, 6, 1), Stream(2, 3, 3, 2, 4, 3, 2))
+
+      "columns boundary exceeded in 1 row multiple times" >>
+        testFromRValuesTemplate(testInput2, 1000, 2, Stream(2, 1, 1, 2, 1, 1, 2, 3, 1), Stream(2, 3, 3, 2, 4, 2, 2, 2, 2))
+
+      "column and row boundary hit" >>
+        testFromRValuesTemplate(testInput2, 3, 4, Stream(3, 3, 2, 3, 3), Stream(4, 4, 4, 3, 3))
     }
   }
 
