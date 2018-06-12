@@ -32,19 +32,19 @@ trait CanonicalizeSpec extends ColumnarTableModuleTestSupport with Specification
   val table = {
     val JArray(elements) = JParser.parse("""[
       {"foo":1},
-      {"foo":2},
-      {"foo":3},
-      {"foo":4},
-      {"foo":5},
+      {"foo":2, "bar2": 2},
+      {"foo":3, "bar3": 3, "baz": 3},
+      {"foo":4, "bar4": 4, "baz": 4},
+      {"foo":5, "bar5": 5},
       {"foo":6},
-      {"foo":7},
-      {"foo":8},
-      {"foo":9},
+      {"foo":7, "bar7": 7, "baz": 7, "quux": 7},
+      {"foo":8, "baz": 8},
+      {"foo":9, "bar9": 9},
       {"foo":10},
-      {"foo":11},
-      {"foo":12},
-      {"foo":13},
-      {"foo":14}
+      {"foo":11, "baz": 11},
+      {"foo":12, "baz": 12},
+      {"foo":13, "baz": 13},
+      {"foo":14, "bar14": 14}
     ]""")
 
     val sample = SampleData(elements.toStream)
@@ -102,11 +102,20 @@ trait CanonicalizeSpec extends ColumnarTableModuleTestSupport with Specification
     sizes mustEqual Stream(3, 3, 3, 3, 2)
   }
 
+  def testCanonicalizeColumnBoundary = {
+    val result = table.canonicalize(14, None, 4)
+
+    val slices = result.slices.toStream.unsafeRunSync
+    val sizes = slices.map(_.size)
+
+    sizes mustEqual Stream(3, 3, 2, 6)
+  }
+
   def testCanonicalizeZero = {
     table.canonicalize(0, None, 1) must throwA[IllegalArgumentException]
   }
 
-  def testCanonicalizeBoundary = {
+  def testCanonicalizeRowBoundary = {
     val result = table.canonicalize(5, None, 25)
 
     val slices = result.slices.toStream.unsafeRunSync
@@ -115,7 +124,7 @@ trait CanonicalizeSpec extends ColumnarTableModuleTestSupport with Specification
     sizes mustEqual Stream(5, 5, 4)
   }
 
-  def testCanonicalizeOverBoundary = {
+  def testCanonicalizeOverRowBoundary = {
     val result = table.canonicalize(12, None, 25)
 
     val slices = result.slices.toStream.unsafeRunSync

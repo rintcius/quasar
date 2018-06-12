@@ -184,6 +184,18 @@ trait Slice { source =>
     }
   }
 
+  def dropUndefinedColumns: Slice = new Slice {
+    val size = source.size
+    val columns = {
+      source.columns.toList.foldLeft(List.empty[(ColumnRef, Column)]) { case (acc, (ref, col)) =>
+        if (col.definedAt(0, size) == new BitSet)
+          acc
+        else
+          acc :+ (ref, col)
+      } toMap
+    }
+  }
+
   /**
     * Transform this slice such that its columns are only defined for row indices
     * in the given BitSet.
@@ -808,6 +820,30 @@ trait Slice { source =>
     */
   def split(idx: Int): (Slice, Slice) = {
     (take(idx), drop(idx))
+  }
+
+  def splitByMaxColumns(currentCols: Set[ColumnRef], indexOffset: Int, maxCols: Int)
+      : Option[(Set[ColumnRef], Int)] = {
+
+    val nextCols = currentCols ++ source.dropUndefinedColumns.columns.keys
+
+    if (nextCols.size <= maxCols) {
+      None
+    } else {
+      if (source.size <= 1) {
+        (nextCols, indexOffset).some
+      } else {
+        val half = source.size / 2
+        val firstHalf = take(half).dropUndefinedColumns
+        val nextColsFirstHalf = currentCols ++ firstHalf.columns.keys
+        if (nextColsFirstHalf.size > maxCols) {
+          firstHalf.splitByMaxColumns(currentCols, indexOffset, maxCols)
+        } else {
+          val secondHalf = drop(half).dropUndefinedColumns
+          secondHalf.splitByMaxColumns(nextColsFirstHalf, indexOffset + half, maxCols)
+        }
+      }
+    }
   }
 
   def take(sz: Int): Slice = {

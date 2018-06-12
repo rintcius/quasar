@@ -819,10 +819,12 @@ trait ColumnarTableModule
 
       def emitColumnBoundary(currentCols: Set[ColumnRef], slice: Slice)
           : (Slice, Option[Slice]) = {
-        (slice, None)
+        val (_, splitAt) = slice.splitByMaxColumns(currentCols, 0, maxColumns).get
+        val (fits, overflow) = slice.split(splitAt)
+        (fits, overflow.some)
       }
 
-      def emitRowOrColumnBoundary(currentRows: Int, currentCols: Set[ColumnRef], slice: Slice)
+      def emitRowAndColumnBoundary(currentRows: Int, currentCols: Set[ColumnRef], slice: Slice)
           : (Slice, Option[Slice]) = {
         val splitAt = maxRows - currentRows
         val (rowFits, rowOverflow) = slice.split(splitAt)
@@ -839,11 +841,12 @@ trait ColumnarTableModule
       def accumulateOrEmit(currentRows: Int, currentCols: Set[ColumnRef], slice: Slice)
           : (Int, Set[ColumnRef]) \/ (Slice, Option[Slice]) = {
         val nextRows = currentRows + slice.size
-        val nextCols = currentCols ++ slice.columns.keys
+        val nextCols = currentCols ++ slice.dropUndefinedColumns.columns.keys
 
         if (nextCols.size <= maxColumns)
           if (nextRows < minRows)
             -\/((nextRows, nextCols))
+
           else
             \/-(emitRowBoundary(currentRows, nextRows, slice))
 
@@ -851,7 +854,7 @@ trait ColumnarTableModule
           if (nextRows <= maxRows)
             \/-(emitColumnBoundary(currentCols, slice))
           else
-            \/-(emitRowOrColumnBoundary(currentRows, currentCols, slice))
+            \/-(emitRowAndColumnBoundary(currentRows, currentCols, slice))
       }
 
       def step(currentRows: Int, currentCols: Set[ColumnRef], currentSlices: List[Slice], stream: StreamT[IO, Slice])
