@@ -18,6 +18,8 @@ package quasar.yggdrasil
 package table
 
 import quasar.blueeyes._, json._
+import quasar.precog.TestSupport._
+import quasar.precog.common._
 
 import cats.effect.IO
 import scalaz.StreamT
@@ -25,7 +27,7 @@ import shims._
 
 import org.specs2.ScalaCheck
 import org.scalacheck.Gen
-import quasar.precog.TestSupport._
+
 trait CanonicalizeSpec extends ColumnarTableModuleTestSupport with SpecificationLike with ScalaCheck {
   import SampleData._
 
@@ -51,17 +53,27 @@ trait CanonicalizeSpec extends ColumnarTableModuleTestSupport with Specification
     fromSample(sample)
   }
 
+  def valueCalcs(values: Vector[RValue]) = {
+    val totalRows = values.size
+
+    val columnsPerValue: Vector[Vector[ColumnRef]] = values.map(_.flattenWithPath.map { case (p, v) => ColumnRef(p, v.cType) })
+    val totalColumns = columnsPerValue.flatten.toSet.size
+    val nrColumnsBiggestValue = columnsPerValue.map(_.size).foldLeft(0)(Math.max(_, _))
+
+    (totalRows, nrColumnsBiggestValue, totalColumns)
+  }
+
   def checkBoundedCanonicalize = {
     implicit val gen = sample(schema)
     prop { (sample: SampleData) =>
       val table = fromSample(sample)
-      val size = sample.data.size
-      val minLength = Gen.choose(0, size / 2).sample.get
-      val maxLength = minLength + Gen.choose(1, size / 2 + 1).sample.get
+      val (totalRows, _, totalColumns) = valueCalcs(sample.data.toVector)
+      val minLength = Gen.choose(0, totalRows / 2).sample.get
+      val maxLength = minLength + Gen.choose(1, totalRows / 2 + 1).sample.get
 
-      val canonicalizedTable = table.canonicalize(minLength, Some(maxLength), 10000)
+      val canonicalizedTable = table.canonicalize(minLength, Some(maxLength), totalColumns)
       val slices = canonicalizedTable.slices.toStream.unsafeRunSync map (_.size)
-      if (size > 0) {
+      if (totalRows > 0) {
         slices.init must contain(like[Int]({ case size: Int => size must beBetween(minLength, maxLength) })).forall
         slices.last must be_<=(maxLength)
       }
@@ -75,16 +87,16 @@ trait CanonicalizeSpec extends ColumnarTableModuleTestSupport with Specification
     implicit val gen = sample(schema)
     prop { (sample: SampleData) =>
       val table = fromSample(sample)
-      val size = sample.data.size
-      val length = Gen.choose(1, size + 3).sample.get
+      val (totalRows, _, totalColumns) = valueCalcs(sample.data.toVector)
+      val length = Gen.choose(1, totalRows + 3).sample.get
 
-      val canonicalizedTable = table.canonicalize(length, None, 10000)
+      val canonicalizedTable = table.canonicalize(length, None, totalColumns)
       val resultSlices = canonicalizedTable.slices.toStream.unsafeRunSync
       val resultSizes = resultSlices.map(_.size)
 
       val expected = {
-        val num = size / length
-        val remainder = size % length
+        val num = totalRows / length
+        val remainder = totalRows % length
         val prefix = Stream.fill(num)(length)
         if (remainder > 0) prefix :+ remainder else prefix
       }
@@ -109,6 +121,33 @@ trait CanonicalizeSpec extends ColumnarTableModuleTestSupport with Specification
     val sizes = slices.map(_.size)
 
     sizes mustEqual Stream(3, 3, 2, 6)
+  }
+
+  def testCanonicalizeRowAndColumnBoundaryColumnFirst = {
+    val result = table.canonicalize(3, None, 4)
+
+    val slices = result.slices.toStream.unsafeRunSync
+    val sizes = slices.map(_.size)
+
+    sizes mustEqual Stream(3, 3, 2, 3, 3)
+  }
+
+  def testCanonicalizeRowAndColumnBoundaryRowFirst = {
+    val result = table.canonicalize(2, None, 4)
+
+    val slices = result.slices.toStream.unsafeRunSync
+    val sizes = slices.map(_.size)
+
+    sizes mustEqual Stream(2, 2, 2, 2, 2, 2, 2)
+  }
+
+  def testCanonicalizeColumnBoundaryExceeded = {
+    val result = table.canonicalize(3, None, 3)
+
+    val slices = result.slices.toStream.unsafeRunSync
+    val sizes = slices.map(_.size)
+
+    sizes mustEqual Stream(3, 3, 2, 3, 3)
   }
 
   def testCanonicalizeZero = {

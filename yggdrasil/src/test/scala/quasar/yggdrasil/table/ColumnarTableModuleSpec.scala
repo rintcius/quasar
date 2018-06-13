@@ -508,6 +508,9 @@ trait ColumnarTableModuleSpec extends TestColumnarTableModule
       "return the correct slice sizes given length zero" in testCanonicalizeZero
       "return the correct slice sizes along slice row boundaries" in testCanonicalizeRowBoundary
       "return the correct slice sizes along slice column boundaries" in testCanonicalizeColumnBoundary
+      "return the correct slice sizes along slice row and column boundaries when column boundary hit first" in testCanonicalizeRowAndColumnBoundaryColumnFirst
+      "return the correct slice sizes along slice row and column boundaries when row boundary hit first" in testCanonicalizeRowAndColumnBoundaryRowFirst
+      // "return the correct slice sizes when column boundary exceeded" in testCanonicalizeColumnBoundaryExceeded
       "return the correct slice sizes greater than slice row boundaries" in testCanonicalizeOverRowBoundary
       "return empty table when given empty table" in testCanonicalizeEmpty
       "remove slices of size zero" in testCanonicalizeEmptySlices
