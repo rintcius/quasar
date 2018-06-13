@@ -796,6 +796,11 @@ trait ColumnarTableModule
 
       require(maxRows > 0 && minRows >= 0 && maxRows >= minRows, "rows bounds must be positive and ordered")
 
+      def splitDropUndefinedCols(s: Slice, splitAt: Int) = {
+        val (s1, s2) = s.split(splitAt)
+        (s1.dropUndefinedColumns, s2.dropUndefinedColumns)
+      }
+
       def concat(rslices: List[Slice]): Slice = rslices.reverse match {
         case Nil          => Slice(Map.empty, 0)
         case slice :: Nil => slice
@@ -812,22 +817,22 @@ trait ColumnarTableModule
           : (Slice, Option[Slice]) =
         if (nextRows > maxRows) {
           val splitAt = maxRows - currentRows
-          val (fits, overflow) = slice.split(splitAt)
-          (fits.dropUndefinedColumns, overflow.dropUndefinedColumns.some)
+          val (fits, overflow) = splitDropUndefinedCols(slice, splitAt)
+          (fits, overflow.some)
         } else
           (slice, None)
 
       def emitColumnBoundary(currentCols: Set[ColumnRef], slice: Slice)
           : (Slice, Option[Slice]) = {
         val (_, splitAt) = slice.splitByMaxColumns(currentCols, 0, maxColumns).get
-        val (fits, overflow) = slice.split(splitAt)
-        (fits.dropUndefinedColumns, overflow.dropUndefinedColumns.some)
+        val (fits, overflow) = splitDropUndefinedCols(slice, splitAt)
+        (fits, overflow.some)
       }
 
       def emitRowAndColumnBoundary(currentRows: Int, currentCols: Set[ColumnRef], slice: Slice)
           : (Slice, Option[Slice]) = {
         val splitAt = maxRows - currentRows
-        val (rowFits, rowOverflow) = slice.split(splitAt)
+        val (rowFits, rowOverflow) = splitDropUndefinedCols(slice, splitAt)
         val nextColsPrefix = currentCols ++ rowFits.columns.keys
 
         if (nextColsPrefix.size <= maxColumns)
@@ -835,7 +840,7 @@ trait ColumnarTableModule
           (rowFits, rowOverflow.some)
         else
           // colunn boundary was hit first
-          emitColumnBoundary(currentCols, rowFits)
+          emitColumnBoundary(currentCols, slice)
       }
 
       def accumulateOrEmit(currentRows: Int, currentCols: Set[ColumnRef], slice: Slice)
