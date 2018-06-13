@@ -831,7 +831,12 @@ trait Slice { source =>
       None
     } else {
       if (source.size <= 1) {
-        (nextCols, indexOffset).some
+        if (indexOffset == 0)
+          // a single row has more than maxCols: include it
+          (nextCols, indexOffset + source.size).some
+        else
+          // normal case: exclude it
+          (nextCols, indexOffset).some
       } else {
         val half = source.size / 2
         val firstHalf = take(half).dropUndefinedColumns
