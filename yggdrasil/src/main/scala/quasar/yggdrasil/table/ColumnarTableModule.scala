@@ -813,7 +813,7 @@ trait ColumnarTableModule
         if (nextRows > maxRows) {
           val splitAt = maxRows - currentRows
           val (fits, overflow) = slice.split(splitAt)
-          (fits, overflow.some)
+          (fits.dropUndefinedColumns, overflow.dropUndefinedColumns.some)
         } else
           (slice, None)
 
@@ -821,7 +821,7 @@ trait ColumnarTableModule
           : (Slice, Option[Slice]) = {
         val (_, splitAt) = slice.splitByMaxColumns(currentCols, 0, maxColumns).get
         val (fits, overflow) = slice.split(splitAt)
-        (fits, overflow.some)
+        (fits.dropUndefinedColumns, overflow.dropUndefinedColumns.some)
       }
 
       def emitRowAndColumnBoundary(currentRows: Int, currentCols: Set[ColumnRef], slice: Slice)
@@ -841,7 +841,7 @@ trait ColumnarTableModule
       def accumulateOrEmit(currentRows: Int, currentCols: Set[ColumnRef], slice: Slice)
           : (Int, Set[ColumnRef]) \/ (Slice, Option[Slice]) = {
         val nextRows = currentRows + slice.size
-        val nextCols = currentCols ++ slice.dropUndefinedColumns.columns.keys
+        val nextCols = currentCols ++ slice.columns.keys
 
         if (nextCols.size <= maxColumns)
           if (nextRows < minRows)
