@@ -105,6 +105,51 @@ trait CanonicalizeSpec extends ColumnarTableModuleTestSupport with Specification
     }
   }.set(minTestsOk =  1000)
 
+  def testCanonicalizeRowsAndColumnsJustFitsIn1Slice = {
+    val result = table.canonicalize(14, None, 10)
+
+    val slices = result.slices.toStream.unsafeRunSync
+    val sizes = slices.map(_.size)
+
+    sizes mustEqual Stream(14)
+  }
+
+  def testCanonicalizeColumnsJustFitsIn1Slice = {
+    val result = table.canonicalize(1000, None, 10)
+
+    val slices = result.slices.toStream.unsafeRunSync
+    val sizes = slices.map(_.size)
+
+    sizes mustEqual Stream(14)
+  }
+
+  def testCanonicalizeRowsJustFitsIn1Slice = {
+    val result = table.canonicalize(14, None, 1000)
+
+    val slices = result.slices.toStream.unsafeRunSync
+    val sizes = slices.map(_.size)
+
+    sizes mustEqual Stream(14)
+  }
+
+  def testCanonicalizeRowsBoundaryHit = {
+    val result = table.canonicalize(13, None, 1000)
+
+    val slices = result.slices.toStream.unsafeRunSync
+    val sizes = slices.map(_.size)
+
+    sizes mustEqual Stream(13, 1)
+  }
+
+  def testCanonicalizeColumnsBoundaryHit = {
+    val result = table.canonicalize(1000, None, 9)
+
+    val slices = result.slices.toStream.unsafeRunSync
+    val sizes = slices.map(_.size)
+
+    sizes mustEqual Stream(13, 1)
+  }
+
   def testCanonicalize = {
     val result = table.canonicalize(3, None, 25)
 
@@ -141,13 +186,21 @@ trait CanonicalizeSpec extends ColumnarTableModuleTestSupport with Specification
     sizes mustEqual Stream(2, 2, 2, 2, 2, 2, 2)
   }
 
-  def testCanonicalizeColumnBoundaryExceeded = {
+  def testCanonicalizeColumnBoundaryExceededIn1Row = {
     val result = table.canonicalize(3, None, 3)
 
     val slices = result.slices.toStream.unsafeRunSync
     val sizes = slices.map(_.size)
-
     sizes mustEqual Stream(2, 1, 1, 2, 1, 3, 3, 1)
+  }
+
+  def testCanonicalizeColumnBoundaryExceededIn1RowMultipleTimes = {
+    val result = table.canonicalize(1000, None, 2)
+
+    val slices = result.slices.toStream.unsafeRunSync
+    val sizes = slices.map(_.size)
+
+    sizes mustEqual Stream(2, 1, 1, 2, 1, 1, 2, 3, 1)
   }
 
   def testCanonicalizeZero = {
