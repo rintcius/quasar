@@ -50,7 +50,7 @@ trait CanonicalizeSpec extends ColumnarTableModuleTestSupport with Specification
     ]""")
 
     val sample = SampleData(elements.toStream)
-    fromSample(sample)
+    fromSample(sample, Some(3))
   }
 
   def valueCalcs(values: Vector[RValue]) = {
@@ -147,7 +147,7 @@ trait CanonicalizeSpec extends ColumnarTableModuleTestSupport with Specification
     val slices = result.slices.toStream.unsafeRunSync
     val sizes = slices.map(_.size)
 
-    sizes mustEqual Stream(13, 1)
+    sizes mustEqual Stream(14)
   }
 
   def testCanonicalize = {
@@ -165,7 +165,7 @@ trait CanonicalizeSpec extends ColumnarTableModuleTestSupport with Specification
     val slices = result.slices.toStream.unsafeRunSync
     val sizes = slices.map(_.size)
 
-    sizes mustEqual Stream(3, 3, 2, 6)
+    sizes mustEqual Stream(6, 3, 5)
   }
 
   def testCanonicalizeRowAndColumnBoundaryColumnFirst = {
@@ -174,7 +174,7 @@ trait CanonicalizeSpec extends ColumnarTableModuleTestSupport with Specification
     val slices = result.slices.toStream.unsafeRunSync
     val sizes = slices.map(_.size)
 
-    sizes mustEqual Stream(3, 3, 2, 3, 3)
+    sizes mustEqual Stream(3, 3, 3, 3, 2)
   }
 
   def testCanonicalizeRowAndColumnBoundaryRowFirst = {
@@ -191,7 +191,7 @@ trait CanonicalizeSpec extends ColumnarTableModuleTestSupport with Specification
 
     val slices = result.slices.toStream.unsafeRunSync
     val sizes = slices.map(_.size)
-    sizes mustEqual Stream(2, 1, 1, 2, 1, 3, 3, 1)
+    sizes mustEqual Stream(3, 3, 3, 3, 2)
   }
 
   def testCanonicalizeColumnBoundaryExceededIn1RowMultipleTimes = {
@@ -200,7 +200,7 @@ trait CanonicalizeSpec extends ColumnarTableModuleTestSupport with Specification
     val slices = result.slices.toStream.unsafeRunSync
     val sizes = slices.map(_.size)
 
-    sizes mustEqual Stream(2, 1, 1, 2, 1, 1, 2, 3, 1)
+    sizes mustEqual Stream(3, 3, 3, 5)
   }
 
   def testCanonicalizeZero = {

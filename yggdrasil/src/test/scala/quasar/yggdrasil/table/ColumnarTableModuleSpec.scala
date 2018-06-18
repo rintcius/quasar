@@ -506,7 +506,7 @@ trait ColumnarTableModuleSpec extends TestColumnarTableModule
       "return the slice size in correct bound using scalacheck with range" in checkBoundedCanonicalize
       "return the correct slice sizes in a trivial case" in testCanonicalize
       "return the correct slice sizes given length zero" in testCanonicalizeZero
-      "@return the correct slice sizes when rows and columms just fit in 1 slice" in testCanonicalizeRowsAndColumnsJustFitsIn1Slice
+      "return the correct slice sizes when rows and columms just fit in 1 slice" in testCanonicalizeRowsAndColumnsJustFitsIn1Slice
       "return the correct slice sizes when columms just fit in 1 slice" in testCanonicalizeColumnsJustFitsIn1Slice
       "return the correct slice sizes when rows just fit in 1 slice" in testCanonicalizeRowsJustFitsIn1Slice
       "return the correct slice sizes when rows boundaries hit" in testCanonicalizeRowsBoundaryHit

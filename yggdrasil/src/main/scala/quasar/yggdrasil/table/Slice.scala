@@ -822,35 +822,6 @@ trait Slice { source =>
     (take(idx), drop(idx))
   }
 
-  def splitByMaxColumns(currentCols: Set[ColumnRef], indexOffset: Int, maxCols: Int)
-      : Option[(Set[ColumnRef], Int)] = {
-
-    val nextCols = currentCols ++ source.dropUndefinedColumns.columns.keys
-
-    if (nextCols.size <= maxCols) {
-      None
-    } else {
-      if (source.size <= 1) {
-        if (indexOffset == 0)
-          // a single row has more than maxCols: include it
-          (nextCols, indexOffset + source.size).some
-        else
-          // normal case: exclude it
-          (nextCols, indexOffset).some
-      } else {
-        val half = source.size / 2
-        val firstHalf = take(half).dropUndefinedColumns
-        val nextColsFirstHalf = currentCols ++ firstHalf.columns.keys
-        if (nextColsFirstHalf.size > maxCols) {
-          firstHalf.splitByMaxColumns(currentCols, indexOffset, maxCols)
-        } else {
-          val secondHalf = drop(half).dropUndefinedColumns
-          secondHalf.splitByMaxColumns(nextColsFirstHalf, indexOffset + half, maxCols)
-        }
-      }
-    }
-  }
-
   def take(sz: Int): Slice = {
     if (sz >= source.size) {
       source

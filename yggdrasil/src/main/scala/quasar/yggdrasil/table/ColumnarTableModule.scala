@@ -824,23 +824,8 @@ trait ColumnarTableModule
 
       def emitColumnBoundary(currentCols: Set[ColumnRef], slice: Slice)
           : (Slice, Option[Slice]) = {
-        val (_, splitAt) = slice.splitByMaxColumns(currentCols, 0, maxColumns).get
-        val (fits, overflow) = splitDropUndefinedCols(slice, splitAt)
-        (fits, overflow.some)
-      }
-
-      def emitRowAndColumnBoundary(currentRows: Int, currentCols: Set[ColumnRef], slice: Slice)
-          : (Slice, Option[Slice]) = {
-        val splitAt = maxRows - currentRows
-        val (rowFits, rowOverflow) = splitDropUndefinedCols(slice, splitAt)
-        val nextColsPrefix = currentCols ++ rowFits.columns.keys
-
-        if (nextColsPrefix.size <= maxColumns)
-          // row boundary was hit first
-          (rowFits, rowOverflow.some)
-        else
-          // colunn boundary was hit first
-          emitColumnBoundary(currentCols, slice)
+        // we are not inspecting inside a slice; emit the slice
+        (slice, None)
       }
 
       def accumulateOrEmit(currentRows: Int, currentCols: Set[ColumnRef], slice: Slice)
@@ -849,17 +834,24 @@ trait ColumnarTableModule
         val nextCols = currentCols ++ slice.columns.keys
 
         if (nextCols.size <= maxColumns)
-          if (nextRows < minRows)
+          if (nextRows < minRows) {
+            // println("accumulate")
             -\/((nextRows, nextCols))
-
-          else
+          } else {
+            // println("emitRowBoundary")
             \/-(emitRowBoundary(currentRows, nextRows, slice))
-
+          }
         else
-          if (nextRows <= maxRows)
+          if (nextRows <= maxRows) {
+            // println("emitColumnBoundary")
             \/-(emitColumnBoundary(currentCols, slice))
-          else
-            \/-(emitRowAndColumnBoundary(currentRows, currentCols, slice))
+          } else {
+            // println("emitRowAndColumnBoundary")
+            // we have hit a row and a column boundary but since we're not
+            // inspecting inside slices for column boundaries it's treated the
+            // same as when only a row boundary is being hit
+            \/-(emitRowBoundary(currentRows, nextRows, slice))
+          }
       }
 
       def step(currentRows: Int, currentCols: Set[ColumnRef], currentSlices: List[Slice], stream: StreamT[IO, Slice])
