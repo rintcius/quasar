@@ -17,10 +17,14 @@
 package quasar.repl2
 
 import slamdata.Predef._
+import quasar.fp.ski._
 
 import cats.effect._
 import cats.effect.concurrent.Ref
+import eu.timepit.refined.refineV
+import eu.timepit.refined.api.Refined
 import eu.timepit.refined.auto._
+import eu.timepit.refined.numeric.Positive
 import scalaz._, Scalaz._
 
 final class Evaluator[F[_]: Monad: Effect](
@@ -39,6 +43,16 @@ final class Evaluator[F[_]: Monad: Effect](
       case Debug(level) =>
         stateRef.update(_.copy(debugLevel = level)) *>
           F.pure(s"Set debug level: $level".some)
+
+      case SummaryCount(rows) =>
+        val count: Option[Option[Int Refined Positive]] =
+          if (rows === 0) Some(None)
+          else refineV[Positive](rows).fold(κ(None), p => Some(Some(p)))
+        count match {
+          case None => F.pure("Rows must be a positive integer or 0 to indicate no limit".some)
+          case Some(c) => stateRef.update(_.copy(summaryCount = c)) *>
+            F.pure(s"Set rows to show in result: $rows".some)
+        }
 
       case Exit =>
         F.pure("Exiting...".some)
