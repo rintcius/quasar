@@ -54,6 +54,33 @@ final class Evaluator[F[_]: Monad: Effect](
             F.pure(s"Set rows to show in result: $rows".some)
         }
 
+      case Format(fmt) =>
+        stateRef.update(_.copy(format = fmt)) *>
+          F.pure(s"Set output format: $fmt".some)
+
+      case SetPhaseFormat(fmt) =>
+        stateRef.update(_.copy(phaseFormat = fmt)) *>
+          F.pure(s"Set phase format: $fmt".some)
+
+      case SetTimingFormat(fmt) =>
+        stateRef.update(_.copy(timingFormat = fmt)) *>
+          F.pure(s"Set timing format: $fmt".some)
+
+      case SetVar(n, v) =>
+        stateRef.update(state => state.copy(variables = state.variables + (n -> v))) *>
+          F.pure(s"Set variable $n = $v".some)
+
+      case UnsetVar(n) =>
+        stateRef.update(state => state.copy(variables = state.variables - n)) *>
+          F.pure(s"Unset variable $n".some)
+
+      case ListVars =>
+        for {
+          vars <- stateRef.get.map(_.variables)
+          s    = vars.toList.map { case (name, value) => s"$name = $value" }
+                    .mkString("Variables:\n", "\n", "").some
+        } yield s
+
       case Exit =>
         F.pure("Exiting...".some)
 
