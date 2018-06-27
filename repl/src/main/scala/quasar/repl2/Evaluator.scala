@@ -36,7 +36,20 @@ final class Evaluator[F[_]: Monad: Effect](
   val F = Effect[F]
 
   def evaluate(cmd: Command): F[Result] = {
-    val eval: F[Option[String]] = cmd match {
+    val exitCode = if (cmd === Exit) Some(ExitCode.Success) else None
+    doEvaluate(cmd).map(Result(exitCode, _))
+  }
+
+  ////
+
+  private def current(ref: Ref[F, ReplState]) =
+    for {
+      s <- ref.get
+      _ <- F.delay(println(s"Current: $s"))
+    } yield ()
+
+  private def doEvaluate(cmd: Command): F[Option[String]] =
+    cmd match {
       case Help =>
         F.pure(helpMsg.some)
 
@@ -88,18 +101,6 @@ final class Evaluator[F[_]: Monad: Effect](
         current(stateRef) *>
         F.pure(s"TODO: $cmd".some)
     }
-    val exitCode = if (cmd === Exit) Some(ExitCode.Success) else None
-
-    eval.map(Result(exitCode, _))
-  }
-
-  ////
-
-  private def current(ref: Ref[F, ReplState]) =
-    for {
-      s <- ref.get
-      _ <- F.delay(println(s"Current: $s"))
-    } yield ()
 }
 
 object Evaluator {
