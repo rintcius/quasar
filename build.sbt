@@ -480,6 +480,8 @@ lazy val repl = project
   .settings(targetSettings)
   .settings(backendRewrittenRunSettings)
   .settings(
+    //TODO 
+    mainClass in Compile := Some("quasar.repl2.Main"),
     fork in run := true,
     connectInput in run := true,
     outputStrategy := Some(StdoutOutput))
