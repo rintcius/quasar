@@ -50,6 +50,7 @@ object Command {
   private val DatasourcesPattern           = "(?i)datasources".r
   private val DatasourceTypesPattern       = "(?i)types".r
   private val DatasourceAddPattern         = s"(?i)(?:add +)($NamePattern)(?: +)($NamePattern)(?: +)(replace|preserve)(?: +)(.*\\S)".r
+  private val DatasourceRemovePattern      = "(?i)rm +([\\S]+)".r
 
   final case object Exit extends Command
   final case object Help extends Command
@@ -72,7 +73,7 @@ object Command {
   final case class DatasourceLookUp(name: ResourceName) extends Command
   final case class DatasourceAdd(name: ResourceName, tp: DataSourceType.Name, config: String, onConflict: ConflictResolution) extends Command
   //final case class DatasourceMove
-  final case class DatasourceDelete(name: ResourceName) extends Command
+  final case class DatasourceRemove(name: ResourceName) extends Command
 
   implicit val equalCommand: Equal[Command] = Equal.equalA
 
@@ -100,6 +101,7 @@ object Command {
       case DatasourceAddPattern(n, DataSourceType.Name(tp), onConflict, cfg) =>
                                                        DatasourceAdd(ResourceName(n), tp, cfg,
                                                          ConflictResolution.fromString(onConflict) | ConflictResolution.Preserve)
+      case DatasourceRemovePattern(n)               => DatasourceRemove(ResourceName(n))
       case _                                        => Select(None, Query(input))
     }
 

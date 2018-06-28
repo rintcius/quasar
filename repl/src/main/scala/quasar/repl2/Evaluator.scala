@@ -14,7 +14,8 @@
  * limitations under the License.
  */
 
-package quasar.repl2
+package quasar
+package repl2
 
 import slamdata.Predef._
 import quasar.api._
@@ -28,7 +29,7 @@ import eu.timepit.refined.auto._
 import eu.timepit.refined.numeric.Positive
 import scalaz._, Scalaz._
 
-final class Evaluator[F[_]: Monad: Effect, C](
+final class Evaluator[F[_]: Monad: Effect, C: Show](
   stateRef: Ref[F, ReplState],
   sources: DataSources[F, C]) {
 
@@ -117,8 +118,16 @@ final class Evaluator[F[_]: Monad: Effect, C](
         for {
           tps <- sources.supported
           dsType <- findTypeF(tp)
-          _ <- sources.add(name, dsType, cfg.asInstanceOf[C], onConflict)
-          s =  s"Added datasource $name $tp $cfg $onConflict".some
+          c <- sources.add(name, dsType, cfg.asInstanceOf[C], onConflict)
+          _ <- ensureNormal(c.asInstanceOf[Condition[DataSourceError[C]]]) //ugh
+          s = s"Added datasource $name".some
+        } yield s
+
+      case DatasourceRemove(name) =>
+        for {
+          c <- sources.remove(name)
+          _ <- ensureNormal(c.asInstanceOf[Condition[DataSourceError[C]]]) //ugh
+          s =  s"Removed datasource $name $c".some
         } yield s
 
       case Exit =>
@@ -128,6 +137,12 @@ final class Evaluator[F[_]: Monad: Effect, C](
         current(stateRef) *>
         F.pure(s"TODO: $cmd".some)
     }
+
+    private def ensureNormal[E: Show](c: Condition[E]): F[Unit] =
+      c match {
+        case Condition.Normal() => F.unit
+        case Condition.Abnormal(err) => raiseEvalError(err.shows)
+      }
 
     private def findType(tp: DataSourceType.Name): F[Option[DataSourceType]] =
       stateRef.get.map(_.supportedTypes).map(_.toList.find(_.name == tp))
@@ -152,7 +167,7 @@ object Evaluator {
 
   final class EvalError(msg: String) extends java.lang.RuntimeException(msg)
 
-  def apply[F[_]: Monad: Effect, C](
+  def apply[F[_]: Monad: Effect, C: Show](
     stateRef: Ref[F, ReplState],
     sources: DataSources[F, C])
       : Evaluator[F, C] =

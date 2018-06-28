@@ -65,7 +65,7 @@ object Repl {
       Repl[F] =
     new Repl[F](prompt, reader, evaluator)
 
-  def mk[F[_]: Monad: Effect, C](datasources: DataSources[F, C], ref: Ref[F, ReplState]): Repl[F] = {
+  def mk[F[_]: Monad: Effect, C: Show](datasources: DataSources[F, C], ref: Ref[F, ReplState]): Repl[F] = {
     val evaluator = Evaluator[F, C](ref, datasources)
     Repl[F](prompt, mkLineReader, evaluator.evaluate)
   }
