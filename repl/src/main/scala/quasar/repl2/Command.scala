@@ -23,12 +23,14 @@ import quasar.contrib.pathy._
 import quasar.repl._
 import quasar.sql.{Query}
 
+import eu.timepit.refined.auto._
 import pathy.Path, Path._
 import scalaz._, Scalaz._
 
 sealed abstract class Command
 
 object Command {
+  private val NamePattern                  = "[a-zA-Z0-9-]+"
 
   private val ExitPattern                  = "(?i)(?:exit)|(?:quit)".r
   private val HelpPattern                  = "(?i)(?:help)|(?:commands)|\\?".r
@@ -45,6 +47,9 @@ object Command {
   private val SetVarPattern                = "(?i)(?:set +)?(\\w+) *= *(.*\\S)".r
   private val UnsetVarPattern              = "(?i)unset +(\\w+)".r
   private val ListVarPattern               = "(?i)env".r
+  private val DatasourcesPattern           = "(?i)datasources".r
+  private val DatasourceTypesPattern       = "(?i)types".r
+  private val DatasourceAddPattern         = s"(?i)(?:add +)($NamePattern)(?: +)($NamePattern)(?: +)(replace|preserve)(?: +)(.*\\S)".r
 
   final case object Exit extends Command
   final case object Help extends Command
@@ -63,8 +68,9 @@ object Command {
   final case class UnsetVar(name: String) extends Command
 
   final case object Datasources extends Command
+  final case object DatasourceTypes extends Command
   final case class DatasourceLookUp(name: ResourceName) extends Command
-  final case class DatasourceAdd(name: ResourceName, /*overwrite: Boolean,*/ config: String) extends Command
+  final case class DatasourceAdd(name: ResourceName, tp: DataSourceType.Name, config: String, onConflict: ConflictResolution) extends Command
   //final case class DatasourceMove
   final case class DatasourceDelete(name: ResourceName) extends Command
 
@@ -89,6 +95,11 @@ object Command {
       case SetVarPattern(name, value)               => SetVar(name, value)
       case UnsetVarPattern(name)                    => UnsetVar(name)
       case ListVarPattern()                         => ListVars
+      case DatasourcesPattern()                     => Datasources
+      case DatasourceTypesPattern()                 => DatasourceTypes
+      case DatasourceAddPattern(n, DataSourceType.Name(tp), onConflict, cfg) =>
+                                                       DatasourceAdd(ResourceName(n), tp, cfg,
+                                                         ConflictResolution.fromString(onConflict) | ConflictResolution.Preserve)
       case _                                        => Select(None, Query(input))
     }
 

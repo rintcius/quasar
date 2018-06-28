@@ -19,6 +19,7 @@ package quasar.repl2
 import slamdata.Predef._
 
 import quasar.contrib.pathy._
+import quasar.api._
 import quasar.fp.numeric.widenPositive
 import quasar.repl._
 import quasar.repl2.Command._
@@ -37,7 +38,9 @@ import scalaz._, Scalaz._
     summaryCount:       Option[Int Refined Positive],
     format:             OutputFormat,
     variables:          Map[String, String],
-    timingFormat:       TimingFormat
+    timingFormat:       TimingFormat,
+    datasourceStore:    ReplState.DatasourceStore,
+    supportedTypes:     ISet[DataSourceType]
   ) {
 
   def targetDir(path: Option[XDir]): ADir =
@@ -61,6 +64,9 @@ import scalaz._, Scalaz._
 }
 
 object ReplState {
+
+  type DatasourceStore = IMap[ResourceName, DataSourceMetadata]
+
   def mk: ReplState = ReplState(
     rootDir,
     DebugLevel.Normal,
@@ -68,6 +74,8 @@ object ReplState {
     refineMV[Positive](10).some,
     OutputFormat.Table,
     Map(),
-    TimingFormat.OnlyTotal
+    TimingFormat.OnlyTotal,
+    IMap.empty,
+    ISet.empty
   )
 }
