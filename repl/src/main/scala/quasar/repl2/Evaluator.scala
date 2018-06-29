@@ -30,7 +30,7 @@ import eu.timepit.refined.numeric.Positive
 import scalaz._, Scalaz._
 
 final class Evaluator[F[_]: Monad: Effect, C: Show](
-  stateRef: Ref[F, ReplState],
+  stateRef: Ref[F, ReplState[C]],
   sources: DataSources[F, C]) {
 
   import Command._
@@ -46,7 +46,7 @@ final class Evaluator[F[_]: Monad: Effect, C: Show](
 
   ////
 
-  private def current(ref: Ref[F, ReplState]) =
+  private def current(ref: Ref[F, ReplState[C]]) =
     for {
       s <- ref.get
       _ <- F.delay(println(s"Current: $s"))
@@ -101,7 +101,6 @@ final class Evaluator[F[_]: Monad: Effect, C: Show](
       case Datasources =>
         for {
           ds <- sources.metadata
-          _  <- stateRef.update(_.copy(datasourceStore = ds))
           s  =  ds.toList.map { case (k, v) => s"$k - $v" }
                   .mkString("Datasources:\n", "\n", "").some
         } yield s
@@ -168,7 +167,7 @@ object Evaluator {
   final class EvalError(msg: String) extends java.lang.RuntimeException(msg)
 
   def apply[F[_]: Monad: Effect, C: Show](
-    stateRef: Ref[F, ReplState],
+    stateRef: Ref[F, ReplState[C]],
     sources: DataSources[F, C])
       : Evaluator[F, C] =
     new Evaluator[F, C](stateRef, sources)

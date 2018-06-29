@@ -77,10 +77,44 @@ object Main extends IOApp {
      (dataSources, initialStore)
   }
 
+  def runDataSources(ref: Ref[IO, ReplState[String]]): DataSourcesMonadT ~> IO =
+    λ[DataSourcesMonadT ~> IO](d =>
+      for {
+        store0 <- ref.get
+        res <- d.run(store0.datasourceStore)
+        (store1, a) = res
+        _ <- ref.update(_.copy(datasourceStore = store1))
+      } yield a
+    )
+
+ def translateDataSources[F[_], G[_], C](f: F ~> G): DataSources[F, C] => DataSources[G, C] =
+   ds => new DataSources[G, C] {
+     def add(name: ResourceName, kind: DataSourceType, config: C, onConflict: ConflictResolution): G[Condition[DataSourceError.CreateError[C]]] =
+       f(ds.add(name, kind, config, onConflict))
+
+     def lookup(name: ResourceName): G[\/[DataSourceError.CommonError, (DataSourceMetadata, C)]] =
+       f(ds.lookup(name))
+
+     def metadata: G[IMap[ResourceName, DataSourceMetadata]] =
+       f(ds.metadata)
+
+     def remove(name: ResourceName): G[Condition[DataSourceError.CommonError]] =
+       f(ds.remove(name))
+
+     def rename(src: ResourceName, dst: ResourceName, onConflict: ConflictResolution): G[Condition[DataSourceError.ExistentialError]] =
+       f(ds.rename(src, dst, onConflict))
+
+     def supported: G[ISet[DataSourceType]] = f(ds.supported)
+   }
+
   def run(args: List[String]): IO[ExitCode] = {
-    val datasources = mock._1
-    val l = Ref.of[DataSourcesMonadT, ReplState](ReplState.mk) >>=
-      (ref => Repl.mk[DataSourcesMonadT, String](datasources, ref).loop)
-    l.runA(mock._2)
+    val (datasources, initialStore) = mock
+    val replState = ReplState.mk.copy(datasourceStore = initialStore)
+    val replStateRef = Ref.of[IO, ReplState[String]](replState)
+    replStateRef >>= {ref =>
+      val sources: DataSources[IO, String] = translateDataSources(runDataSources(ref))(datasources)
+      val l = Repl.mk[IO, String](sources, ref).loop
+      l
+    }
   }
 }
