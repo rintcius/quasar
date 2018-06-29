@@ -107,16 +107,15 @@ final class Evaluator[F[_]: Monad: Effect, C: Show](
 
       case DatasourceTypes =>
         for {
-          tps <- sources.supported
-          _   <- stateRef.update(_.copy(supportedTypes = tps))
+          tps <- doSupportedTypes
           s   =  tps.toList.map(tp => s"${tp.name} (${tp.version})")
                    .mkString("Supported datasource types:\n", "\n", "").some
         } yield s
 
       case DatasourceAdd(name, tp, cfg, onConflict) =>
         for {
-          tps <- sources.supported
-          dsType <- findTypeF(tp)
+          tps <- supportedTypes
+          dsType <- findTypeF(tps, tp)
           c <- sources.add(name, dsType, cfg.asInstanceOf[C], onConflict)
           _ <- ensureNormal(c.asInstanceOf[Condition[DataSourceError[C]]]) //ugh
           s = s"Added datasource $name".some
@@ -143,14 +142,14 @@ final class Evaluator[F[_]: Monad: Effect, C: Show](
         case Condition.Abnormal(err) => raiseEvalError(err.shows)
       }
 
-    private def findType(tp: DataSourceType.Name): F[Option[DataSourceType]] =
-      stateRef.get.map(_.supportedTypes).map(_.toList.find(_.name == tp))
+    private def findType(tps: ISet[DataSourceType], tp: DataSourceType.Name): Option[DataSourceType] =
+      tps.toList.find(_.name == tp)
 
-    private def findTypeF(tp: DataSourceType.Name): F[DataSourceType] =
-      findType(tp) >>= (_ match {
+    private def findTypeF(tps: ISet[DataSourceType], tp: DataSourceType.Name): F[DataSourceType] =
+      findType(tps, tp) match {
         case None => raiseEvalError(s"Unsupported datasource type: $tp")
         case Some(z) => z.point[F]
-      })
+      }
 
     private def raiseEvalError[A](s: String): F[A] =
       F.raiseError(new EvalError(s))
@@ -159,6 +158,19 @@ final class Evaluator[F[_]: Monad: Effect, C: Show](
       F.recover(fa) {
         case err: EvalError => recover(err.getMessage)
       }
+
+    private def doSupportedTypes: F[ISet[DataSourceType]] =
+      for {
+        supported <- sources.supported
+        _   <- stateRef.update(_.copy(supportedTypes = supported.some))
+      } yield supported
+
+    private def supportedTypes: F[ISet[DataSourceType]] =
+      for {
+        supported <- stateRef.get.map(_.supportedTypes)
+        types <- supported.map(_.point[F]).getOrElse(doSupportedTypes)
+      } yield types
+
 }
 
 object Evaluator {

@@ -40,7 +40,7 @@ import scalaz._, Scalaz._
     variables:          Map[String, String],
     timingFormat:       TimingFormat,
     datasourceStore:    ReplState.DatasourceStore[C],
-    supportedTypes:     ISet[DataSourceType]
+    supportedTypes:     Option[ISet[DataSourceType]]
   ) {
 
   def targetDir(path: Option[XDir]): ADir =
@@ -76,6 +76,6 @@ object ReplState {
     Map(),
     TimingFormat.OnlyTotal,
     IMap.empty,
-    ISet.empty
+    none
   )
 }
