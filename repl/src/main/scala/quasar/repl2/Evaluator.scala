@@ -21,6 +21,8 @@ import slamdata.Predef._
 import quasar.api._
 import quasar.fp.ski._
 
+import java.lang.Exception
+
 import cats.effect._
 import cats.effect.concurrent.Ref
 import eu.timepit.refined.refineV
@@ -98,30 +100,37 @@ final class Evaluator[F[_]: Monad: Effect, C: Show](
                     .mkString("Variables:\n", "\n", "").some
         } yield s
 
-      case Datasources =>
+      case DataSources =>
         for {
           ds <- sources.metadata
-          s  =  ds.toList.map { case (k, v) => s"$k - $v" }
+          s  =  ds.toList.map { case (k, v) => s"${k.value} - ${prettyMetadata(v)}" }
                   .mkString("Datasources:\n", "\n", "").some
         } yield s
 
-      case DatasourceTypes =>
+      case DataSourceTypes =>
         for {
           tps <- doSupportedTypes
           s   =  tps.toList.map(tp => s"${tp.name} (${tp.version})")
                    .mkString("Supported datasource types:\n", "\n", "").some
         } yield s
 
-      case DatasourceAdd(name, tp, cfg, onConflict) =>
+      case DataSourceLookup(name) =>
+        (sources.lookup(name) >>=
+          ((x:(DataSourceError.CommonError \/ (DataSourceMetadata, C))) => fromEither(x.asInstanceOf[DataSourceError[C] \/ (DataSourceMetadata, C)]))).map
+          { case (metadata, cfg) =>
+            List("Datasource:", prettyMetadata(metadata) + " " + cfg).mkString("\n").some
+          }
+
+      case DataSourceAdd(name, tp, cfg, onConflict) =>
         for {
           tps <- supportedTypes
           dsType <- findTypeF(tps, tp)
           c <- sources.add(name, dsType, cfg.asInstanceOf[C], onConflict)
           _ <- ensureNormal(c.asInstanceOf[Condition[DataSourceError[C]]]) //ugh
-          s = s"Added datasource $name".some
+          s = s"Added datasource ${name.value}".some
         } yield s
 
-      case DatasourceRemove(name) =>
+      case DataSourceRemove(name) =>
         for {
           c <- sources.remove(name)
           _ <- ensureNormal(c.asInstanceOf[Condition[DataSourceError[C]]]) //ugh
@@ -135,6 +144,12 @@ final class Evaluator[F[_]: Monad: Effect, C: Show](
         current(stateRef) *>
         F.pure(s"TODO: $cmd".some)
     }
+
+    private def doSupportedTypes: F[ISet[DataSourceType]] =
+      for {
+        supported <- sources.supported
+        _   <- stateRef.update(_.copy(supportedTypes = supported.some))
+      } yield supported
 
     private def ensureNormal[E: Show](c: Condition[E]): F[Unit] =
       c match {
@@ -151,6 +166,21 @@ final class Evaluator[F[_]: Monad: Effect, C: Show](
         case Some(z) => z.point[F]
       }
 
+    private def fromEither[E: Show, A](e: E \/ A): F[A] =
+      e match {
+        case -\/(err) => raiseEvalError(err.shows)
+        case \/-(a) => a.point[F]
+      }
+
+    private def prettyMetadata(m: DataSourceMetadata): String =
+      s"${m.kind.name} ${m.kind.version} ${prettyCondition[Exception](m.status, _.getMessage)}"
+
+    private def prettyCondition[A](c: Condition[A], onAbnormal: A => String) =
+      c match {
+        case Condition.Normal() => "ok"
+        case Condition.Abnormal(a) => s"error: ${onAbnormal(a)}"
+      }
+
     private def raiseEvalError[A](s: String): F[A] =
       F.raiseError(new EvalError(s))
 
@@ -158,12 +188,6 @@ final class Evaluator[F[_]: Monad: Effect, C: Show](
       F.recover(fa) {
         case err: EvalError => recover(err.getMessage)
       }
-
-    private def doSupportedTypes: F[ISet[DataSourceType]] =
-      for {
-        supported <- sources.supported
-        _   <- stateRef.update(_.copy(supportedTypes = supported.some))
-      } yield supported
 
     private def supportedTypes: F[ISet[DataSourceType]] =
       for {

@@ -47,10 +47,11 @@ object Command {
   private val SetVarPattern                = "(?i)(?:set +)?(\\w+) *= *(.*\\S)".r
   private val UnsetVarPattern              = "(?i)unset +(\\w+)".r
   private val ListVarPattern               = "(?i)env".r
-  private val DatasourcesPattern           = "(?i)datasources".r
-  private val DatasourceTypesPattern       = "(?i)types".r
-  private val DatasourceAddPattern         = s"(?i)(?:add +)($NamePattern)(?: +)($NamePattern)(?: +)(replace|preserve)(?: +)(.*\\S)".r
-  private val DatasourceRemovePattern      = "(?i)rm +([\\S]+)".r
+  private val DataSourcesPattern           = "(?i)datasources".r
+  private val DataSourceTypesPattern       = "(?i)types".r
+  private val DataSourceAddPattern         = s"(?i)(?:add +)($NamePattern)(?: +)($NamePattern)(?: +)(replace|preserve)(?: +)(.*\\S)".r
+  private val DataSourceLookupPattern      = "(?i)get +([\\S]+)".r
+  private val DataSourceRemovePattern      = "(?i)rm +([\\S]+)".r
 
   final case object Exit extends Command
   final case object Help extends Command
@@ -68,12 +69,12 @@ object Command {
   final case class SetVar(name: String, value: String) extends Command
   final case class UnsetVar(name: String) extends Command
 
-  final case object Datasources extends Command
-  final case object DatasourceTypes extends Command
-  final case class DatasourceLookUp(name: ResourceName) extends Command
-  final case class DatasourceAdd(name: ResourceName, tp: DataSourceType.Name, config: String, onConflict: ConflictResolution) extends Command
-  //final case class DatasourceMove
-  final case class DatasourceRemove(name: ResourceName) extends Command
+  final case object DataSources extends Command
+  final case object DataSourceTypes extends Command
+  final case class DataSourceLookup(name: ResourceName) extends Command
+  final case class DataSourceAdd(name: ResourceName, tp: DataSourceType.Name, config: String, onConflict: ConflictResolution) extends Command
+  //final case class DataSourceMove
+  final case class DataSourceRemove(name: ResourceName) extends Command
 
   implicit val equalCommand: Equal[Command] = Equal.equalA
 
@@ -96,12 +97,13 @@ object Command {
       case SetVarPattern(name, value)               => SetVar(name, value)
       case UnsetVarPattern(name)                    => UnsetVar(name)
       case ListVarPattern()                         => ListVars
-      case DatasourcesPattern()                     => Datasources
-      case DatasourceTypesPattern()                 => DatasourceTypes
-      case DatasourceAddPattern(n, DataSourceType.Name(tp), onConflict, cfg) =>
-                                                       DatasourceAdd(ResourceName(n), tp, cfg,
+      case DataSourcesPattern()                     => DataSources
+      case DataSourceTypesPattern()                 => DataSourceTypes
+      case DataSourceLookupPattern(n)               => DataSourceLookup(ResourceName(n))
+      case DataSourceAddPattern(n, DataSourceType.Name(tp), onConflict, cfg) =>
+                                                       DataSourceAdd(ResourceName(n), tp, cfg,
                                                          ConflictResolution.fromString(onConflict) | ConflictResolution.Preserve)
-      case DatasourceRemovePattern(n)               => DatasourceRemove(ResourceName(n))
+      case DataSourceRemovePattern(n)               => DataSourceRemove(ResourceName(n))
       case _                                        => Select(None, Query(input))
     }
 
