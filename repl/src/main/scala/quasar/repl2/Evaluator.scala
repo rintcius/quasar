@@ -29,6 +29,7 @@ import eu.timepit.refined.refineV
 import eu.timepit.refined.api.Refined
 import eu.timepit.refined.auto._
 import eu.timepit.refined.numeric.Positive
+import eu.timepit.refined.scalaz._
 import scalaz._, Scalaz._
 
 final class Evaluator[F[_]: Monad: Effect, C: Show](
@@ -158,7 +159,7 @@ final class Evaluator[F[_]: Monad: Effect, C: Show](
       }
 
     private def findType(tps: ISet[DataSourceType], tp: DataSourceType.Name): Option[DataSourceType] =
-      tps.toList.find(_.name == tp)
+      tps.toList.find(_.name === tp)
 
     private def findTypeF(tps: ISet[DataSourceType], tp: DataSourceType.Name): F[DataSourceType] =
       findType(tps, tp) match {
