@@ -18,6 +18,7 @@ package quasar.api
 
 import slamdata.Predef._
 
+import monocle.Prism
 import scalaz.{Enum, Show}
 import scalaz.std.{anyVal, option}, anyVal._, option._
 import scalaz.syntax.order._
@@ -35,12 +36,14 @@ object ConflictResolution extends ConflictResolutionInstances {
   val replace: ConflictResolution =
     Replace
 
-  def fromString(str: String): Option[ConflictResolution] =
-    str.toLowerCase match {
-      case "preserve" => Preserve.some
-      case "replace" => Replace.some
-      case _ => none
-    }
+  def string = Prism[String, ConflictResolution] {
+    case "preserve" => Preserve.some
+    case "replace" => Replace.some
+    case _ => none
+  } {
+    case Preserve => "preserve"
+    case Replace => "replace"
+  }
 }
 
 sealed abstract class ConflictResolutionInstances {
