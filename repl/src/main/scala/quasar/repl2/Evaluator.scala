@@ -117,9 +117,9 @@ final class Evaluator[F[_]: Monad: Effect, C: Show](
 
       case DataSourceLookup(name) =>
         (sources.lookup(name) >>=
-          ((x:(DataSourceError.CommonError \/ (DataSourceMetadata, C))) => fromEither(x.asInstanceOf[DataSourceError[C] \/ (DataSourceMetadata, C)]))).map
+          fromEither[DataSourceError.CommonError, (DataSourceMetadata, C)]).map
           { case (metadata, cfg) =>
-            List("Datasource:", prettyMetadata(metadata) + " " + cfg).mkString("\n").some
+              List("Datasource:", s"${prettyMetadata(metadata)} $cfg").mkString("\n").some
           }
 
       case DataSourceAdd(name, tp, cfg, onConflict) =>
@@ -127,14 +127,14 @@ final class Evaluator[F[_]: Monad: Effect, C: Show](
           tps <- supportedTypes
           dsType <- findTypeF(tps, tp)
           c <- sources.add(name, dsType, cfg.asInstanceOf[C], onConflict)
-          _ <- ensureNormal(c.asInstanceOf[Condition[DataSourceError[C]]]) //ugh
+          _ <- ensureNormal(c)
           s = s"Added datasource ${name.value}".some
         } yield s
 
       case DataSourceRemove(name) =>
         for {
           c <- sources.remove(name)
-          _ <- ensureNormal(c.asInstanceOf[Condition[DataSourceError[C]]]) //ugh
+          _ <- ensureNormal(c)
           s =  s"Removed datasource $name $c".some
         } yield s
 
@@ -147,10 +147,8 @@ final class Evaluator[F[_]: Monad: Effect, C: Show](
     }
 
     private def doSupportedTypes: F[ISet[DataSourceType]] =
-      for {
-        supported <- sources.supported
-        _   <- stateRef.update(_.copy(supportedTypes = supported.some))
-      } yield supported
+      sources.supported >>!
+        (types => stateRef.update(_.copy(supportedTypes = types.some)))
 
     private def ensureNormal[E: Show](c: Condition[E]): F[Unit] =
       c match {
@@ -191,11 +189,8 @@ final class Evaluator[F[_]: Monad: Effect, C: Show](
       }
 
     private def supportedTypes: F[ISet[DataSourceType]] =
-      for {
-        supported <- stateRef.get.map(_.supportedTypes)
-        types <- supported.map(_.point[F]).getOrElse(doSupportedTypes)
-      } yield types
-
+      stateRef.get.map(_.supportedTypes) >>=
+        (_.map(_.point[F]).getOrElse(doSupportedTypes))
 }
 
 object Evaluator {
