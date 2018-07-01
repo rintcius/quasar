@@ -22,8 +22,12 @@ import quasar.api.DataSources
 import quasar.build.BuildInfo
 import quasar.fp.ski._
 
+import java.io.File
+import java.lang.System
+
 import cats.effect._
 import cats.effect.concurrent._
+import org.apache.commons.io.FileUtils
 import org.jline.reader._
 import org.jline.terminal._
 import scalaz._, Scalaz._
@@ -65,18 +69,48 @@ object Repl {
       Repl[F] =
     new Repl[F](prompt, reader, evaluator)
 
-  def mk[F[_]: Monad: Effect](datasources: DataSources[F, String], ref: Ref[F, ReplState[String]]): Repl[F] = {
+  def mk[F[_]: Monad: Effect](datasources: DataSources[F, String], ref: Ref[F, ReplState[String]]): F[Repl[F]] = {
     val evaluator = Evaluator[F](ref, datasources)
-    Repl[F](prompt, mkLineReader, evaluator.evaluate)
+    historyFile[F].map(f => Repl[F](prompt, mkLineReader(f), evaluator.evaluate))
   }
 
   ////
 
   private val prompt = s"(v${BuildInfo.version}) 💪 $$ "
 
-  private def mkLineReader: LineReader = {
+  private def touch[F[_]](f: File)(implicit F: Sync[F]): F[Option[File]] =
+    F.delay {
+      \/.fromTryCatchNonFatal(FileUtils.touch(f)) match {
+        case -\/(err) => none
+        case \/-(_) => f.some
+      }
+    }
+
+  private def getProp[F[_]](p: String)(implicit F: Sync[F]): F[Option[String]] =
+    F.delay(Option(System.getProperty(p)))
+
+  private def historyFile[F[_]: Monad](implicit F: Sync[F]): F[Option[File]] =
+    getProp(".quasar.historyfile") >>=
+      (_ match {
+        case Some(p) => touch(new File(p))
+        case None =>
+          getProp("user.home") >>=
+            (_ match {
+              case Some(h) => touch(new File(h, ".quasar.history"))
+              case None => none[File].point[F]
+            })
+      })
+
+  private def ifHistoryFile(builder: LineReaderBuilder, historyFile: Option[File])
+      : LineReaderBuilder =
+    historyFile.map(
+      builder.variable(LineReader.HISTORY_FILE, _)).getOrElse(builder)
+
+  private def mkLineReader(historyFile: Option[File]): LineReader = {
     val terminal = TerminalBuilder.terminal()
-    LineReaderBuilder.builder().terminal(terminal).build()
+    ifHistoryFile(
+      LineReaderBuilder.builder().terminal(terminal),
+      historyFile).build()
   }
 
 }
