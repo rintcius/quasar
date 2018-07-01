@@ -32,9 +32,9 @@ import eu.timepit.refined.numeric.Positive
 import eu.timepit.refined.scalaz._
 import scalaz._, Scalaz._
 
-final class Evaluator[F[_]: Monad: Effect, C: Show](
-  stateRef: Ref[F, ReplState[C]],
-  sources: DataSources[F, C]) {
+final class Evaluator[F[_]: Monad: Effect](
+  stateRef: Ref[F, ReplState[String]],
+  sources: DataSources[F, String]) {
 
   import Command._
   import DataSourceError._
@@ -50,7 +50,7 @@ final class Evaluator[F[_]: Monad: Effect, C: Show](
 
   ////
 
-  private def current(ref: Ref[F, ReplState[C]]) =
+  private def current(ref: Ref[F, ReplState[String]]) =
     for {
       s <- ref.get
       _ <- F.delay(println(s"Current: $s"))
@@ -112,7 +112,7 @@ final class Evaluator[F[_]: Monad: Effect, C: Show](
 
       case DataSourceLookup(name) =>
         (sources.lookup(name) >>=
-          fromEither[CommonError, (DataSourceMetadata, C)]).map
+          fromEither[CommonError, (DataSourceMetadata, String)]).map
           { case (metadata, cfg) =>
               List("Datasource:", s"${prettyMetadata(metadata)} $cfg").mkString("\n").some
           }
@@ -121,7 +121,7 @@ final class Evaluator[F[_]: Monad: Effect, C: Show](
         for {
           tps <- supportedTypes
           dsType <- findTypeF(tps, tp)
-          c <- sources.add(name, dsType, cfg.asInstanceOf[C], onConflict)
+          c <- sources.add(name, dsType, cfg, onConflict)
           _ <- ensureNormal(c)
           s = s"Added datasource ${name.value}".some
         } yield s
@@ -190,11 +190,11 @@ object Evaluator {
 
   final class EvalError(msg: String) extends java.lang.RuntimeException(msg)
 
-  def apply[F[_]: Monad: Effect, C: Show](
-    stateRef: Ref[F, ReplState[C]],
-    sources: DataSources[F, C])
-      : Evaluator[F, C] =
-    new Evaluator[F, C](stateRef, sources)
+  def apply[F[_]: Monad: Effect](
+    stateRef: Ref[F, ReplState[String]],
+    sources: DataSources[F, String])
+      : Evaluator[F] =
+    new Evaluator[F](stateRef, sources)
 
   val helpMsg =
     """Quasar REPL, Copyright © 2014–2018 SlamData Inc.

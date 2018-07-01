@@ -113,7 +113,7 @@ object Main extends IOApp {
     val replStateRef = Ref.of[IO, ReplState[String]](replState)
     replStateRef >>= {ref =>
       val sources: DataSources[IO, String] = translateDataSources(runDataSources(ref))(datasources)
-      val l = Repl.mk[IO, String](sources, ref).loop
+      val l = Repl.mk[IO](sources, ref).loop
       l
     }
   }
