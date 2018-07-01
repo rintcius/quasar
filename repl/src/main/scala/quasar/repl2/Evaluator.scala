@@ -37,6 +37,7 @@ final class Evaluator[F[_]: Monad: Effect, C: Show](
   sources: DataSources[F, C]) {
 
   import Command._
+  import DataSourceError._
   import Evaluator._
 
   val F = Effect[F]
@@ -95,29 +96,23 @@ final class Evaluator[F[_]: Monad: Effect, C: Show](
           F.pure(s"Unset variable $n".some)
 
       case ListVars =>
-        for {
-          vars <- stateRef.get.map(_.variables)
-          s    =  vars.toList.map { case (name, value) => s"$name = $value" }
-                    .mkString("Variables:\n", "\n", "").some
-        } yield s
+        stateRef.get.map(_.variables).map(
+          _.toList.map { case (name, value) => s"$name = $value" }
+            .mkString("Variables:\n", "\n", "").some)
 
       case DataSources =>
-        for {
-          ds <- sources.metadata
-          s  =  ds.toList.map { case (k, v) => s"${k.value} - ${prettyMetadata(v)}" }
-                  .mkString("Datasources:\n", "\n", "").some
-        } yield s
+        sources.metadata.map(
+          _.toList.map { case (k, v) => s"${k.value} - ${prettyMetadata(v)}" }
+            .mkString("Datasources:\n", "\n", "").some)
 
       case DataSourceTypes =>
-        for {
-          tps <- doSupportedTypes
-          s   =  tps.toList.map(tp => s"${tp.name} (${tp.version})")
-                   .mkString("Supported datasource types:\n", "\n", "").some
-        } yield s
+        doSupportedTypes.map(
+          _.toList.map(tp => s"${tp.name} (${tp.version})")
+            .mkString("Supported datasource types:\n", "\n", "").some)
 
       case DataSourceLookup(name) =>
         (sources.lookup(name) >>=
-          fromEither[DataSourceError.CommonError, (DataSourceMetadata, C)]).map
+          fromEither[CommonError, (DataSourceMetadata, C)]).map
           { case (metadata, cfg) =>
               List("Datasource:", s"${prettyMetadata(metadata)} $cfg").mkString("\n").some
           }
@@ -132,11 +127,8 @@ final class Evaluator[F[_]: Monad: Effect, C: Show](
         } yield s
 
       case DataSourceRemove(name) =>
-        for {
-          c <- sources.remove(name)
-          _ <- ensureNormal(c)
-          s =  s"Removed datasource $name $c".some
-        } yield s
+        (sources.remove(name) >>= ensureNormal[CommonError]).map(
+          κ(s"Removed datasource $name".some))
 
       case Exit =>
         F.pure("Exiting...".some)
