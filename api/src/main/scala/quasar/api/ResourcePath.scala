@@ -20,9 +20,9 @@ import slamdata.Predef._
 import quasar.contrib.pathy.{firstSegmentName, rebaseA, stripPrefixA, AFile, APath}
 import quasar.fp.ski.{ι, κ}
 
-import monocle.Prism
+import monocle.{Iso, Prism}
 import pathy.Path._
-import scalaz.{Order, Show}
+import scalaz.{ICons, IList, INil, Order, Show}
 
 /** Identifies a resource in a datasource. */
 sealed trait ResourcePath extends Product with Serializable {
@@ -62,6 +62,18 @@ sealed trait ResourcePath extends Product with Serializable {
 object ResourcePath extends ResourcePathInstances {
   final case class Leaf(file: AFile) extends ResourcePath
   case object Root extends ResourcePath
+
+  @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
+  val resourceNamesIso: Iso[ResourcePath, IList[ResourceName]] =
+    Iso[ResourcePath, IList[ResourceName]] {
+      _.uncons match {
+        case None => INil()
+        case Some((name, path)) => name :: resourceNamesIso.get(path)
+      }
+    } {
+      case INil() => Root
+      case ICons(h, t) => h /: resourceNamesIso(t)
+    }
 
   val leaf: Prism[ResourcePath, AFile] =
     Prism.partial[ResourcePath, AFile] {
