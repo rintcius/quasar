@@ -20,7 +20,6 @@ package repl2
 import slamdata.Predef._
 import quasar.api.DataSources
 import quasar.build.BuildInfo
-import quasar.fp.ski._
 
 import java.io.File
 import java.lang.System
@@ -32,20 +31,17 @@ import org.jline.reader._
 import org.jline.terminal._
 import scalaz._, Scalaz._
 
-final class Repl[F[_]: Monad: Effect](
+final class Repl[F[_]: Monad: ConcurrentEffect](
   prompt: String,
   reader: LineReader,
   evaluator: Command => F[Evaluator.Result]) {
 
-  val F = Effect[F]
+  val F = ConcurrentEffect[F]
 
   private val read: F[Command] = F.delay(Command.parse(reader.readLine(prompt)))
 
   private def eval(cmd: Command): F[Evaluator.Result] =
-    F.liftIO {
-      F.runSyncStep(evaluator(cmd))
-        .map(_.fold(κ(Evaluator.Result(ExitCode.Error.some, "unexpected error".some)), ι))
-    }
+    F.start(evaluator(cmd)) >>= (_.join)
 
   private def print(string: Option[String]): F[Unit] =
     string.fold(F.unit)(s => F.delay(println(s)))
@@ -58,18 +54,17 @@ final class Repl[F[_]: Monad: Effect](
       _ <- print(string)
       next <- exitCode.fold(loop)(_.point[F])
     } yield next
-
 }
 
 object Repl {
-  def apply[F[_]: Monad: Effect](
+  def apply[F[_]: Monad: ConcurrentEffect](
     prompt: String,
     reader: LineReader,
     evaluator: Command => F[Evaluator.Result]):
       Repl[F] =
     new Repl[F](prompt, reader, evaluator)
 
-  def mk[F[_]: Monad: Effect](datasources: DataSources[F, String], ref: Ref[F, ReplState[String]]): F[Repl[F]] = {
+  def mk[F[_]: Monad: ConcurrentEffect](datasources: DataSources[F, String], ref: Ref[F, ReplState[String]]): F[Repl[F]] = {
     val evaluator = Evaluator[F](ref, datasources)
     historyFile[F].map(f => Repl[F](prompt, mkLineReader(f), evaluator.evaluate))
   }
