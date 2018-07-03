@@ -18,20 +18,17 @@ package quasar.repl2
 
 import slamdata.Predef._
 
-import quasar.contrib.pathy._
 import quasar.api._
 import quasar.fp.numeric.widenPositive
 import quasar.repl._
-import quasar.repl2.Command._
 
 import eu.timepit.refined.api.Refined
 import eu.timepit.refined.auto._
 import eu.timepit.refined.numeric.Positive
-import pathy.Path, Path._
 import scalaz._, Scalaz._
 
  final case class ReplState[C](
-    cwd:                ADir,
+    cwd:                ResourcePath,
     debugLevel:         DebugLevel,
     phaseFormat:        PhaseFormat,
     summaryCount:       Option[Int Refined Positive],
@@ -42,24 +39,7 @@ import scalaz._, Scalaz._
     supportedTypes:     Option[ISet[DataSourceType]]
   ) {
 
-  def targetDir(path: Option[XDir]): ADir =
-    path match {
-      case None          => cwd
-      case Some( \/-(a)) => a
-      case Some(-\/ (r)) =>
-        (unsandbox(cwd) </> r)
-          .relativeTo(rootDir[Sandboxed])
-          .cata(rootDir </> _, rootDir)
-    }
 
-  def targetFile(path: XFile): AFile =
-    path match {
-      case  \/-(a) => a
-      case -\/ (r) =>
-        (unsandbox(cwd) </> r)
-          .relativeTo(rootDir[Sandboxed])
-          .cata(rootDir </> _, rootDir </> file1(fileName(r)))
-    }
 }
 
 object ReplState {
@@ -67,7 +47,7 @@ object ReplState {
   type DatasourceStore[C] = IMap[ResourceName, (DataSourceMetadata, C)]
 
   def mk[C]: ReplState[C] = ReplState[C](
-    rootDir,
+    ResourcePath.Root,
     DebugLevel.Normal,
     PhaseFormat.Tree,
     Some(10),

@@ -52,6 +52,11 @@ sealed trait ResourcePath extends Product with Serializable {
         ResourcePath.leaf(rootDir </> file(name.value))
     }
 
+  def ++(path: ResourcePath): ResourcePath =
+    ResourcePath.resourceNamesIso(
+      ResourcePath.resourceNamesIso.get(this) ++
+        ResourcePath.resourceNamesIso.get(path))
+
   def toPath: APath =
     fold(ι, rootDir)
 
