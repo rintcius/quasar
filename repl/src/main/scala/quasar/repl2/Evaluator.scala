@@ -123,12 +123,19 @@ final class Evaluator[F[_]: Monad: Effect](
           dsType <- findTypeF(tps, tp)
           c <- sources.add(name, dsType, cfg, onConflict)
           _ <- ensureNormal(c)
-          s = s"Added datasource ${name.value}".some
-        } yield s
+        } yield s"Added datasource ${name.value}".some
 
       case DataSourceRemove(name) =>
         (sources.remove(name) >>= ensureNormal[CommonError]).map(
           κ(s"Removed datasource $name".some))
+
+      case Cd(path: ReplPath) =>
+        for {
+          cwd <- stateRef.get.map(_.cwd)
+          dir = newCwd(cwd, path)
+          _ <- stateRef.update(_.copy(cwd = dir))
+          _ <- current(stateRef)
+        } yield s"cwd is now $dir".some
 
       case Exit =>
         F.pure("Exiting...".some)
@@ -161,6 +168,12 @@ final class Evaluator[F[_]: Monad: Effect](
       e match {
         case -\/(err) => raiseEvalError(err.shows)
         case \/-(a) => a.point[F]
+      }
+
+    private def newCwd(cwd: ResourcePath, change: ReplPath): ResourcePath =
+      change match {
+        case ReplPath.Absolute(p) => p
+        case ReplPath.Relative(p) => cwd ++ p
       }
 
     private def prettyMetadata(m: DataSourceMetadata): String =

@@ -56,7 +56,7 @@ object Command {
   final case object Exit extends Command
   final case object Help extends Command
   final case object ListVars extends Command
-  final case class Cd(dir: XDir) extends Command
+  final case class Cd(dir: ReplPath) extends Command
   final case class Select(name: Option[String], query: Query) extends Command
   final case class Explain(query: Query) extends Command
   final case class Compile(query: Query) extends Command
@@ -81,8 +81,8 @@ object Command {
   def parse(input: String): Command =
     input match {
       case ExitPattern()                            => Exit
-      case CdPattern(XDir(d))                       => Cd(d)
-      case CdPattern(_)                             => Cd(rootDir.right)
+      case CdPattern(ReplPath(path))                => Cd(path)
+      case CdPattern(_)                             => Cd(ReplPath.Absolute(ResourcePath.Root))
       case NamedExprPattern(name, query)            => Select(Some(name), Query(query))
       case ExplainPattern(query)                    => Explain(Query(query))
       case CompilePattern(query)                    => Compile(Query(query))
