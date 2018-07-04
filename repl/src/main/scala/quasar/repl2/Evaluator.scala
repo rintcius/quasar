@@ -150,7 +150,7 @@ final class Evaluator[F[_]: Monad: Effect, G[_]: Functor: Effect](
         for {
           cwd <- stateRef.get.map(_.cwd)
           dir = newPath(cwd, path)
-          _ <- ensureValidPath(dir)
+          _ <- ensureValidDir(dir)
           _ <- stateRef.update(_.copy(cwd = dir))
           _ <- current(stateRef)
         } yield s"cwd is now $dir".some
@@ -196,8 +196,12 @@ final class Evaluator[F[_]: Monad: Effect, G[_]: Functor: Effect](
         case Condition.Abnormal(err) => raiseEvalError(err.shows)
       }
 
-    private def ensureValidPath(p: ResourcePath): F[Unit] =
-      children(p).void
+    private def ensureValidDir(p: ResourcePath): F[Unit] =
+      children(p) *>
+        (queryEvaluator.isResource(p) >>= { b =>
+          if (b) raiseEvalError(s"$p is a resource not a dir")
+          else F.unit
+        })
 
     private def evaluateQuery(q: SqlQuery): F[Stream[G, Data]] =
       queryEvaluator.evaluate(q) >>=
