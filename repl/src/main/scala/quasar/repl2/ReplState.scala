@@ -14,7 +14,8 @@
  * limitations under the License.
  */
 
-package quasar.repl2
+package quasar
+package repl2
 
 import slamdata.Predef._
 
@@ -33,7 +34,7 @@ import scalaz._, Scalaz._
     phaseFormat:        PhaseFormat,
     summaryCount:       Option[Int Refined Positive],
     format:             OutputFormat,
-    variables:          Map[String, String],
+    variables:          Variables,
     timingFormat:       TimingFormat,
     supportedTypes:     Option[ISet[DataSourceType]]
   )
@@ -47,7 +48,7 @@ object ReplState {
     PhaseFormat.Tree,
     Some(10),
     OutputFormat.Table,
-    Map(),
+    Variables(Map()),
     TimingFormat.OnlyTotal,
     none
   )

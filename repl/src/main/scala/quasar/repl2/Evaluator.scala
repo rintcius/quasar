@@ -19,8 +19,13 @@ package repl2
 
 import slamdata.Predef._
 import quasar.api._
+import quasar.contrib.pathy._
+import quasar.csv.CsvWriter
+import quasar.fp.minspace
 import quasar.fp.ski._
-import quasar.run.SqlQuery
+import quasar.main.Prettify
+import quasar.repl._
+import quasar.run.{QuasarError, SqlQuery}
 
 import java.lang.Exception
 
@@ -33,6 +38,7 @@ import eu.timepit.refined.auto._
 import eu.timepit.refined.numeric.Positive
 import eu.timepit.refined.scalaz._
 import fs2.Stream
+import pathy.Path._
 import scalaz._, Scalaz._
 
 final class Evaluator[F[_]: Monad: Effect, G[_]: Functor: Effect](
@@ -49,7 +55,7 @@ final class Evaluator[F[_]: Monad: Effect, G[_]: Functor: Effect](
 
   def evaluate(cmd: Command): F[Result] = {
     val exitCode = if (cmd === Exit) Some(ExitCode.Success) else None
-    recoverEvalError(doEvaluate(cmd))(msg => s"Error: $msg".some)
+    recoverSomeErrors(doEvaluate(cmd))
       .map(Result(exitCode, _))
   }
 
@@ -99,15 +105,15 @@ final class Evaluator[F[_]: Monad: Effect, G[_]: Functor: Effect](
 
       case SetVar(n, v) =>
         stateRef.update(state => state.copy(variables = state.variables + (n -> v))) *>
-          F.pure(s"Set variable $n = $v".some)
+          F.pure(s"Set variable ${n.value} = ${v.value}".some)
 
       case UnsetVar(n) =>
         stateRef.update(state => state.copy(variables = state.variables - n)) *>
-          F.pure(s"Unset variable $n".some)
+          F.pure(s"Unset variable ${n.value}".some)
 
       case ListVars =>
-        stateRef.get.map(_.variables).map(
-          _.toList.map { case (name, value) => s"$name = $value" }
+        stateRef.get.map(_.variables.value).map(
+          _.toList.map { case (VarName(name), VarValue(value)) => s"$name = $value" }
             .mkString("Variables:\n", "\n", "").some)
 
       case DataSources =>
@@ -150,8 +156,6 @@ final class Evaluator[F[_]: Monad: Effect, G[_]: Functor: Effect](
         } yield s"cwd is now $dir".some
 
       case Ls(path: Option[ReplPath]) =>
-        def gTof[A](ga: G[A]): F[A] = LiftIO[F].liftIO(G.toIO(ga))
-
         def convert(s: Stream[G, (ResourceName, ResourcePathType)])
             : G[Option[String]] =
           s.map { case (name, _) => name.value }
@@ -162,6 +166,16 @@ final class Evaluator[F[_]: Monad: Effect, G[_]: Functor: Effect](
           p = path.map(newPath(cwd, _)).getOrElse(cwd)
           cs <- children(p)
           res <- gTof(convert(cs))
+        } yield res
+
+      case Select(q) =>
+        def convert(format: OutputFormat, s: Stream[G, Data]): G[Option[String]] =
+          s.compile.toList.map(ds => renderData(format, ds).some)
+
+        for {
+          state <- stateRef.get
+          qres <- evaluateQuery(SqlQuery(q, state.variables, toADir(state.cwd)))
+          res <- gTof(convert(state.format, qres))
         } yield res
 
       case Exit =>
@@ -185,6 +199,10 @@ final class Evaluator[F[_]: Monad: Effect, G[_]: Functor: Effect](
     private def ensureValidPath(p: ResourcePath): F[Unit] =
       children(p).void
 
+    private def evaluateQuery(q: SqlQuery): F[Stream[G, Data]] =
+      queryEvaluator.evaluate(q) >>=
+        fromEither[ResourceError.ReadError, Stream[G, Data]]
+
     private def findType(tps: ISet[DataSourceType], tp: DataSourceType.Name): Option[DataSourceType] =
       tps.toList.find(_.name === tp)
 
@@ -194,11 +212,16 @@ final class Evaluator[F[_]: Monad: Effect, G[_]: Functor: Effect](
         case Some(z) => z.point[F]
       }
 
+    private def formatJson(codec: DataCodec)(data: Data): Option[String] =
+      codec.encode(data).map(_.pretty(minspace))
+
     private def fromEither[E: Show, A](e: E \/ A): F[A] =
       e match {
         case -\/(err) => raiseEvalError(err.shows)
         case \/-(a) => a.point[F]
       }
+
+    private def gTof[A](ga: G[A]): F[A] = LiftIO[F].liftIO(G.toIO(ga))
 
     private def newPath(cwd: ResourcePath, change: ReplPath): ResourcePath =
       change match {
@@ -218,14 +241,30 @@ final class Evaluator[F[_]: Monad: Effect, G[_]: Functor: Effect](
     private def raiseEvalError[A](s: String): F[A] =
       F.raiseError(new EvalError(s))
 
-    private def recoverEvalError[A](fa: F[A])(recover: String => A): F[A] =
+    private def recoverSomeErrors(fa: F[Option[String]]): F[Option[String]] =
       F.recover(fa) {
-        case err: EvalError => recover(err.getMessage)
+        case ee: EvalError => s"Evaluation error: ${ee.getMessage}".some
+        case QuasarError.throwableP(qe) => s"Quasar error: $qe".some
       }
+
+    private def renderData(format: OutputFormat, ds: List[Data]): String =
+      (format match {
+        case OutputFormat.Table =>
+          Prettify.renderTable(ds)
+        case OutputFormat.Precise =>
+          ds.map(formatJson(DataCodec.Precise)).unite
+        case OutputFormat.Readable =>
+          ds.map(formatJson(DataCodec.Readable)).unite
+        case OutputFormat.Csv =>
+          Prettify.renderValues(ds).map(CsvWriter(none)(_).trim)
+      }).mkString("\n")
 
     private def supportedTypes: F[ISet[DataSourceType]] =
       stateRef.get.map(_.supportedTypes) >>=
         (_.map(_.point[F]).getOrElse(doSupportedTypes))
+
+    private def toADir(path: ResourcePath): ADir =
+      path.fold(f => fileParent(f) </> dir(fileName(f).value), rootDir)
 }
 
 object Evaluator {
