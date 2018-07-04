@@ -35,9 +35,6 @@ object Command {
   private val ExitPattern                  = "(?i)(?:exit)|(?:quit)".r
   private val HelpPattern                  = "(?i)(?:help)|(?:commands)|\\?".r
   private val CdPattern                    = "(?i)cd(?: +(.+))?".r
-  private val NamedExprPattern             = "(?i)([^ :]+) *<- *(.+)".r
-  private val ExplainPattern               = "(?i)explain +(.+)".r
-  private val CompilePattern               = "(?i)compile +(.+)".r
   private val LsPattern                    = "(?i)ls(?: +(.+))?".r
   private val SetPhaseFormatPattern        = "(?i)(?:set +)?phaseFormat *= *(tree|code)".r
   private val SetTimingFormatPattern       = "(?i)(?:set +)?timingFormat *= *(tree|onlytotal)".r
@@ -57,17 +54,15 @@ object Command {
   final case object Help extends Command
   final case object ListVars extends Command
   final case class Cd(dir: ReplPath) extends Command
-  final case class Select(name: Option[String], query: Query) extends Command
-  final case class Explain(query: Query) extends Command
-  final case class Compile(query: Query) extends Command
+  final case class Select(query: Query) extends Command
   final case class Ls(dir: Option[ReplPath]) extends Command
   final case class Debug(level: DebugLevel) extends Command
   final case class SummaryCount(rows: Int) extends Command
   final case class Format(format: OutputFormat) extends Command
   final case class SetPhaseFormat(format: PhaseFormat) extends Command
   final case class SetTimingFormat(format: TimingFormat) extends Command
-  final case class SetVar(name: String, value: String) extends Command
-  final case class UnsetVar(name: String) extends Command
+  final case class SetVar(name: VarName, value: VarValue) extends Command
+  final case class UnsetVar(name: VarName) extends Command
 
   final case object DataSources extends Command
   final case object DataSourceTypes extends Command
@@ -83,9 +78,6 @@ object Command {
       case ExitPattern()                            => Exit
       case CdPattern(ReplPath(path))                => Cd(path)
       case CdPattern(_)                             => Cd(ReplPath.Absolute(ResourcePath.Root))
-      case NamedExprPattern(name, query)            => Select(Some(name), Query(query))
-      case ExplainPattern(query)                    => Explain(Query(query))
-      case CompilePattern(query)                    => Compile(Query(query))
       case LsPattern(ReplPath(path))                => Ls(path.some)
       case LsPattern(_)                             => Ls(none)
       case DebugPattern(code)                       => Debug(DebugLevel.int.unapply(code.toInt) | DebugLevel.Normal)
@@ -94,8 +86,8 @@ object Command {
       case SummaryCountPattern(rows)                => SummaryCount(rows.toInt)
       case FormatPattern(format)                    => Format(OutputFormat.fromString(format) | OutputFormat.Table)
       case HelpPattern()                            => Help
-      case SetVarPattern(name, value)               => SetVar(name, value)
-      case UnsetVarPattern(name)                    => UnsetVar(name)
+      case SetVarPattern(name, value)               => SetVar(VarName(name), VarValue(value))
+      case UnsetVarPattern(name)                    => UnsetVar(VarName(name))
       case ListVarPattern()                         => ListVars
       case DataSourcesPattern()                     => DataSources
       case DataSourceTypesPattern()                 => DataSourceTypes
@@ -104,7 +96,7 @@ object Command {
                                                        DataSourceAdd(ResourceName(n), tp, cfg,
                                                          ConflictResolution.string.getOption(onConflict) | ConflictResolution.Preserve)
       case DataSourceRemovePattern(n)               => DataSourceRemove(ResourceName(n))
-      case _                                        => Select(None, Query(input))
+      case _                                        => Select(Query(input))
     }
 
   type XDir = RelDir[Unsandboxed] \/ ADir
