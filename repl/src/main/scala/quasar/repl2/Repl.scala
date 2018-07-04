@@ -65,7 +65,7 @@ object Repl {
       Repl[F] =
     new Repl[F](prompt, reader, evaluator)
 
-  def mk[F[_]: Monad: ConcurrentEffect](datasources: DataSources[F, Json], ref: Ref[F, ReplState[Json]]): F[Repl[F]] = {
+  def mk[F[_]: Monad: ConcurrentEffect](datasources: DataSources[F, Json], ref: Ref[F, ReplState]): F[Repl[F]] = {
     val evaluator = Evaluator[F](ref, datasources)
     historyFile[F].map(f => Repl[F](prompt, mkLineReader(f), evaluator.evaluate))
   }
