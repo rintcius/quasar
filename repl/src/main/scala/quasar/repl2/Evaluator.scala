@@ -23,7 +23,7 @@ import quasar.fp.ski._
 
 import java.lang.Exception
 
-import argonaut.{Json, JsonParser}
+import argonaut.{Json, JsonParser, JsonScalaz}, JsonScalaz._
 import cats.effect._
 import cats.effect.concurrent.Ref
 import eu.timepit.refined.refineV
@@ -34,7 +34,7 @@ import eu.timepit.refined.scalaz._
 import scalaz._, Scalaz._
 
 final class Evaluator[F[_]: Monad: Effect](
-  stateRef: Ref[F, ReplState[Json]],
+  stateRef: Ref[F, ReplState],
   sources: DataSources[F, Json]) {
 
   import Command._
@@ -51,7 +51,7 @@ final class Evaluator[F[_]: Monad: Effect](
 
   ////
 
-  private def current(ref: Ref[F, ReplState[Json]]) =
+  private def current(ref: Ref[F, ReplState]) =
     for {
       s <- ref.get
       _ <- F.delay(println(s"Current: $s"))
@@ -124,7 +124,7 @@ final class Evaluator[F[_]: Monad: Effect](
           dsType <- findTypeF(tps, tp)
           cfgJson <- JsonParser.parse(cfg).fold(raiseEvalError, _.point[F])
           c <- sources.add(name, dsType, cfgJson, onConflict)
-          _ <- ensureNormal(c.map(_.toString))
+          _ <- ensureNormal(c)
         } yield s"Added datasource ${name.value}".some
 
       case DataSourceRemove(name) =>
@@ -206,7 +206,7 @@ object Evaluator {
   final class EvalError(msg: String) extends java.lang.RuntimeException(msg)
 
   def apply[F[_]: Monad: Effect](
-    stateRef: Ref[F, ReplState[Json]],
+    stateRef: Ref[F, ReplState],
     sources: DataSources[F, Json])
       : Evaluator[F] =
     new Evaluator[F](stateRef, sources)

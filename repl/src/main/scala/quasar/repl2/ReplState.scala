@@ -27,7 +27,7 @@ import eu.timepit.refined.auto._
 import eu.timepit.refined.numeric.Positive
 import scalaz._, Scalaz._
 
- final case class ReplState[C](
+ final case class ReplState(
     cwd:                ResourcePath,
     debugLevel:         DebugLevel,
     phaseFormat:        PhaseFormat,
@@ -35,18 +35,13 @@ import scalaz._, Scalaz._
     format:             OutputFormat,
     variables:          Map[String, String],
     timingFormat:       TimingFormat,
-    datasourceStore:    ReplState.DatasourceStore[C],
     supportedTypes:     Option[ISet[DataSourceType]]
-  ) {
-
-
-}
+  )
 
 object ReplState {
 
-  type DatasourceStore[C] = IMap[ResourceName, (DataSourceMetadata, C)]
 
-  def mk[C]: ReplState[C] = ReplState[C](
+  def mk: ReplState = ReplState(
     ResourcePath.Root,
     DebugLevel.Normal,
     PhaseFormat.Tree,
@@ -54,7 +49,6 @@ object ReplState {
     OutputFormat.Table,
     Map(),
     TimingFormat.OnlyTotal,
-    IMap.empty,
     none
   )
 }

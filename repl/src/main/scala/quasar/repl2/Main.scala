@@ -26,7 +26,6 @@ import quasar.run.{Quasar, QuasarApp, QuasarError}
 import java.nio.file.Paths
 import scala.concurrent.ExecutionContext.Implicits.global
 
-import argonaut.Json
 import cats.effect.{ExitCode, IO}
 import cats.effect.concurrent.Ref
 import fs2.Stream
@@ -50,7 +49,7 @@ object Main extends QuasarApp {
 
   def repl(q: Quasar[IO, IO]): IO[ExitCode] =
     for {
-      ref <- Ref.of[IO, ReplState[Json]](ReplState.mk)
+      ref <- Ref.of[IO, ReplState](ReplState.mk)
       repl <- Repl.mk[IO](q.dataSources, ref)
       l <- repl.loop
     } yield l
