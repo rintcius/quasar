@@ -60,7 +60,7 @@ object Command {
   final case class Select(name: Option[String], query: Query) extends Command
   final case class Explain(query: Query) extends Command
   final case class Compile(query: Query) extends Command
-  final case class Ls(dir: Option[XDir]) extends Command
+  final case class Ls(dir: Option[ReplPath]) extends Command
   final case class Debug(level: DebugLevel) extends Command
   final case class SummaryCount(rows: Int) extends Command
   final case class Format(format: OutputFormat) extends Command
@@ -86,7 +86,7 @@ object Command {
       case NamedExprPattern(name, query)            => Select(Some(name), Query(query))
       case ExplainPattern(query)                    => Explain(Query(query))
       case CompilePattern(query)                    => Compile(Query(query))
-      case LsPattern(XDir(d))                       => Ls(d.some)
+      case LsPattern(ReplPath(path))                => Ls(path.some)
       case LsPattern(_)                             => Ls(none)
       case DebugPattern(code)                       => Debug(DebugLevel.int.unapply(code.toInt) | DebugLevel.Normal)
       case SetPhaseFormatPattern(format)            => SetPhaseFormat(PhaseFormat.fromString(format) | PhaseFormat.Tree)

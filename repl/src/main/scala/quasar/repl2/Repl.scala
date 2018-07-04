@@ -18,8 +18,9 @@ package quasar
 package repl2
 
 import slamdata.Predef._
-import quasar.api.DataSources
+import quasar.api.{DataSources, QueryEvaluator}
 import quasar.build.BuildInfo
+import quasar.run.SqlQuery
 
 import java.io.File
 import java.lang.System
@@ -27,6 +28,7 @@ import java.lang.System
 import argonaut.Json
 import cats.effect._
 import cats.effect.concurrent._
+import fs2.Stream
 import org.apache.commons.io.FileUtils
 import org.jline.reader._
 import org.jline.terminal._
@@ -65,8 +67,12 @@ object Repl {
       Repl[F] =
     new Repl[F](prompt, reader, evaluator)
 
-  def mk[F[_]: Monad: ConcurrentEffect](datasources: DataSources[F, Json], ref: Ref[F, ReplState]): F[Repl[F]] = {
-    val evaluator = Evaluator[F](ref, datasources)
+  def mk[F[_]: Monad: ConcurrentEffect, G[_]: Functor: Effect](
+    ref: Ref[F, ReplState],
+    datasources: DataSources[F, Json],
+    queryEvaluator: QueryEvaluator[F, Stream[G, ?], SqlQuery, Stream[G, Data]])
+      : F[Repl[F]] = {
+    val evaluator = Evaluator[F, G](ref, datasources, queryEvaluator)
     historyFile[F].map(f => Repl[F](prompt, mkLineReader(f), evaluator.evaluate))
   }
 
