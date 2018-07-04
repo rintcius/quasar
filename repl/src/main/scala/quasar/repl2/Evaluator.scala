@@ -55,6 +55,11 @@ final class Evaluator[F[_]: Monad: Effect, G[_]: Functor: Effect](
 
   ////
 
+  private def children(path: ResourcePath)
+      : F[Stream[G, (ResourceName, ResourcePathType)]] =
+    queryEvaluator.children(path) >>=
+      fromEither[ResourceError.CommonError, Stream[G, (ResourceName, ResourcePathType)]]
+
   private def current(ref: Ref[F, ReplState]) =
     for {
       s <- ref.get
@@ -139,6 +144,7 @@ final class Evaluator[F[_]: Monad: Effect, G[_]: Functor: Effect](
         for {
           cwd <- stateRef.get.map(_.cwd)
           dir = newPath(cwd, path)
+          _ <- ensureValidPath(dir)
           _ <- stateRef.update(_.copy(cwd = dir))
           _ <- current(stateRef)
         } yield s"cwd is now $dir".some
@@ -154,9 +160,8 @@ final class Evaluator[F[_]: Monad: Effect, G[_]: Functor: Effect](
         for {
           cwd <- stateRef.get.map(_.cwd)
           p = path.map(newPath(cwd, _)).getOrElse(cwd)
-          cs <- queryEvaluator.children(p)
-          children <- fromEither[ResourceError.CommonError, Stream[G, (ResourceName, ResourcePathType)]](cs)
-          res <- gTof(convert(children))
+          cs <- children(p)
+          res <- gTof(convert(cs))
         } yield res
 
       case Exit =>
@@ -176,6 +181,9 @@ final class Evaluator[F[_]: Monad: Effect, G[_]: Functor: Effect](
         case Condition.Normal() => F.unit
         case Condition.Abnormal(err) => raiseEvalError(err.shows)
       }
+
+    private def ensureValidPath(p: ResourcePath): F[Unit] =
+      children(p).void
 
     private def findType(tps: ISet[DataSourceType], tp: DataSourceType.Name): Option[DataSourceType] =
       tps.toList.find(_.name === tp)
