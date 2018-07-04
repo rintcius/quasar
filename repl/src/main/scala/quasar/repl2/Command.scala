@@ -19,12 +19,10 @@ package repl2
 
 import slamdata.Predef._
 import quasar.api._
-import quasar.contrib.pathy._
 import quasar.repl._
-import quasar.sql.{Query}
+import quasar.sql.Query
 
 import eu.timepit.refined.auto._
-import pathy.Path, Path._
 import scalaz._, Scalaz._
 
 sealed abstract class Command
@@ -98,26 +96,4 @@ object Command {
       case DataSourceRemovePattern(n)               => DataSourceRemove(ResourceName(n))
       case _                                        => Select(Query(input))
     }
-
-  type XDir = RelDir[Unsandboxed] \/ ADir
-  object XDir {
-    def unapply(str: String): Option[XDir] =
-      Option(str)
-        .filter(_ ≠ "")
-        .map(s => if (s.endsWith("/")) s else s + "/")
-        .flatMap { s =>
-          posixCodec.parseRelDir(s).map(_.left) orElse
-            posixCodec.parseAbsDir(s).map(unsafeSandboxAbs(_).right)
-        }
-  }
-  type XFile = RelFile[Unsandboxed] \/ AFile
-  object XFile {
-    def unapply(str: String): Option[XFile] =
-      Option(str)
-        .filter(_ ≠ "")
-        .flatMap { s =>
-          posixCodec.parseRelFile(s).map(_.left) orElse
-            posixCodec.parseAbsFile(s).map(unsafeSandboxAbs(_).right)
-        }
-  }
 }
