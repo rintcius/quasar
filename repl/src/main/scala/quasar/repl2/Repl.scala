@@ -24,6 +24,7 @@ import quasar.build.BuildInfo
 import java.io.File
 import java.lang.System
 
+import argonaut.Json
 import cats.effect._
 import cats.effect.concurrent._
 import org.apache.commons.io.FileUtils
@@ -64,7 +65,7 @@ object Repl {
       Repl[F] =
     new Repl[F](prompt, reader, evaluator)
 
-  def mk[F[_]: Monad: ConcurrentEffect](datasources: DataSources[F, String], ref: Ref[F, ReplState[String]]): F[Repl[F]] = {
+  def mk[F[_]: Monad: ConcurrentEffect](datasources: DataSources[F, Json], ref: Ref[F, ReplState[Json]]): F[Repl[F]] = {
     val evaluator = Evaluator[F](ref, datasources)
     historyFile[F].map(f => Repl[F](prompt, mkLineReader(f), evaluator.evaluate))
   }

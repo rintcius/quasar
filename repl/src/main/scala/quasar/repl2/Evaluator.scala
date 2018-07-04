@@ -23,6 +23,7 @@ import quasar.fp.ski._
 
 import java.lang.Exception
 
+import argonaut.{Json, JsonParser}
 import cats.effect._
 import cats.effect.concurrent.Ref
 import eu.timepit.refined.refineV
@@ -33,8 +34,8 @@ import eu.timepit.refined.scalaz._
 import scalaz._, Scalaz._
 
 final class Evaluator[F[_]: Monad: Effect](
-  stateRef: Ref[F, ReplState[String]],
-  sources: DataSources[F, String]) {
+  stateRef: Ref[F, ReplState[Json]],
+  sources: DataSources[F, Json]) {
 
   import Command._
   import DataSourceError._
@@ -50,7 +51,7 @@ final class Evaluator[F[_]: Monad: Effect](
 
   ////
 
-  private def current(ref: Ref[F, ReplState[String]]) =
+  private def current(ref: Ref[F, ReplState[Json]]) =
     for {
       s <- ref.get
       _ <- F.delay(println(s"Current: $s"))
@@ -112,7 +113,7 @@ final class Evaluator[F[_]: Monad: Effect](
 
       case DataSourceLookup(name) =>
         (sources.lookup(name) >>=
-          fromEither[CommonError, (DataSourceMetadata, String)]).map
+          fromEither[CommonError, (DataSourceMetadata, Json)]).map
           { case (metadata, cfg) =>
               List("Datasource:", s"${prettyMetadata(metadata)} $cfg").mkString("\n").some
           }
@@ -121,8 +122,9 @@ final class Evaluator[F[_]: Monad: Effect](
         for {
           tps <- supportedTypes
           dsType <- findTypeF(tps, tp)
-          c <- sources.add(name, dsType, cfg, onConflict)
-          _ <- ensureNormal(c)
+          cfgJson <- JsonParser.parse(cfg).fold(raiseEvalError, _.point[F])
+          c <- sources.add(name, dsType, cfgJson, onConflict)
+          _ <- ensureNormal(c.map(_.toString))
         } yield s"Added datasource ${name.value}".some
 
       case DataSourceRemove(name) =>
@@ -204,8 +206,8 @@ object Evaluator {
   final class EvalError(msg: String) extends java.lang.RuntimeException(msg)
 
   def apply[F[_]: Monad: Effect](
-    stateRef: Ref[F, ReplState[String]],
-    sources: DataSources[F, String])
+    stateRef: Ref[F, ReplState[Json]],
+    sources: DataSources[F, Json])
       : Evaluator[F] =
     new Evaluator[F](stateRef, sources)
 
