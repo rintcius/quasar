@@ -156,10 +156,14 @@ final class Evaluator[F[_]: Monad: Effect, G[_]: Functor: Effect](
         } yield s"cwd is now $dir".some
 
       case Ls(path: Option[ReplPath]) =>
+        def prettyType(tpe: ResourcePathType): String = tpe match {
+          case ResourcePathType.ResourcePrefix => "prefix  "
+          case ResourcePathType.Resource       => "resource"
+        }
         def convert(s: Stream[G, (ResourceName, ResourcePathType)])
             : G[Option[String]] =
-          s.map { case (name, _) => name.value }
-            .compile.toVector.map(_.mkString("\n").some)
+          s.map { case (name, tpe) => s"${prettyType(tpe)} ${name.value}" }
+            .compile.toVector.map(_.mkString("type     name\n---------------------\n", "\n", "").some)
 
         for {
           cwd <- stateRef.get.map(_.cwd)
