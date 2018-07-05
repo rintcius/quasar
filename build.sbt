@@ -451,9 +451,7 @@ lazy val runp = (project in file("run"))
   */
 lazy val repl = project
   .settings(name := "quasar-repl")
-  .dependsOn(interface, runp)
-    // TODO remove once we don't need MockDataSources anymore
-  .dependsOn(api % "compile->test")
+  .dependsOn(api, interface, runp)
   .settings(commonSettings)
   .settings(targetSettings)
   .settings(backendRewrittenRunSettings)
