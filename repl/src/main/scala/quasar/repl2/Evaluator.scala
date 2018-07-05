@@ -118,7 +118,7 @@ final class Evaluator[F[_]: Monad: Effect, G[_]: Functor: Effect](
 
       case DataSources =>
         sources.metadata.map(
-          _.toList.map { case (k, v) => s"${k.value} - ${prettyMetadata(v)}" }
+          _.toList.map { case (k, v) => s"${k.value} - ${printMetadata(v)}" }
             .mkString("Datasources:\n", "\n", "").some)
 
       case DataSourceTypes =>
@@ -130,7 +130,7 @@ final class Evaluator[F[_]: Monad: Effect, G[_]: Functor: Effect](
         (sources.lookup(name) >>=
           fromEither[CommonError, (DataSourceMetadata, Json)]).map
           { case (metadata, cfg) =>
-              List("Datasource:", s"${prettyMetadata(metadata)} $cfg").mkString("\n").some
+              List("Datasource:", s"${printMetadata(metadata)} $cfg").mkString("\n").some
           }
 
       case DataSourceAdd(name, tp, cfg, onConflict) =>
@@ -153,16 +153,17 @@ final class Evaluator[F[_]: Monad: Effect, G[_]: Functor: Effect](
           _ <- ensureValidDir(dir)
           _ <- stateRef.update(_.copy(cwd = dir))
           _ <- current(stateRef)
-        } yield s"cwd is now $dir".some
+        } yield s"cwd is now ${printPath(dir)}".some
 
       case Ls(path: Option[ReplPath]) =>
-        def prettyType(tpe: ResourcePathType): String = tpe match {
+        def printType(tpe: ResourcePathType): String = tpe match {
           case ResourcePathType.ResourcePrefix => "prefix  "
           case ResourcePathType.Resource       => "resource"
         }
+
         def convert(s: Stream[G, (ResourceName, ResourcePathType)])
             : G[Option[String]] =
-          s.map { case (name, tpe) => s"${prettyType(tpe)} ${name.value}" }
+          s.map { case (name, tpe) => s"${printType(tpe)} ${name.value}" }
             .compile.toVector.map(_.mkString("type     name\n---------------------\n", "\n", "").some)
 
         for {
@@ -237,14 +238,17 @@ final class Evaluator[F[_]: Monad: Effect, G[_]: Functor: Effect](
         case ReplPath.Relative(p) => cwd ++ p
       }
 
-    private def prettyMetadata(m: DataSourceMetadata): String =
-      s"${m.kind.name} ${m.kind.version} ${prettyCondition[Exception](m.status, _.getMessage)}"
+    private def printMetadata(m: DataSourceMetadata): String =
+      s"${m.kind.name} ${m.kind.version} ${printCondition[Exception](m.status, _.getMessage)}"
 
-    private def prettyCondition[A](c: Condition[A], onAbnormal: A => String) =
+    private def printCondition[A](c: Condition[A], onAbnormal: A => String) =
       c match {
         case Condition.Normal() => "ok"
         case Condition.Abnormal(a) => s"error: ${onAbnormal(a)}"
       }
+
+    private def printPath(p: ResourcePath): String =
+      posixCodec.printPath(p.toPath)
 
     private def raiseEvalError[A](s: String): F[A] =
       F.raiseError(new EvalError(s))
