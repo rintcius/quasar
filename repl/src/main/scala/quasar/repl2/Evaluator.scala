@@ -66,12 +66,6 @@ final class Evaluator[F[_]: Monad: Effect, G[_]: Functor: Effect](
     queryEvaluator.children(path) >>=
       fromEither[ResourceError.CommonError, Stream[G, (ResourceName, ResourcePathType)]]
 
-  private def current(ref: Ref[F, ReplState]) =
-    for {
-      s <- ref.get
-      _ <- F.delay(println(s"Current: $s"))
-    } yield ()
-
   private def doEvaluate(cmd: Command): F[Option[String]] =
     cmd match {
       case Help =>
@@ -152,7 +146,6 @@ final class Evaluator[F[_]: Monad: Effect, G[_]: Functor: Effect](
           dir = newPath(cwd, path)
           _ <- ensureValidDir(dir)
           _ <- stateRef.update(_.copy(cwd = dir))
-          _ <- current(stateRef)
         } yield s"cwd is now ${printPath(dir)}".some
 
       case Ls(path: Option[ReplPath]) =>
@@ -185,10 +178,10 @@ final class Evaluator[F[_]: Monad: Effect, G[_]: Functor: Effect](
 
       case Exit =>
         F.pure("Exiting...".some)
-
-      case _ =>
-        current(stateRef) *>
-        F.pure(s"TODO: $cmd".some)
+      //
+      // case _ =>
+      //   current(stateRef) *>
+      //   F.pure(s"TODO: $cmd".some)
     }
 
     private def doSupportedTypes: F[ISet[DataSourceType]] =
@@ -201,6 +194,12 @@ final class Evaluator[F[_]: Monad: Effect, G[_]: Functor: Effect](
         case Condition.Abnormal(err) => raiseEvalError(err.shows)
       }
 
+    // TODO
+    // We could enahnce isResource(path): F[Boolean] to
+    // getResourceTypes(path): ISet[ResourcePathType]
+    // Then this impl would only need 1 api call.
+    // Note that with the current impl we assume that a path cannot be both
+    // a prefix and a resource
     private def ensureValidDir(p: ResourcePath): F[Unit] =
       children(p) *>
         (queryEvaluator.isResource(p) >>= { b =>
