@@ -307,11 +307,11 @@ object Evaluator {
       |  [query]
       |  set format = table | precise | readable | csv
       |  set [var] = [value]
+      |  env
       |
       |TODO:
       |  set debug = 0 | 1 | 2
       |  set phaseFormat = tree | code
       |  set timingFormat = tree | onlytotal
-      |  set summaryCount = [rows]
-      |  env""".stripMargin
+      |  set summaryCount = [rows]""".stripMargin
 }
