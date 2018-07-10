@@ -18,22 +18,23 @@ package quasar.run
 
 import slamdata.Predef._
 
-import cats.effect.{ConcurrentEffect, ExitCode, IO, IOApp}
-import cats.effect.concurrent.Deferred
+import scala.concurrent.ExecutionContext
+
+import cats.effect.{ConcurrentEffect, IO}
 import fs2.Stream
+import fs2.async.Promise
 import scalaz._, Scalaz._
 import shims._
 
-trait QuasarApp extends IOApp {
-
+trait QuasarApp {
   def quasarApp[F[_], A](
     quasarStream: Stream[F, Quasar[F, IO]],
     onQuasar: Quasar[F, IO] => F[A])(
-    implicit F: ConcurrentEffect[F])
+    implicit F: ConcurrentEffect[F], ec: ExecutionContext)
       : F[A] =
     for {
-      qDeferred <- Deferred[F, Quasar[F, IO]]
-      sdownDeferred <- Deferred[F, Unit]
+      qDeferred <- Promise.empty[F, Quasar[F, IO]]
+      sdownDeferred <- Promise.empty[F, Unit]
       _ <- F.start(quasarStream.evalMap(q => qDeferred.complete(q) *> sdownDeferred.get).compile.drain)
       q <- qDeferred.get
       res <- onQuasar(q)
@@ -42,8 +43,9 @@ trait QuasarApp extends IOApp {
 
   def runQuasar[A](
     quasarStream: Stream[IO, Quasar[IO, IO]],
-    onQuasar: Quasar[IO, IO] => IO[ExitCode])
-      : IO[ExitCode] =
+    onQuasar: Quasar[IO, IO] => IO[Unit])(
+    implicit ec: ExecutionContext)
+      : IO[Unit] =
     quasarApp(quasarStream, onQuasar)
 
 }

@@ -27,8 +27,8 @@ import java.lang.System
 
 import argonaut.Json
 import cats.effect._
-import cats.effect.concurrent._
 import fs2.Stream
+import fs2.async.Ref
 import org.apache.commons.io.FileUtils
 import org.jline.reader._
 import org.jline.terminal._
@@ -49,7 +49,7 @@ final class Repl[F[_]: Monad: ConcurrentEffect](
   private def print(string: Option[String]): F[Unit] =
     string.fold(F.unit)(s => F.delay(println(s)))
 
-  val loop: F[ExitCode] =
+  val loop: F[Unit] =
     for {
       cmd <- read
       res <- eval(cmd)

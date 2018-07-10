@@ -26,9 +26,9 @@ import quasar.run.{Quasar, QuasarApp, QuasarError}
 import java.nio.file.Paths
 import scala.concurrent.ExecutionContext.Implicits.global
 
-import cats.effect.{ExitCode, IO}
-import cats.effect.concurrent.Ref
+import cats.effect.IO
 import fs2.Stream
+import fs2.async.Ref
 import scalaz._, Scalaz._
 import shims._
 
@@ -47,14 +47,17 @@ object Main extends QuasarApp {
       q <- Quasar[IO](tmpPath, ExternalConfig.Empty, global)
     } yield q
 
-  def repl(q: Quasar[IO, IO]): IO[ExitCode] =
+  def repl(q: Quasar[IO, IO]): IO[Unit] =
     for {
-      ref <- Ref.of[IO, ReplState](ReplState.mk)
+      ref <- Ref[IO, ReplState](ReplState.mk)
       repl <- Repl.mk[IO, IO](ref, q.dataSources, q.queryEvaluator)
       l <- repl.loop
     } yield l
 
-  def run(args: List[String]): IO[ExitCode] =
+  def run(args: List[String]): IO[Unit] =
     runQuasar(quasarStream, repl)
+
+  def main(args: Array[String]): Unit =
+    run(args.toList).unsafeRunSync
 
 }
