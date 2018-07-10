@@ -23,7 +23,6 @@ import quasar.build.BuildInfo
 import quasar.run.SqlQuery
 
 import java.io.File
-import java.lang.System
 
 import argonaut.Json
 import cats.effect._
@@ -88,17 +87,14 @@ object Repl {
       }
     }
 
-  private def getProp[F[_]](p: String)(implicit F: Sync[F]): F[Option[String]] =
-    F.delay(Option(System.getProperty(p)))
-
   private def historyFile[F[_]: Monad](implicit F: Sync[F]): F[Option[File]] =
-    getProp(".quasar.historyfile") >>=
+    Paths.getProp("quasar.historyfile") >>=
       (_ match {
         case Some(p) => touch(new File(p))
         case None =>
-          getProp("user.home") >>=
+          Paths.getUserHome >>=
             (_ match {
-              case Some(h) => touch(new File(h, ".quasar.history"))
+              case Some(h) => touch(new File(h.toFile, ".quasar.history"))
               case None => none[File].point[F]
             })
       })

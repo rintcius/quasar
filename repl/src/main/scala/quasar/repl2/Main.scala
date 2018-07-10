@@ -23,7 +23,6 @@ import quasar.common.PhaseResults
 import quasar.contrib.scalaz.{MonadError_, MonadTell_}
 import quasar.run.{Quasar, QuasarApp, QuasarError}
 
-import java.nio.file.Paths
 import scala.concurrent.ExecutionContext.Implicits.global
 
 import cats.effect.IO
@@ -42,9 +41,14 @@ object Main extends QuasarApp {
 
   def quasarStream: Stream[IO, Quasar[IO, IO]] =
     for {
-      //TODO parse from command line
-      tmpPath <- Stream.eval(IO(Paths.get("/tmp/quasar-repl")))
-      q <- Quasar[IO](tmpPath, ExternalConfig.Empty, global)
+      basePath <- Paths.getBasePath[Stream[IO, ?]]
+      dataDir = basePath.resolve(Paths.quasarDataDirName)
+      _ <- Paths.mkdirs[Stream[IO, ?]](dataDir)
+      dataPath <- Stream.eval(IO(dataDir))
+      pluginDir = basePath.resolve(Paths.quasarPluginsDirName)
+      _ <- Paths.mkdirs[Stream[IO, ?]](pluginDir)
+      pluginPath <- Stream.eval(IO(pluginDir))
+      q <- Quasar[IO](dataPath, ExternalConfig.PluginDirectory(pluginPath), global)
     } yield q
 
   def repl(q: Quasar[IO, IO]): IO[Unit] =
