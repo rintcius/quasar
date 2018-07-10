@@ -229,10 +229,22 @@ final class Evaluator[F[_]: Monad: Effect, G[_]: Functor: Effect](
 
     private def gTof[A](ga: G[A]): F[A] = LiftIO[F].liftIO(ga.to[IO])
 
+    // This is just similar to `..` from file systems, not meant to
+    // be equivalent. E.g. a difference with `..`` from filesystem is that
+    // `cd ../..` from dir `/mydir` won't give an error but evaluates to `/`
+    private def interpretDotsAsParent(p: ResourcePath): ResourcePath = {
+      val names = ResourcePath.resourceNamesIso.get(p)
+      val interpreted = names.foldLeft(IList.empty[ResourceName]) { case (acc, n) =>
+        if (n === ResourceName("..")) acc.dropRight(1)
+        else acc :+ n
+      }
+      ResourcePath.resourceNamesIso(interpreted)
+    }
+
     private def newPath(cwd: ResourcePath, change: ReplPath): ResourcePath =
       change match {
-        case ReplPath.Absolute(p) => p
-        case ReplPath.Relative(p) => cwd ++ p
+        case ReplPath.Absolute(p) => interpretDotsAsParent(p)
+        case ReplPath.Relative(p) => interpretDotsAsParent(cwd ++ p)
       }
 
     private def printMetadata(m: DataSourceMetadata): String =
