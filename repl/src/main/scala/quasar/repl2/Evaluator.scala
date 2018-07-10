@@ -19,6 +19,7 @@ package repl2
 
 import slamdata.Predef._
 import quasar.api._
+import quasar.contrib.cats.effect._
 import quasar.contrib.pathy._
 import quasar.csv.CsvWriter
 import quasar.fp.minspace
@@ -31,13 +32,13 @@ import java.lang.Exception
 
 import argonaut.{Json, JsonParser, JsonScalaz}, JsonScalaz._
 import cats.effect._
-import cats.effect.concurrent.Ref
 import eu.timepit.refined.refineV
 import eu.timepit.refined.api.Refined
 import eu.timepit.refined.auto._
 import eu.timepit.refined.numeric.Positive
 import eu.timepit.refined.scalaz._
 import fs2.Stream
+import fs2.async.Ref
 import pathy.Path._
 import scalaz._, Scalaz._
 
@@ -54,7 +55,7 @@ final class Evaluator[F[_]: Monad: Effect, G[_]: Functor: Effect](
   val G = Effect[G]
 
   def evaluate(cmd: Command): F[Result] = {
-    val exitCode = if (cmd === Exit) Some(ExitCode.Success) else None
+    val exitCode = if (cmd === Exit) Some(()) else None
     recoverSomeErrors(doEvaluate(cmd))
       .map(Result(exitCode, _))
   }
@@ -72,7 +73,7 @@ final class Evaluator[F[_]: Monad: Effect, G[_]: Functor: Effect](
         F.pure(helpMsg.some)
 
       case Debug(level) =>
-        stateRef.update(_.copy(debugLevel = level)) *>
+        stateRef.modify(_.copy(debugLevel = level)) *>
           F.pure(s"Set debug level: $level".some)
 
       case SummaryCount(rows) =>
@@ -81,28 +82,28 @@ final class Evaluator[F[_]: Monad: Effect, G[_]: Functor: Effect](
           else refineV[Positive](rows).fold(κ(None), p => Some(Some(p)))
         count match {
           case None => F.pure("Rows must be a positive integer or 0 to indicate no limit".some)
-          case Some(c) => stateRef.update(_.copy(summaryCount = c)) *>
+          case Some(c) => stateRef.modify(_.copy(summaryCount = c)) *>
             F.pure(s"Set rows to show in result: $rows".some)
         }
 
       case Format(fmt) =>
-        stateRef.update(_.copy(format = fmt)) *>
+        stateRef.modify(_.copy(format = fmt)) *>
           F.pure(s"Set output format: $fmt".some)
 
       case SetPhaseFormat(fmt) =>
-        stateRef.update(_.copy(phaseFormat = fmt)) *>
+        stateRef.modify(_.copy(phaseFormat = fmt)) *>
           F.pure(s"Set phase format: $fmt".some)
 
       case SetTimingFormat(fmt) =>
-        stateRef.update(_.copy(timingFormat = fmt)) *>
+        stateRef.modify(_.copy(timingFormat = fmt)) *>
           F.pure(s"Set timing format: $fmt".some)
 
       case SetVar(n, v) =>
-        stateRef.update(state => state.copy(variables = state.variables + (n -> v))) *>
+        stateRef.modify(state => state.copy(variables = state.variables + (n -> v))) *>
           F.pure(s"Set variable ${n.value} = ${v.value}".some)
 
       case UnsetVar(n) =>
-        stateRef.update(state => state.copy(variables = state.variables - n)) *>
+        stateRef.modify(state => state.copy(variables = state.variables - n)) *>
           F.pure(s"Unset variable ${n.value}".some)
 
       case ListVars =>
@@ -145,7 +146,7 @@ final class Evaluator[F[_]: Monad: Effect, G[_]: Functor: Effect](
           cwd <- stateRef.get.map(_.cwd)
           dir = newPath(cwd, path)
           _ <- ensureValidDir(dir)
-          _ <- stateRef.update(_.copy(cwd = dir))
+          _ <- stateRef.modify(_.copy(cwd = dir))
         } yield s"cwd is now ${printPath(dir)}".some
 
       case Ls(path: Option[ReplPath]) =>
@@ -178,15 +179,11 @@ final class Evaluator[F[_]: Monad: Effect, G[_]: Functor: Effect](
 
       case Exit =>
         F.pure("Exiting...".some)
-      //
-      // case _ =>
-      //   current(stateRef) *>
-      //   F.pure(s"TODO: $cmd".some)
     }
 
     private def doSupportedTypes: F[ISet[DataSourceType]] =
       sources.supported >>!
-        (types => stateRef.update(_.copy(supportedTypes = types.some)))
+        (types => stateRef.modify(_.copy(supportedTypes = types.some)))
 
     private def ensureNormal[E: Show](c: Condition[E]): F[Unit] =
       c match {
@@ -195,7 +192,7 @@ final class Evaluator[F[_]: Monad: Effect, G[_]: Functor: Effect](
       }
 
     // TODO
-    // We could enahnce isResource(path): F[Boolean] to
+    // We could enhance isResource(path): F[Boolean] to
     // getResourceTypes(path): ISet[ResourcePathType]
     // Then this impl would only need 1 api call.
     // Note that with the current impl we assume that a path cannot be both
@@ -229,7 +226,7 @@ final class Evaluator[F[_]: Monad: Effect, G[_]: Functor: Effect](
         case \/-(a) => a.point[F]
       }
 
-    private def gTof[A](ga: G[A]): F[A] = LiftIO[F].liftIO(G.toIO(ga))
+    private def gTof[A](ga: G[A]): F[A] = LiftIO[F].liftIO(ga.to[IO])
 
     private def newPath(cwd: ResourcePath, change: ReplPath): ResourcePath =
       change match {
@@ -276,10 +273,13 @@ final class Evaluator[F[_]: Monad: Effect, G[_]: Functor: Effect](
 
     private def toADir(path: ResourcePath): ADir =
       path.fold(f => fileParent(f) </> dir(fileName(f).value), rootDir)
+
 }
 
 object Evaluator {
-  final case class Result(exitCode: Option[ExitCode], string: Option[String])
+  //TODO change back to exitCode: Option[ExitCode] once we are back on
+  //cats-effect 1.0.0
+  final case class Result(exitCode: Option[Unit], string: Option[String])
 
   final class EvalError(msg: String) extends java.lang.RuntimeException(msg)
 
