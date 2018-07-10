@@ -35,7 +35,8 @@ object ReplPath {
     else Relative(parseResourcePath(s))
 
   private def parseResourceNames(s: String): IList[ResourceName] =
-    IList.fromList(s.split("/").toList).map(ResourceName(_))
+    if (s === "") IList.empty[ResourceName]
+    else IList.fromList(s.split("/").toList).map(ResourceName(_))
 
   private def parseResourcePath(s: String): ResourcePath =
     ResourcePath.resourceNamesIso(parseResourceNames(s))
