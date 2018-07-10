@@ -173,7 +173,7 @@ final class Evaluator[F[_]: Monad: Effect, G[_]: Functor: Effect](
 
         for {
           state <- stateRef.get
-          qres <- evaluateQuery(SqlQuery(q, state.variables, toADir(state.cwd)))
+          qres <- evaluateQuery(SqlQuery(q, state.variables, toADir(state.cwd)), state.summaryCount)
           res <- gTof(convert(state.format, qres))
         } yield res
 
@@ -204,9 +204,10 @@ final class Evaluator[F[_]: Monad: Effect, G[_]: Functor: Effect](
           else F.unit
         })
 
-    private def evaluateQuery(q: SqlQuery): F[Stream[G, Data]] =
-      queryEvaluator.evaluate(q) >>=
-        fromEither[ResourceError.ReadError, Stream[G, Data]]
+    private def evaluateQuery(q: SqlQuery, summaryCount: Option[Int Refined Positive]): F[Stream[G, Data]] =
+      (queryEvaluator.evaluate(q) >>=
+        fromEither[ResourceError.ReadError, Stream[G, Data]]).map(s =>
+          summaryCount.map(c => s.take(c.value.toLong)).getOrElse(s))
 
     private def findType(tps: ISet[DataSourceType], tp: DataSourceType.Name): Option[DataSourceType] =
       tps.toList.find(_.name === tp)
