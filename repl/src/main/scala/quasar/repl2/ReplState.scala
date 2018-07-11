@@ -24,7 +24,6 @@ import quasar.fp.numeric.widenPositive
 import quasar.repl._
 import quasar.repl2.Command._
 
-import eu.timepit.refined.refineMV
 import eu.timepit.refined.api.Refined
 import eu.timepit.refined.auto._
 import eu.timepit.refined.numeric.Positive
@@ -71,7 +70,7 @@ object ReplState {
     rootDir,
     DebugLevel.Normal,
     PhaseFormat.Tree,
-    refineMV[Positive](10).some,
+    Some(10),
     OutputFormat.Table,
     Map(),
     TimingFormat.OnlyTotal,
