@@ -100,9 +100,9 @@ object Command {
       case DataSourcesPattern()                     => DataSources
       case DataSourceTypesPattern()                 => DataSourceTypes
       case DataSourceLookupPattern(n)               => DataSourceLookup(ResourceName(n))
-      case DataSourceAddPattern(n, DataSourceType.Name(tp), onConflict, cfg) =>
+      case DataSourceAddPattern(n, DataSourceType.string(tp), onConflict, cfg) =>
                                                        DataSourceAdd(ResourceName(n), tp, cfg,
-                                                         ConflictResolution.fromString(onConflict) | ConflictResolution.Preserve)
+                                                         ConflictResolution.string.getOption(onConflict) | ConflictResolution.Preserve)
       case DataSourceRemovePattern(n)               => DataSourceRemove(ResourceName(n))
       case _                                        => Select(None, Query(input))
     }
