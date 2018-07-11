@@ -16,11 +16,12 @@
 
 package quasar.api
 
-import slamdata.Predef.{Int, Product, Serializable, Some}
+import slamdata.Predef._
 
 import scalaz.{Enum, Show}
-import scalaz.std.anyVal._
+import scalaz.std.{anyVal, option}, anyVal._, option._
 import scalaz.syntax.order._
+import scalaz.syntax.std.option._
 
 sealed trait ConflictResolution extends Product with Serializable
 
@@ -33,6 +34,13 @@ object ConflictResolution extends ConflictResolutionInstances {
 
   val replace: ConflictResolution =
     Replace
+
+  def fromString(str: String): Option[ConflictResolution] =
+    str.toLowerCase match {
+      case "preserve" => Preserve.some
+      case "replace" => Replace.some
+      case _ => none
+    }
 }
 
 sealed abstract class ConflictResolutionInstances {

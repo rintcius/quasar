@@ -476,11 +476,13 @@ lazy val impl = project
 lazy val repl = project
   .settings(name := "quasar-repl")
   .dependsOn(interface)
+    // TODO remove once we don't need MockDataSources anymore
+  .dependsOn(api % "compile->test")
   .settings(commonSettings)
   .settings(targetSettings)
   .settings(backendRewrittenRunSettings)
   .settings(
-    //TODO 
+    //TODO
     mainClass in Compile := Some("quasar.repl2.Main"),
     fork in run := true,
     connectInput in run := true,

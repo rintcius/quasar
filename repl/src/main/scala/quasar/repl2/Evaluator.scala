@@ -14,10 +14,14 @@
  * limitations under the License.
  */
 
-package quasar.repl2
+package quasar
+package repl2
 
 import slamdata.Predef._
+import quasar.api._
 import quasar.fp.ski._
+
+import java.lang.Exception
 
 import cats.effect._
 import cats.effect.concurrent.Ref
@@ -27,8 +31,9 @@ import eu.timepit.refined.auto._
 import eu.timepit.refined.numeric.Positive
 import scalaz._, Scalaz._
 
-final class Evaluator[F[_]: Monad: Effect](
-  stateRef: Ref[F, ReplState]) {
+final class Evaluator[F[_]: Monad: Effect, C: Show](
+  stateRef: Ref[F, ReplState[C]],
+  sources: DataSources[F, C]) {
 
   import Command._
   import Evaluator._
@@ -37,12 +42,13 @@ final class Evaluator[F[_]: Monad: Effect](
 
   def evaluate(cmd: Command): F[Result] = {
     val exitCode = if (cmd === Exit) Some(ExitCode.Success) else None
-    doEvaluate(cmd).map(Result(exitCode, _))
+    recoverEvalError(doEvaluate(cmd))(msg => s"Error: $msg".some)
+      .map(Result(exitCode, _))
   }
 
   ////
 
-  private def current(ref: Ref[F, ReplState]) =
+  private def current(ref: Ref[F, ReplState[C]]) =
     for {
       s <- ref.get
       _ <- F.delay(println(s"Current: $s"))
@@ -90,8 +96,45 @@ final class Evaluator[F[_]: Monad: Effect](
       case ListVars =>
         for {
           vars <- stateRef.get.map(_.variables)
-          s    = vars.toList.map { case (name, value) => s"$name = $value" }
+          s    =  vars.toList.map { case (name, value) => s"$name = $value" }
                     .mkString("Variables:\n", "\n", "").some
+        } yield s
+
+      case DataSources =>
+        for {
+          ds <- sources.metadata
+          s  =  ds.toList.map { case (k, v) => s"${k.value} - ${prettyMetadata(v)}" }
+                  .mkString("Datasources:\n", "\n", "").some
+        } yield s
+
+      case DataSourceTypes =>
+        for {
+          tps <- doSupportedTypes
+          s   =  tps.toList.map(tp => s"${tp.name} (${tp.version})")
+                   .mkString("Supported datasource types:\n", "\n", "").some
+        } yield s
+
+      case DataSourceLookup(name) =>
+        (sources.lookup(name) >>=
+          ((x:(DataSourceError.CommonError \/ (DataSourceMetadata, C))) => fromEither(x.asInstanceOf[DataSourceError[C] \/ (DataSourceMetadata, C)]))).map
+          { case (metadata, cfg) =>
+            List("Datasource:", prettyMetadata(metadata) + " " + cfg).mkString("\n").some
+          }
+
+      case DataSourceAdd(name, tp, cfg, onConflict) =>
+        for {
+          tps <- supportedTypes
+          dsType <- findTypeF(tps, tp)
+          c <- sources.add(name, dsType, cfg.asInstanceOf[C], onConflict)
+          _ <- ensureNormal(c.asInstanceOf[Condition[DataSourceError[C]]]) //ugh
+          s = s"Added datasource ${name.value}".some
+        } yield s
+
+      case DataSourceRemove(name) =>
+        for {
+          c <- sources.remove(name)
+          _ <- ensureNormal(c.asInstanceOf[Condition[DataSourceError[C]]]) //ugh
+          s =  s"Removed datasource $name $c".some
         } yield s
 
       case Exit =>
@@ -101,15 +144,69 @@ final class Evaluator[F[_]: Monad: Effect](
         current(stateRef) *>
         F.pure(s"TODO: $cmd".some)
     }
+
+    private def doSupportedTypes: F[ISet[DataSourceType]] =
+      for {
+        supported <- sources.supported
+        _   <- stateRef.update(_.copy(supportedTypes = supported.some))
+      } yield supported
+
+    private def ensureNormal[E: Show](c: Condition[E]): F[Unit] =
+      c match {
+        case Condition.Normal() => F.unit
+        case Condition.Abnormal(err) => raiseEvalError(err.shows)
+      }
+
+    private def findType(tps: ISet[DataSourceType], tp: DataSourceType.Name): Option[DataSourceType] =
+      tps.toList.find(_.name == tp)
+
+    private def findTypeF(tps: ISet[DataSourceType], tp: DataSourceType.Name): F[DataSourceType] =
+      findType(tps, tp) match {
+        case None => raiseEvalError(s"Unsupported datasource type: $tp")
+        case Some(z) => z.point[F]
+      }
+
+    private def fromEither[E: Show, A](e: E \/ A): F[A] =
+      e match {
+        case -\/(err) => raiseEvalError(err.shows)
+        case \/-(a) => a.point[F]
+      }
+
+    private def prettyMetadata(m: DataSourceMetadata): String =
+      s"${m.kind.name} ${m.kind.version} ${prettyCondition[Exception](m.status, _.getMessage)}"
+
+    private def prettyCondition[A](c: Condition[A], onAbnormal: A => String) =
+      c match {
+        case Condition.Normal() => "ok"
+        case Condition.Abnormal(a) => s"error: ${onAbnormal(a)}"
+      }
+
+    private def raiseEvalError[A](s: String): F[A] =
+      F.raiseError(new EvalError(s))
+
+    private def recoverEvalError[A](fa: F[A])(recover: String => A): F[A] =
+      F.recover(fa) {
+        case err: EvalError => recover(err.getMessage)
+      }
+
+    private def supportedTypes: F[ISet[DataSourceType]] =
+      for {
+        supported <- stateRef.get.map(_.supportedTypes)
+        types <- supported.map(_.point[F]).getOrElse(doSupportedTypes)
+      } yield types
+
 }
 
 object Evaluator {
   final case class Result(exitCode: Option[ExitCode], string: Option[String])
 
-  def apply[F[_]: Monad: Effect](
-    stateRef: Ref[F, ReplState]):
-      Evaluator[F] =
-    new Evaluator[F](stateRef)
+  final class EvalError(msg: String) extends java.lang.RuntimeException(msg)
+
+  def apply[F[_]: Monad: Effect, C: Show](
+    stateRef: Ref[F, ReplState[C]],
+    sources: DataSources[F, C])
+      : Evaluator[F, C] =
+    new Evaluator[F, C](stateRef, sources)
 
   val helpMsg =
     """Quasar REPL, Copyright © 2014–2018 SlamData Inc.

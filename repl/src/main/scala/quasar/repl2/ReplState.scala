@@ -19,6 +19,7 @@ package quasar.repl2
 import slamdata.Predef._
 
 import quasar.contrib.pathy._
+import quasar.api._
 import quasar.fp.numeric.widenPositive
 import quasar.repl._
 import quasar.repl2.Command._
@@ -30,14 +31,16 @@ import eu.timepit.refined.numeric.Positive
 import pathy.Path, Path._
 import scalaz._, Scalaz._
 
- final case class ReplState(
+ final case class ReplState[C](
     cwd:                ADir,
     debugLevel:         DebugLevel,
     phaseFormat:        PhaseFormat,
     summaryCount:       Option[Int Refined Positive],
     format:             OutputFormat,
     variables:          Map[String, String],
-    timingFormat:       TimingFormat
+    timingFormat:       TimingFormat,
+    datasourceStore:    ReplState.DatasourceStore[C],
+    supportedTypes:     Option[ISet[DataSourceType]]
   ) {
 
   def targetDir(path: Option[XDir]): ADir =
@@ -61,13 +64,18 @@ import scalaz._, Scalaz._
 }
 
 object ReplState {
-  def mk: ReplState = ReplState(
+
+  type DatasourceStore[C] = IMap[ResourceName, (DataSourceMetadata, C)]
+
+  def mk[C]: ReplState[C] = ReplState[C](
     rootDir,
     DebugLevel.Normal,
     PhaseFormat.Tree,
     refineMV[Positive](10).some,
     OutputFormat.Table,
     Map(),
-    TimingFormat.OnlyTotal
+    TimingFormat.OnlyTotal,
+    IMap.empty,
+    none
   )
 }
