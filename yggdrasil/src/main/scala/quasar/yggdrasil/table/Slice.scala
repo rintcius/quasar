@@ -21,7 +21,7 @@ import quasar.precog._
 import quasar.precog.common._
 import quasar.precog.util._
 import quasar.precog.util.RingDeque
-import quasar.time.{DateTimeInterval, OffsetDate}
+import qdata.time.{DateTimeInterval, OffsetDate}
 import quasar.yggdrasil._
 import quasar.yggdrasil.TransSpecModule._
 import quasar.yggdrasil.bytecode._
@@ -1727,6 +1727,20 @@ trait Slice { source =>
 
       case (rv, _) => rv
     }
+  }
+
+  def toRValues: List[RValue] = {
+    @tailrec
+    def loop(idx: Int, rvalues: List[RValue]): List[RValue] =
+      if (idx >= 0)
+        toRValue(idx) match {
+          case CUndefined => loop(idx - 1, rvalues)
+          case rv         => loop(idx - 1, rv :: rvalues)
+        }
+      else
+        rvalues
+
+    loop(source.size - 1, Nil)
   }
 
   def toJValue(row: Int) = {

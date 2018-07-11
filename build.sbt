@@ -101,7 +101,7 @@ lazy val backendRewrittenRunSettings = Seq(
 // In Travis, the processor count is reported as 32, but only ~2 cores are
 // actually available to run.
 concurrentRestrictions in Global := {
-  val maxTasks = 2
+  val maxTasks = 4
   if (isTravisBuild.value)
     // Recreate the default rules with the task limit hard-coded:
     Seq(Tags.limitAll(maxTasks), Tags.limit(Tags.ForkedTestGroup, 1))
@@ -134,7 +134,7 @@ lazy val assemblySettings = Seq(
     // in the scala-lang scala-compiler 2.11.11 jar. It comes bundled with jansi OS libraries
     // which conflict with similar jansi libraries brought in by fusesource.jansi.jansi-1.11
     // So the merge needed the following lines to avoid the "deduplicate: different file contents found"
-    // produced by web/assembly. Look into removing this once we move to scala v2.11.11.
+    // produced by repl/assembly. This is still a problem on quasar v47.0.0
     case s if s.endsWith("libjansi.jnilib")                   => MergeStrategy.last
     case s if s.endsWith("jansi.dll")                         => MergeStrategy.last
     case s if s.endsWith("libjansi.so")                       => MergeStrategy.last
@@ -192,48 +192,21 @@ lazy val root = project.in(file("."))
   .settings(aggregate in assembly := false)
   .settings(excludeTypelevelScalaLibrary)
   .aggregate(
-
-       foundation, //________
-//    /    |      \     \    \
-    api, effect, ejson, js, qdata,
-//  /      |        \  /  \   |
-// /       |        |  |   \  |
-// |       |    ______________/
-// |       |   /    |  |     \_______
-                  common,
-// |       | /   /  |   \             \
-        frontend,  sql, precog,
-// |   /   |    \   |     |            |
-// |  /    |     \_____   |            |
-// |  |    |        |  \  |            |
-     fs,  sst,         blueeyes,
-// |  |    |        |     |            |
-// |  |    |        /     |            |
-        datagen,
-// |__|___________/       |            |
-// |  |          /        |            |
-     qscript,          niflheim,
-// |  |      \ /          |            |
-     qsu,   core, //______|____________|
-// |   \    /             |            |
-// |\___\_____            |            |
-// |      /   \           |            |
-           connector,  yggdrasil,
-// |    /     |  \       |             |
-// |    |     |   \______|_____________|
-// |    |     |      \  /     \
-                   mimir, mongodb,
-// \   / \    |    /          |
-    impl, interface,
-//          /  \              |
-         repl, web,
-//              |             |
-                it,
-//              |   __________|
-//              |  /
-              mongoIt
-//
-// NB: the *It projects are temporary until we polyrepo
+    api,
+    blueeyes,
+    common, connector, core,
+    datagen,
+    effect, ejson,
+    foundation, frontend, fs,
+    impl, interface, it,
+    js,
+    mimir, mongodb, mongoIt,
+    niflheim,
+    precog,
+    qscript, qsu,
+    repl, runp,
+    sql, sst,
+    yggdrasil
   ).enablePlugins(AutomateHeaderPlugin)
 
 /** Very general utilities, ostensibly not Quasar-specific, but they just aren’t
@@ -254,14 +227,6 @@ lazy val foundation = project
     libraryDependencies ++= Dependencies.foundation)
   .settings(excludeTypelevelScalaLibrary)
   .enablePlugins(AutomateHeaderPlugin, BuildInfoPlugin)
-
-lazy val qdata = project
-  .settings(name := "quasar-qdata-internal")
-  .dependsOn(foundation)
-  .settings(commonSettings)
-  .settings(targetSettings)
-  .settings(excludeTypelevelScalaLibrary)
-  .enablePlugins(AutomateHeaderPlugin)
 
 /** Types and interfaces describing Quasar's functionality. */
 lazy val api = project
@@ -325,7 +290,6 @@ lazy val common = project
 lazy val frontend = project
   .settings(name := "quasar-frontend-internal")
   .dependsOn(
-    qdata,
     common % BothScopes,
     effect)
   .settings(commonSettings)
@@ -471,6 +435,18 @@ lazy val impl = project
   .settings(excludeTypelevelScalaLibrary)
   .enablePlugins(AutomateHeaderPlugin)
 
+lazy val runp = (project in file("run"))
+  .settings(name := "quasar-run")
+  .dependsOn(
+    core,
+    impl,
+    mimir)
+  .settings(commonSettings)
+  .settings(publishTestsSettings)
+  .settings(targetSettings)
+  .settings(excludeTypelevelScalaLibrary)
+  .enablePlugins(AutomateHeaderPlugin)
+
 /** An interactive REPL application for Quasar.
   */
 lazy val repl = project
@@ -490,29 +466,14 @@ lazy val repl = project
   .settings(excludeTypelevelScalaLibrary)
   .enablePlugins(AutomateHeaderPlugin)
 
-/** An HTTP interface to Quasar.
-  */
-lazy val web = project
-  .settings(name := "quasar-web")
-  .dependsOn(interface % BothScopes)
-  .settings(commonSettings)
-  .settings(publishTestsSettings)
-  .settings(targetSettings)
-  .settings(backendRewrittenRunSettings)
-  .settings(
-    mainClass in Compile := Some("quasar.server.Server"),
-    libraryDependencies ++= Dependencies.web)
-  .settings(excludeTypelevelScalaLibrary)
-  .enablePlugins(AutomateHeaderPlugin)
-
 /** Integration tests that have some dependency on a running connector.
   */
 lazy val it = project
   .settings(name := "quasar-it-internal")
   .configs(ExclusiveTests)
   .dependsOn(
-    impl,
-    web     % BothScopes,
+    runp,
+    interface % BothScopes,
     qscript % "test->test")
   .settings(commonSettings)
   .settings(publishTestsSettings)
@@ -589,7 +550,9 @@ lazy val blueeyes = project
     name := "quasar-blueeyes-internal",
     scalacStrictMode := false,
     scalacOptions += "-language:postfixOps")
-  .dependsOn(precog % BothScopes, frontend)
+  .dependsOn(
+    precog % BothScopes,
+    frontend % BothScopes)
   .settings(libraryDependencies ++= Dependencies.blueeyes)
   .settings(headerLicenseSettings)
   .settings(publishSettings)
@@ -634,6 +597,7 @@ lazy val mimir = project
     scalacOptions += "-language:postfixOps")
   .dependsOn(
     yggdrasil % BothScopes,
+    impl % BothScopes,
     core,
     connector)
   .settings(headerLicenseSettings)
