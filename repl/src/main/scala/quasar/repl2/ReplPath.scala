@@ -30,12 +30,13 @@ object ReplPath {
   def unapply(s: String): Option[ReplPath] =
     Option(s).map(parseReplPath)
 
-  private def parseReplPath(s: String): ReplPath = {
-    val p = ResourcePath.resourceNamesIso(parseResourceNames(s))
-
-    if (s.startsWith("/")) Absolute(p) else Relative(p)
-  }
+  private def parseReplPath(s: String): ReplPath =
+    if (s.startsWith("/")) Absolute(parseResourcePath(s.drop(1)))
+    else Relative(parseResourcePath(s))
 
   private def parseResourceNames(s: String): IList[ResourceName] =
     IList.fromList(s.split("/").toList).map(ResourceName(_))
+
+  private def parseResourcePath(s: String): ResourcePath =
+    ResourcePath.resourceNamesIso(parseResourceNames(s))
 }
