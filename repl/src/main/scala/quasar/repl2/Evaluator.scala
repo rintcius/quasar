@@ -297,17 +297,21 @@ object Evaluator {
       |Available commands:
       |  exit
       |  help
+      |  types
+      |  datasources
+      |  add [name] [type] (preserve | replace) [cfg]
+      |  rm [name]
+      |  get [name]
       |  cd [path]
-      |  [query]
-      |  [id] <- [query]
-      |  explain [query]
-      |  compile [query]
       |  ls [path]
+      |  [query]
+      |  set format = table | precise | readable | csv
+      |  set [var] = [value]
+      |  env
+      |
+      |TODO:
       |  set debug = 0 | 1 | 2
       |  set phaseFormat = tree | code
       |  set timingFormat = tree | onlytotal
-      |  set summaryCount = [rows]
-      |  set format = table | precise | readable | csv
-      |  set [var] = [value]
-      |  env""".stripMargin
+      |  set summaryCount = [rows]""".stripMargin
 }
