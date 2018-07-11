@@ -536,7 +536,7 @@ lazy val precog = project
   .settings(
     name := "quasar-precog-internal",
     scalacStrictMode := false)
-  .dependsOn(common % BothScopes)
+  .dependsOn(common)
   .settings(libraryDependencies ++= Dependencies.precog)
   .settings(headerLicenseSettings)
   .settings(publishSettings)
@@ -551,7 +551,7 @@ lazy val blueeyes = project
     scalacStrictMode := false,
     scalacOptions += "-language:postfixOps")
   .dependsOn(
-    precog % BothScopes,
+    precog,
     frontend % BothScopes)
   .settings(libraryDependencies ++= Dependencies.blueeyes)
   .settings(headerLicenseSettings)
