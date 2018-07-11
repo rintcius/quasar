@@ -50,7 +50,7 @@ object Main extends QuasarApp {
   def repl(q: Quasar[IO, IO]): IO[ExitCode] =
     for {
       ref <- Ref.of[IO, ReplState](ReplState.mk)
-      repl <- Repl.mk[IO](q.dataSources, ref)
+      repl <- Repl.mk[IO, IO](ref, q.dataSources, q.queryEvaluator)
       l <- repl.loop
     } yield l
 

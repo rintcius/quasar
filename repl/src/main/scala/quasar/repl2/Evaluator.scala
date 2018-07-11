@@ -20,6 +20,7 @@ package repl2
 import slamdata.Predef._
 import quasar.api._
 import quasar.fp.ski._
+import quasar.run.SqlQuery
 
 import java.lang.Exception
 
@@ -31,17 +32,20 @@ import eu.timepit.refined.api.Refined
 import eu.timepit.refined.auto._
 import eu.timepit.refined.numeric.Positive
 import eu.timepit.refined.scalaz._
+import fs2.Stream
 import scalaz._, Scalaz._
 
-final class Evaluator[F[_]: Monad: Effect](
+final class Evaluator[F[_]: Monad: Effect, G[_]: Functor: Effect](
   stateRef: Ref[F, ReplState],
-  sources: DataSources[F, Json]) {
+  sources: DataSources[F, Json],
+  queryEvaluator: QueryEvaluator[F, Stream[G, ?], SqlQuery, Stream[G, Data]]) {
 
   import Command._
   import DataSourceError._
   import Evaluator._
 
   val F = Effect[F]
+  val G = Effect[G]
 
   def evaluate(cmd: Command): F[Result] = {
     val exitCode = if (cmd === Exit) Some(ExitCode.Success) else None
@@ -50,6 +54,11 @@ final class Evaluator[F[_]: Monad: Effect](
   }
 
   ////
+
+  private def children(path: ResourcePath)
+      : F[Stream[G, (ResourceName, ResourcePathType)]] =
+    queryEvaluator.children(path) >>=
+      fromEither[ResourceError.CommonError, Stream[G, (ResourceName, ResourcePathType)]]
 
   private def current(ref: Ref[F, ReplState]) =
     for {
@@ -134,10 +143,26 @@ final class Evaluator[F[_]: Monad: Effect](
       case Cd(path: ReplPath) =>
         for {
           cwd <- stateRef.get.map(_.cwd)
-          dir = newCwd(cwd, path)
+          dir = newPath(cwd, path)
+          _ <- ensureValidPath(dir)
           _ <- stateRef.update(_.copy(cwd = dir))
           _ <- current(stateRef)
         } yield s"cwd is now $dir".some
+
+      case Ls(path: Option[ReplPath]) =>
+        def gTof[A](ga: G[A]): F[A] = LiftIO[F].liftIO(G.toIO(ga))
+
+        def convert(s: Stream[G, (ResourceName, ResourcePathType)])
+            : G[Option[String]] =
+          s.map { case (name, _) => name.value }
+            .compile.toVector.map(_.mkString("\n").some)
+
+        for {
+          cwd <- stateRef.get.map(_.cwd)
+          p = path.map(newPath(cwd, _)).getOrElse(cwd)
+          cs <- children(p)
+          res <- gTof(convert(cs))
+        } yield res
 
       case Exit =>
         F.pure("Exiting...".some)
@@ -157,6 +182,9 @@ final class Evaluator[F[_]: Monad: Effect](
         case Condition.Abnormal(err) => raiseEvalError(err.shows)
       }
 
+    private def ensureValidPath(p: ResourcePath): F[Unit] =
+      children(p).void
+
     private def findType(tps: ISet[DataSourceType], tp: DataSourceType.Name): Option[DataSourceType] =
       tps.toList.find(_.name === tp)
 
@@ -172,7 +200,7 @@ final class Evaluator[F[_]: Monad: Effect](
         case \/-(a) => a.point[F]
       }
 
-    private def newCwd(cwd: ResourcePath, change: ReplPath): ResourcePath =
+    private def newPath(cwd: ResourcePath, change: ReplPath): ResourcePath =
       change match {
         case ReplPath.Absolute(p) => p
         case ReplPath.Relative(p) => cwd ++ p
@@ -205,11 +233,12 @@ object Evaluator {
 
   final class EvalError(msg: String) extends java.lang.RuntimeException(msg)
 
-  def apply[F[_]: Monad: Effect](
+  def apply[F[_]: Monad: Effect, G[_]: Functor: Effect](
     stateRef: Ref[F, ReplState],
-    sources: DataSources[F, Json])
-      : Evaluator[F] =
-    new Evaluator[F](stateRef, sources)
+    sources: DataSources[F, Json],
+    queryEvaluator: QueryEvaluator[F, Stream[G, ?], SqlQuery, Stream[G, Data]])
+      : Evaluator[F, G] =
+    new Evaluator[F, G](stateRef, sources, queryEvaluator)
 
   val helpMsg =
     """Quasar REPL, Copyright © 2014–2018 SlamData Inc.
