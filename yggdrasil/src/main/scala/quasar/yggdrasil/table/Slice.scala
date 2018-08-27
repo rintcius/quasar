@@ -27,8 +27,10 @@ import qdata.time.{DateTimeInterval, OffsetDate}
 import quasar.yggdrasil._
 import quasar.yggdrasil.TransSpecModule._
 import quasar.yggdrasil.bytecode._
+import quasar.yggdrasil.table.ctrie._
 import quasar.yggdrasil.util.CPathUtils
 
+import com.rklaehn.radixtree.RadixTree
 import scalaz._, Scalaz._, Ordering._
 import shims._
 
@@ -48,7 +50,8 @@ abstract class Slice { source =>
   def isEmpty: Boolean = size == 0
   def nonEmpty         = !isEmpty
 
-  def columns: Map[ColumnRef, Column]
+  def columns: Map[ColumnRef, Column] = ctrie.toLegacy(cmap)
+  def cmap: CMap
 
   def groupedColumnRefs: Map[CPath, Set[CType]] =
     columns.keys.groupBy(_.selector).mapValues(_.map(_.ctype).toSet)
@@ -1911,10 +1914,10 @@ abstract class Slice { source =>
 
 object Slice {
 
-  def replaceColumnImpl(size: Int, cols: Map[ColumnRef, Column]): Map[ColumnRef, Column] = {
-    def step(acc: Map[ColumnRef, Column], cref: ColumnRef, col: Column): Map[ColumnRef, Column] =
+  def replaceColumnImpl(size: Int, cmap: CMap): CMap = {
+    def replace(ctype: CType, ctrie: CTrie): CTrie = ctrie.modifyOrRemove { case (k, col, _) =>
       if (col.isDefinedAt(0)) {
-        val c = cref.ctype match {
+        val c = ctype match {
           case CBoolean => SingletonBoolColumn(col.asInstanceOf[BoolColumn](0))
           case CLong => SingletonLongColumn(col.asInstanceOf[LongColumn](0))
           case CDouble => SingletonDoubleColumn(col.asInstanceOf[DoubleColumn](0))
@@ -1933,25 +1936,29 @@ object Slice {
           case CEmptyObject => col
           case CArrayType(_) => col
         }
-        acc + (cref -> c)
+        Some(c)
       } else
-        acc
+        None
+    }
 
     if (size == 1)
-      cols.foldLeft[Map[ColumnRef, Column]](Map.empty) {
-        case (acc, (cref, col)) => step(acc, cref, col)
+      cmap.foldLeft[CMap](Map.empty) {
+        case (acc, (ctype, ctrie)) => acc + (ctype -> replace(ctype, ctrie))
       }
     else
-      cols
+      cmap
   }
 
   def empty: Slice = Slice(0, Map.empty)
 
-  def apply(dataSize: Int, columns0: Map[ColumnRef, Column]): Slice =
+  def mk(dataSize: Int, cmap0: CMap): Slice =
     new Slice {
       val size = dataSize
-      val columns = replaceColumnImpl(dataSize, columns0)
+      val cmap = replaceColumnImpl(dataSize, cmap0)
     }
+
+  def apply(dataSize: Int, columns0: Map[ColumnRef, Column]): Slice =
+    mk(dataSize, ctrie.fromLegacy(columns0))
 
   def updateRefs(rv: List[(CPath, CValue)], into: Map[ColumnRef, ArrayColumn[_]], sliceIndex: Int, sliceSize: Int): Map[ColumnRef, ArrayColumn[_]] = {
     var acc = into

@@ -111,6 +111,7 @@ object Dependencies {
   )
 
   def precog = Seq(
+    "com.rklaehn"          %% "radixtree"       % "0.5.0-rb",
     "org.slf4s"            %% "slf4s-api"       % slf4sVersion,
     "org.slf4j"            %  "slf4j-log4j12"   % "1.7.16",
     "org.typelevel"        %% "spire"           % spireVersion,
@@ -128,7 +129,8 @@ object Dependencies {
   )
 
   def yggdrasil = Seq(
-    "com.codecommit" %% "smock" % "0.4.0-specs2-4.0.2" % "test"
+    "com.codecommit" %% "smock" % "0.4.0-specs2-4.0.2" % "test",
+    "com.rklaehn" %% "radixtree" % "0.5.0-rb"
   )
 
   def niflheim = Seq(

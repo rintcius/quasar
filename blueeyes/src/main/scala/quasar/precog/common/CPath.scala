@@ -18,6 +18,7 @@ package quasar.precog.common
 
 import quasar.blueeyes._, json._
 
+import com.rklaehn.radixtree.Hash
 import scalaz.Ordering._
 import scalaz.syntax.std.boolean._
 
@@ -159,6 +160,11 @@ object CPathNode {
   }
 
   implicit val CPathNodeOrdering = CPathNodeOrder.toScalaOrdering
+
+  implicit val hashCPathNode: Hash[CPathNode] = new Hash[CPathNode] {
+    def eqv(x: CPathNode, y: CPathNode): Boolean = scalaz.Equal[CPathNode].equal(x, y)
+    def hash(a: CPathNode): Int = a.hashCode
+  }
 }
 
 sealed case class CPathField(name: String) extends CPathNode {

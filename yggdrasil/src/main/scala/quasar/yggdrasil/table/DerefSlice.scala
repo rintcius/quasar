@@ -18,6 +18,7 @@ package quasar.yggdrasil
 package table
 
 import quasar.precog.common._
+import quasar.yggdrasil.table.ctrie.CMap
 
 class DerefSlice(source: Slice, derefBy: PartialFunction[Int, CPathNode]) extends Slice {
 
@@ -300,7 +301,7 @@ class DerefSlice(source: Slice, derefBy: PartialFunction[Int, CPathNode]) extend
     case (acc, ColumnRef(CPath(), _)) => acc
   }
 
-  val columns: Map[ColumnRef, Column] = Slice.replaceColumnImpl(size, cols)
+  val cmap: CMap = Slice.replaceColumnImpl(size, ctrie.fromLegacy(cols))
 }
 
 /* A strict version

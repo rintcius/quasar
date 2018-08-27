@@ -22,6 +22,7 @@ import quasar.precog.BitSet
 import quasar.precog.common._
 import quasar.yggdrasil._
 import quasar.yggdrasil.table._
+import quasar.yggdrasil.table.ctrie.CMap
 import quasar.niflheim._
 import qdata.time.{DateTimeInterval, OffsetDate}
 
@@ -100,7 +101,7 @@ case class SegmentsWrapper(segments: Seq[Segment], projectionId: Int, blockId: L
     sz
   }
 
-  def columns: Map[ColumnRef, Column] = Slice.replaceColumnImpl(size, cols)
+  def cmap: CMap = Slice.replaceColumnImpl(size, ctrie.fromLegacy(cols))
 }
 
 object SegmentsWrapper extends ((Seq[Segment], Int, Long) => SegmentsWrapper) {
