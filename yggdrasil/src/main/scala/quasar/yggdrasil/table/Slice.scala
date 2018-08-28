@@ -30,7 +30,6 @@ import quasar.yggdrasil.bytecode._
 import quasar.yggdrasil.table.ctrie._
 import quasar.yggdrasil.util.CPathUtils
 
-import com.rklaehn.radixtree.RadixTree
 import scalaz._, Scalaz._, Ordering._
 import shims._
 
@@ -1914,7 +1913,7 @@ abstract class Slice { source =>
 
 object Slice {
 
-  def replaceColumnImpl(size: Int, cmap: CMap): CMap = {
+  private def replaceColumnImpl(size: Int, cmap: CMap): CMap = {
     def replace(ctype: CType, ctrie: CTrie): CTrie = ctrie.modifyOrRemove { case (k, col, _) =>
       if (col.isDefinedAt(0)) {
         val c = ctype match {
