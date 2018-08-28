@@ -30,6 +30,7 @@ import quasar.yggdrasil.bytecode._
 import quasar.yggdrasil.table.ctrie._
 import quasar.yggdrasil.util.CPathUtils
 
+import com.rklaehn.radixtree.RadixTree
 import scalaz._, Scalaz._, Ordering._
 import shims._
 
@@ -1959,85 +1960,86 @@ object Slice {
   def apply(dataSize: Int, columns0: Map[ColumnRef, Column]): Slice =
     mk(dataSize, ctrie.fromLegacy(columns0))
 
-  def updateRefs(rv: List[(CPath, CValue)], into: Map[ColumnRef, ArrayColumn[_]], sliceIndex: Int, sliceSize: Int): Map[ColumnRef, ArrayColumn[_]] = {
+  def updateRefs(rv: List[(CPath, CValue)], into: CMap, sliceIndex: Int, sliceSize: Int): CMap = {
     var acc = into
     var cursor = rv
     while (cursor.isInstanceOf[::[(CPath, CValue)]]) {
       cursor.head match {
         case (cpath, CUndefined) =>
         case (cpath, cvalue) =>
-          val ref = ColumnRef(cpath, cvalue.cType)
+          val cpathNodes = cpath.nodes.toArray
+          val trie: CTrie = acc.getOrElse(cvalue.cType, ctrie.empty)
 
           val updatedColumn: ArrayColumn[_] = cvalue match {
             case CBoolean(b) =>
-              val c = acc.getOrElse(ref, ArrayBoolColumn.empty(sliceSize)).asInstanceOf[ArrayBoolColumn]
+              val c = trie.getOrDefault(cpathNodes, ArrayBoolColumn.empty(sliceSize)).asInstanceOf[ArrayBoolColumn]
               c.update(sliceIndex, b)
 
             case CLong(d) =>
-              val c = acc.getOrElse(ref, ArrayLongColumn.empty(sliceSize)).asInstanceOf[ArrayLongColumn]
+              val c = trie.getOrDefault(cpathNodes, ArrayLongColumn.empty(sliceSize)).asInstanceOf[ArrayLongColumn]
               c.update(sliceIndex, d.toLong)
 
             case CDouble(d) =>
-              val c = acc.getOrElse(ref, ArrayDoubleColumn.empty(sliceSize)).asInstanceOf[ArrayDoubleColumn]
+              val c = trie.getOrDefault(cpathNodes, ArrayDoubleColumn.empty(sliceSize)).asInstanceOf[ArrayDoubleColumn]
               c.update(sliceIndex, d.toDouble)
 
             case CNum(d) =>
-              val c = acc.getOrElse(ref, ArrayNumColumn.empty(sliceSize)).asInstanceOf[ArrayNumColumn]
+              val c = trie.getOrDefault(cpathNodes, ArrayNumColumn.empty(sliceSize)).asInstanceOf[ArrayNumColumn]
               c.update(sliceIndex, d)
 
             case CString(s) =>
-              val c = acc.getOrElse(ref, ArrayStrColumn.empty(sliceSize)).asInstanceOf[ArrayStrColumn]
+              val c = trie.getOrDefault(cpathNodes, ArrayStrColumn.empty(sliceSize)).asInstanceOf[ArrayStrColumn]
               c.update(sliceIndex, s)
 
             case COffsetDateTime(d) =>
-              val c = acc.getOrElse(ref, ArrayOffsetDateTimeColumn.empty(sliceSize)).asInstanceOf[ArrayOffsetDateTimeColumn]
+              val c = trie.getOrDefault(cpathNodes, ArrayOffsetDateTimeColumn.empty(sliceSize)).asInstanceOf[ArrayOffsetDateTimeColumn]
               c.update(sliceIndex, d)
 
             case COffsetTime(d) =>
-              val c = acc.getOrElse(ref, ArrayOffsetTimeColumn.empty(sliceSize)).asInstanceOf[ArrayOffsetTimeColumn]
+              val c = trie.getOrDefault(cpathNodes, ArrayOffsetTimeColumn.empty(sliceSize)).asInstanceOf[ArrayOffsetTimeColumn]
               c.update(sliceIndex, d)
 
             case COffsetDate(d) =>
-              val c = acc.getOrElse(ref, ArrayOffsetDateColumn.empty(sliceSize)).asInstanceOf[ArrayOffsetDateColumn]
+              val c = trie.getOrDefault(cpathNodes, ArrayOffsetDateColumn.empty(sliceSize)).asInstanceOf[ArrayOffsetDateColumn]
               c.update(sliceIndex, d)
 
             case CLocalDateTime(d) =>
-              val c = acc.getOrElse(ref, ArrayLocalDateTimeColumn.empty(sliceSize)).asInstanceOf[ArrayLocalDateTimeColumn]
+              val c = trie.getOrDefault(cpathNodes, ArrayLocalDateTimeColumn.empty(sliceSize)).asInstanceOf[ArrayLocalDateTimeColumn]
               c.update(sliceIndex, d)
 
             case CLocalTime(d) =>
-              val c = acc.getOrElse(ref, ArrayLocalTimeColumn.empty(sliceSize)).asInstanceOf[ArrayLocalTimeColumn]
+              val c = trie.getOrDefault(cpathNodes, ArrayLocalTimeColumn.empty(sliceSize)).asInstanceOf[ArrayLocalTimeColumn]
               c.update(sliceIndex, d)
 
             case CLocalDate(d) =>
-              val c = acc.getOrElse(ref, ArrayLocalDateColumn.empty(sliceSize)).asInstanceOf[ArrayLocalDateColumn]
+              val c = trie.getOrDefault(cpathNodes, ArrayLocalDateColumn.empty(sliceSize)).asInstanceOf[ArrayLocalDateColumn]
               c.update(sliceIndex, d)
 
             case CInterval(p) =>
-              val c = acc.getOrElse(ref, ArrayIntervalColumn.empty(sliceSize)).asInstanceOf[ArrayIntervalColumn]
+              val c = trie.getOrDefault(cpathNodes, ArrayIntervalColumn.empty(sliceSize)).asInstanceOf[ArrayIntervalColumn]
               c.update(sliceIndex, p)
 
             case CArray(arr, cType) =>
-              val c = acc.getOrElse(ref, ArrayHomogeneousArrayColumn.empty(sliceSize)(cType)).asInstanceOf[ArrayHomogeneousArrayColumn[cType.tpe]]
+              val c = trie.getOrDefault(cpathNodes, ArrayHomogeneousArrayColumn.empty(sliceSize)(cType)).asInstanceOf[ArrayHomogeneousArrayColumn[cType.tpe]]
               c.update(sliceIndex, arr)
 
             case CEmptyArray =>
-              val c = acc.getOrElse(ref, MutableEmptyArrayColumn.empty()).asInstanceOf[MutableEmptyArrayColumn]
+              val c = trie.getOrDefault(cpathNodes, MutableEmptyArrayColumn.empty()).asInstanceOf[MutableEmptyArrayColumn]
               c.update(sliceIndex, true)
 
             case CEmptyObject =>
-              val c = acc.getOrElse(ref, MutableEmptyObjectColumn.empty()).asInstanceOf[MutableEmptyObjectColumn]
+              val c = trie.getOrDefault(cpathNodes, MutableEmptyObjectColumn.empty()).asInstanceOf[MutableEmptyObjectColumn]
               c.update(sliceIndex, true)
 
             case CNull =>
-              val c = acc.getOrElse(ref, MutableNullColumn.empty()).asInstanceOf[MutableNullColumn]
+              val c = trie.getOrDefault(cpathNodes, MutableNullColumn.empty()).asInstanceOf[MutableNullColumn]
               c.update(sliceIndex, true)
 
             case x =>
               sys.error(s"Unexpected arg $x")
           }
 
-          acc = acc.updated(ref, updatedColumn)
+          acc = acc.updated(cvalue.cType, trie.merge(RadixTree(cpathNodes -> updatedColumn)))
       }
       cursor = cursor.tail
     }
@@ -2060,7 +2062,7 @@ object Slice {
     @tailrec
     def inner(
       next: ArraySliced[RValue], rows: Int, colsOverflowed: Boolean,
-      acc: Map[ColumnRef, ArrayColumn[_]], allocatedColSize: Int
+      acc: CMap, allocatedColSize: Int
     ): (Slice, ArraySliced[RValue]) = {
       if (next.size == 0) {
         // there's no more data to make slices of.
@@ -2070,7 +2072,7 @@ object Slice {
           (Slice.empty, ArraySliced.noRValues)
         } else {
           // println("no more data to use, emitting slice with data")
-          (Slice(rows, acc), ArraySliced.noRValues)
+          (Slice.mk(rows, acc), ArraySliced.noRValues)
         }
       } else {
         // we have some data.
@@ -2080,7 +2082,7 @@ object Slice {
           // data we have already as a slice, and pass
           // the row back to the caller.
           // println(s"we have the maximum ($maxRows) rows, cutting slice early")
-          (Slice(rows, acc), next)
+          (Slice.mk(rows, acc), next)
         } else if (rows >= allocatedColSize && !colsOverflowed) {
           // we'd have more rows than `allocatedColSize` if we added this
           // row to the slice. `allocatedColSize` is the size in rows of
@@ -2092,13 +2094,13 @@ object Slice {
             if (allocatedColSize == 2 && startingSize != 2) startingSize
             else allocatedColSize * 2
           // println(s"we're resizing the columns from $allocatedColSize to $newSize because we have too many rows")
-          inner(next, rows, false, acc.map { case (k, c) => (k, c.resize(newSize)) }.toMap, newSize)
+          inner(next, rows, false, acc.mapValues(_.mapValues(_.asInstanceOf[ArrayColumn[_]].resize(newSize))), newSize)
         } else {
           // we already have too many columns, so there's no need to check
           // if the next row would put us over the limit.
           if (colsOverflowed) {
           // println(s"we already have too many columns (${acc.size}), cutting slice early at $rows (allocated size $allocatedColSize)")
-            (Slice(rows, acc), next)
+            (Slice.mk(rows, acc), next)
           } else {
             // we *may* have enough space in this slice for the
             // next `RValue`. we're going to flatten the `RValue`
@@ -2108,7 +2110,7 @@ object Slice {
             // slice, just in case we have too many columns immediately.
             val flattened = next.head.flattenWithPath
             val newAcc = updateRefs(flattened, acc, rows, allocatedColSize)
-            val newCols = newAcc.size
+            val newCols = ctrie.nrColumns(newAcc)
             if (newCols > maxColumns && rows > 0) {
               // we would have too many columns in this slice if we added this
               // `RValue`. so we're going to pass it back to the caller and
@@ -2116,7 +2118,7 @@ object Slice {
               // clear the new `RValue`'s data out of the accumulated data,
               // because we've already made sure to set `size` correctly.
               // println(s"we would have too many columns with this new value ($newCols), cutting slice early at $rows")
-              (Slice(rows, acc), next)
+              (Slice.mk(rows, acc), next)
             } else {
               // we're okay with adding this RValue to the slice!
               // we already have the slice's data including RValue in `newAcc`,
@@ -2178,8 +2180,8 @@ object Slice {
   def fromRValues(values: Stream[RValue]): Slice = {
     val sliceSize = values.size
 
-    @tailrec def buildColArrays(from: Stream[RValue], into: Map[ColumnRef, ArrayColumn[_]], sliceIndex: Int)
-        : (Map[ColumnRef, ArrayColumn[_]], Int) =
+    @tailrec def buildColArrays(from: Stream[RValue], into: CMap, sliceIndex: Int)
+        : (CMap, Int) =
       from match {
         case jv #:: xs =>
           val refs = updateRefs(jv.flattenWithPath, into, sliceIndex, sliceSize)
@@ -2188,8 +2190,8 @@ object Slice {
           (into, sliceIndex)
       }
 
-    val (columns, size) = buildColArrays(values, Map.empty[ColumnRef, ArrayColumn[_]], 0)
-    Slice(size, columns)
+    val (cmap, size) = buildColArrays(values, Map.empty, 0)
+    Slice.mk(size, cmap)
   }
 
   /**

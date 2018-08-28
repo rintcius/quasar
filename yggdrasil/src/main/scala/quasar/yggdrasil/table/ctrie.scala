@@ -27,6 +27,10 @@ object ctrie {
   type CTrie = RadixTree[Array[CPathNode], Column]
   type CMap = Map[CType, CTrie]
 
+  def empty: RadixTree[Array[CPathNode], Column] = RadixTree.empty
+
+  def nrColumns(cmap: CMap): Int = cmap.values.map(_.count).foldLeft(0)(_ + _)
+
   def fromLegacy(map: Map[ColumnRef, Column]): CMap = {
     val l: List[(CType, (Array[CPathNode], Column))] =
       map.toList.map(p => (p._1.ctype, (p._1.selector.nodes.toArray, p._2)))
