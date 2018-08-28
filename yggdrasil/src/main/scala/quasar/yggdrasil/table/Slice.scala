@@ -900,127 +900,129 @@ abstract class Slice { source =>
     */
   def materialized: Slice = {
     val size = source.size
-    val columns = source.columns lazyMapValues {
-      case col: BoolColumn =>
-        val defined = col.definedAt(0, source.size)
-        val values = BitSetUtil.filteredRange(0, source.size) { row =>
-          defined(row) && col(row)
-        }
-        ArrayBoolColumn(defined, values)
+    val cmap: CMap = source.cmap lazyMapValues { ctrie =>
+      ctrie.mapValues {
+        case col: BoolColumn =>
+          val defined = col.definedAt(0, source.size)
+          val values = BitSetUtil.filteredRange(0, source.size) { row =>
+            defined(row) && col(row)
+          }
+          ArrayBoolColumn(defined, values)
 
-      case col: LongColumn =>
-        val defined = col.definedAt(0, source.size)
-        val values  = new Array[Long](source.size)
-        Loop.range(0, source.size) { row =>
-          if (defined(row)) values(row) = col(row)
-        }
-        ArrayLongColumn(defined, values)
+        case col: LongColumn =>
+          val defined = col.definedAt(0, source.size)
+          val values  = new Array[Long](source.size)
+          Loop.range(0, source.size) { row =>
+            if (defined(row)) values(row) = col(row)
+          }
+          ArrayLongColumn(defined, values)
 
-      case col: DoubleColumn =>
-        val defined = col.definedAt(0, source.size)
-        val values  = new Array[Double](source.size)
-        Loop.range(0, source.size) { row =>
-          if (defined(row)) values(row) = col(row)
-        }
-        ArrayDoubleColumn(defined, values)
+        case col: DoubleColumn =>
+          val defined = col.definedAt(0, source.size)
+          val values  = new Array[Double](source.size)
+          Loop.range(0, source.size) { row =>
+            if (defined(row)) values(row) = col(row)
+          }
+          ArrayDoubleColumn(defined, values)
 
-      case col: NumColumn =>
-        val defined = col.definedAt(0, source.size)
-        val values  = new Array[BigDecimal](source.size)
-        Loop.range(0, source.size) { row =>
-          if (defined(row)) values(row) = col(row)
-        }
-        ArrayNumColumn(defined, values)
+        case col: NumColumn =>
+          val defined = col.definedAt(0, source.size)
+          val values  = new Array[BigDecimal](source.size)
+          Loop.range(0, source.size) { row =>
+            if (defined(row)) values(row) = col(row)
+          }
+          ArrayNumColumn(defined, values)
 
-      case col: StrColumn =>
-        val defined = col.definedAt(0, source.size)
-        val values  = new Array[String](source.size)
-        Loop.range(0, source.size) { row =>
-          if (defined(row)) values(row) = col(row)
-        }
-        ArrayStrColumn(defined, values)
+        case col: StrColumn =>
+          val defined = col.definedAt(0, source.size)
+          val values  = new Array[String](source.size)
+          Loop.range(0, source.size) { row =>
+            if (defined(row)) values(row) = col(row)
+          }
+          ArrayStrColumn(defined, values)
 
-      case col: OffsetDateTimeColumn =>
-        val defined = col.definedAt(0, source.size)
-        val values  = new Array[OffsetDateTime](source.size)
-        Loop.range(0, source.size) { row =>
-          if (defined(row)) values(row) = col(row)
-        }
-        ArrayOffsetDateTimeColumn(defined, values)
+        case col: OffsetDateTimeColumn =>
+          val defined = col.definedAt(0, source.size)
+          val values  = new Array[OffsetDateTime](source.size)
+          Loop.range(0, source.size) { row =>
+            if (defined(row)) values(row) = col(row)
+          }
+          ArrayOffsetDateTimeColumn(defined, values)
 
-      case col: OffsetTimeColumn =>
-        val defined = col.definedAt(0, source.size)
-        val values  = new Array[OffsetTime](source.size)
-        Loop.range(0, source.size) { row =>
-          if (defined(row)) values(row) = col(row)
-        }
-        ArrayOffsetTimeColumn(defined, values)
+        case col: OffsetTimeColumn =>
+          val defined = col.definedAt(0, source.size)
+          val values  = new Array[OffsetTime](source.size)
+          Loop.range(0, source.size) { row =>
+            if (defined(row)) values(row) = col(row)
+          }
+          ArrayOffsetTimeColumn(defined, values)
 
-      case col: OffsetDateColumn =>
-        val defined = col.definedAt(0, source.size)
-        val values  = new Array[OffsetDate](source.size)
-        Loop.range(0, source.size) { row =>
-          if (defined(row)) values(row) = col(row)
-        }
-        ArrayOffsetDateColumn(defined, values)
+        case col: OffsetDateColumn =>
+          val defined = col.definedAt(0, source.size)
+          val values  = new Array[OffsetDate](source.size)
+          Loop.range(0, source.size) { row =>
+            if (defined(row)) values(row) = col(row)
+          }
+          ArrayOffsetDateColumn(defined, values)
 
-      case col: LocalDateTimeColumn =>
-        val defined = col.definedAt(0, source.size)
-        val values  = new Array[LocalDateTime](source.size)
-        Loop.range(0, source.size) { row =>
-          if (defined(row)) values(row) = col(row)
-        }
-        ArrayLocalDateTimeColumn(defined, values)
+        case col: LocalDateTimeColumn =>
+          val defined = col.definedAt(0, source.size)
+          val values  = new Array[LocalDateTime](source.size)
+          Loop.range(0, source.size) { row =>
+            if (defined(row)) values(row) = col(row)
+          }
+          ArrayLocalDateTimeColumn(defined, values)
 
-      case col: LocalTimeColumn =>
-        val defined = col.definedAt(0, source.size)
-        val values  = new Array[LocalTime](source.size)
-        Loop.range(0, source.size) { row =>
-          if (defined(row)) values(row) = col(row)
-        }
-        ArrayLocalTimeColumn(defined, values)
+        case col: LocalTimeColumn =>
+          val defined = col.definedAt(0, source.size)
+          val values  = new Array[LocalTime](source.size)
+          Loop.range(0, source.size) { row =>
+            if (defined(row)) values(row) = col(row)
+          }
+          ArrayLocalTimeColumn(defined, values)
 
-      case col: LocalDateColumn =>
-        val defined = col.definedAt(0, source.size)
-        val values  = new Array[LocalDate](source.size)
-        Loop.range(0, source.size) { row =>
-          if (defined(row)) values(row) = col(row)
-        }
-        ArrayLocalDateColumn(defined, values)
+        case col: LocalDateColumn =>
+          val defined = col.definedAt(0, source.size)
+          val values  = new Array[LocalDate](source.size)
+          Loop.range(0, source.size) { row =>
+            if (defined(row)) values(row) = col(row)
+          }
+          ArrayLocalDateColumn(defined, values)
 
-      case col: IntervalColumn =>
-        val defined = col.definedAt(0, source.size)
-        val values  = new Array[DateTimeInterval](source.size)
-        Loop.range(0, source.size) { row =>
-          if (defined(row)) values(row) = col(row)
-        }
-        ArrayIntervalColumn(defined, values)
+        case col: IntervalColumn =>
+          val defined = col.definedAt(0, source.size)
+          val values  = new Array[DateTimeInterval](source.size)
+          Loop.range(0, source.size) { row =>
+            if (defined(row)) values(row) = col(row)
+          }
+          ArrayIntervalColumn(defined, values)
 
-      case col: EmptyArrayColumn =>
-        val ncol = MutableEmptyArrayColumn.empty()
-        Loop.range(0, source.size) { row =>
-          ncol.update(row, col.isDefinedAt(row))
-        }
-        ncol
+        case col: EmptyArrayColumn =>
+          val ncol = MutableEmptyArrayColumn.empty()
+          Loop.range(0, source.size) { row =>
+            ncol.update(row, col.isDefinedAt(row))
+          }
+          ncol
 
-      case col: EmptyObjectColumn =>
-        val ncol = MutableEmptyObjectColumn.empty()
-        Loop.range(0, source.size) { row =>
-          ncol.update(row, col.isDefinedAt(row))
-        }
-        ncol
+        case col: EmptyObjectColumn =>
+          val ncol = MutableEmptyObjectColumn.empty()
+          Loop.range(0, source.size) { row =>
+            ncol.update(row, col.isDefinedAt(row))
+          }
+          ncol
 
-      case col: NullColumn =>
-        val ncol = MutableNullColumn.empty()
-        Loop.range(0, source.size) { row =>
-          ncol.update(row, col.isDefinedAt(row))
-        }
-        ncol
+        case col: NullColumn =>
+          val ncol = MutableNullColumn.empty()
+          Loop.range(0, source.size) { row =>
+            ncol.update(row, col.isDefinedAt(row))
+          }
+          ncol
 
-      case col =>
-        sys.error("Cannot materialise non-standard (extensible) column")
+        case col =>
+          sys.error("Cannot materialise non-standard (extensible) column")
+      }
     }
-    Slice(size, columns)
+    Slice.mk(size, cmap)
   }
 
   // will render a trailing newline
