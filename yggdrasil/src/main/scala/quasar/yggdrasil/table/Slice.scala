@@ -1768,18 +1768,17 @@ abstract class Slice { source =>
   }
 
   private[this] def sliceSchema: Option[SchemaNode] = {
-    if (columns.isEmpty) {
+    if (cmap.isEmpty) {
       None
     } else {
-      def insert(target: SchemaNode, ref: ColumnRef, col: Column): SchemaNode = {
-        val ColumnRef(selector, ctype) = ref
+      def insert(target: SchemaNode, selectorNodes: List[CPathNode], ctype: CType, col: Column): SchemaNode = {
 
-        selector.nodes match {
+        selectorNodes match {
           case CPathField(name) :: tail =>
             target match {
               case SchemaNode.Obj(nodes) => {
                 val subTarget = nodes get name getOrElse SchemaNode.Union(Set())
-                val result    = insert(subTarget, ColumnRef(CPath(tail), ctype), col)
+                val result    = insert(subTarget, tail, ctype, col)
                 SchemaNode.Obj(nodes + (name -> result))
               }
 
@@ -1790,18 +1789,18 @@ abstract class Slice { source =>
                 }
 
                 val subTarget = objNode getOrElse SchemaNode.Obj(Map())
-                SchemaNode.Union(nodes - subTarget + insert(subTarget, ref, col))
+                SchemaNode.Union(nodes - subTarget + insert(subTarget, selectorNodes, ctype, col))
               }
 
               case node =>
-                SchemaNode.Union(Set(node, insert(SchemaNode.Obj(Map()), ref, col)))
+                SchemaNode.Union(Set(node, insert(SchemaNode.Obj(Map()), selectorNodes, ctype, col)))
             }
 
           case CPathIndex(idx) :: tail =>
             target match {
               case SchemaNode.Arr(map) => {
                 val subTarget = map get idx getOrElse SchemaNode.Union(Set())
-                val result    = insert(subTarget, ColumnRef(CPath(tail), ctype), col)
+                val result    = insert(subTarget, tail, ctype, col)
                 SchemaNode.Arr(map + (idx -> result))
               }
 
@@ -1812,11 +1811,11 @@ abstract class Slice { source =>
                 }
 
                 val subTarget = objNode getOrElse SchemaNode.Arr(Map())
-                SchemaNode.Union(nodes - subTarget + insert(subTarget, ref, col))
+                SchemaNode.Union(nodes - subTarget + insert(subTarget, selectorNodes, ctype, col))
               }
 
               case node =>
-                SchemaNode.Union(Set(node, insert(SchemaNode.Arr(Map()), ref, col)))
+                SchemaNode.Union(Set(node, insert(SchemaNode.Arr(Map()), selectorNodes, ctype, col)))
             }
 
           case CPathMeta(_) :: _ => target
@@ -1833,8 +1832,15 @@ abstract class Slice { source =>
         }
       }
 
-      val schema = columns.foldLeft(SchemaNode.Union(Set()): SchemaNode) {
-        case (acc, (ref, col)) => insert(acc, ref, col)
+      def insertAll(target: SchemaNode, ctype: CType, trie: CTrie): SchemaNode = {
+        trie.entries.foldLeft(SchemaNode.Union(Set()): SchemaNode) {
+          case (acc, (pathNodes, col)) =>
+            insert(acc, pathNodes.toList, ctype, col)
+        }
+      }
+
+      val schema = cmap.foldLeft(SchemaNode.Union(Set()): SchemaNode) {
+        case (acc, (ctype, trie)) => insertAll(acc, ctype, trie)
       }
 
       normalizeSchema(schema)
