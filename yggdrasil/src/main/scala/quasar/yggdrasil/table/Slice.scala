@@ -50,8 +50,8 @@ abstract class Slice { source =>
   def isEmpty: Boolean = size == 0
   def nonEmpty         = !isEmpty
 
-  def columns: Map[ColumnRef, Column] = ctrie.toLegacy(cmap)
-  def cmap: CMap
+  def columns: Map[ColumnRef, Column] = ctrie.toLegacy(trie)
+  def trie: CTrie
 
   def groupedColumnRefs: Map[CPath, Set[CType]] =
     columns.keys.groupBy(_.selector).mapValues(_.map(_.ctype).toSet)
@@ -900,8 +900,9 @@ abstract class Slice { source =>
     */
   def materialized: Slice = {
     val size = source.size
-    val cmap: CMap = source.cmap lazyMapValues { ctrie =>
-      ctrie.mapValues {
+    val trie: CTrie =
+      source.trie.mapValues { cols =>
+        cols.lazyMapValues {
         case col: BoolColumn =>
           val defined = col.definedAt(0, source.size)
           val values = BitSetUtil.filteredRange(0, source.size) { row =>
@@ -1022,7 +1023,7 @@ abstract class Slice { source =>
           sys.error("Cannot materialise non-standard (extensible) column")
       }
     }
-    Slice.mk(size, cmap)
+    Slice.mk(size, trie)
   }
 
   // will render a trailing newline
@@ -1768,7 +1769,7 @@ abstract class Slice { source =>
   }
 
   private[this] def sliceSchema: Option[SchemaNode] = {
-    if (cmap.isEmpty) {
+    if (ctrie.nrColumns(trie) == 0) {
       None
     } else {
       def insert(target: SchemaNode, selectorNodes: List[CPathNode], ctype: CType, col: Column): SchemaNode = {
@@ -1832,15 +1833,15 @@ abstract class Slice { source =>
         }
       }
 
-      def insertAll(target: SchemaNode, ctype: CType, trie: CTrie): SchemaNode = {
-        trie.entries.foldLeft(SchemaNode.Union(Set()): SchemaNode) {
-          case (acc, (pathNodes, col)) =>
-            insert(acc, pathNodes.toList, ctype, col)
+      def insertAll(target: SchemaNode, pathNodes: List[CPathNode], cols: Map[CType, Column]): SchemaNode = {
+        cols.foldLeft(target) {
+          case (acc, (ctype, col)) =>
+            insert(acc, pathNodes, ctype, col)
         }
       }
 
-      val schema = cmap.foldLeft(SchemaNode.Union(Set()): SchemaNode) {
-        case (acc, (ctype, trie)) => insertAll(acc, ctype, trie)
+      val schema = trie.entries.foldLeft(SchemaNode.Union(Set()): SchemaNode) {
+        case (acc, (pathNodes, cols)) => insertAll(acc, pathNodes.toList, cols)
       }
 
       normalizeSchema(schema)
@@ -1922,8 +1923,8 @@ abstract class Slice { source =>
 
 object Slice {
 
-  private def replaceColumnImpl(size: Int, cmap: CMap): CMap = {
-    def replace(ctype: CType, ctrie: CTrie): CTrie = ctrie.modifyOrRemove { case (k, col, _) =>
+  private def replaceColumnImpl(size: Int, trie: CTrie): CTrie = {
+    def replace(ctype: CType, col: Column): Option[Column] = {
       if (col.isDefinedAt(0)) {
         val c = ctype match {
           case CBoolean => SingletonBoolColumn(col.asInstanceOf[BoolColumn](0))
@@ -1950,25 +1951,31 @@ object Slice {
     }
 
     if (size == 1)
-      cmap.foldLeft[CMap](Map.empty) {
-        case (acc, (ctype, ctrie)) => acc + (ctype -> replace(ctype, ctrie))
+      trie.modifyOrRemove { case (nodes, map, _) =>
+        val m = map.foldLeft[Map[CType, Column]](Map.empty) { case (acc, (k, v)) =>
+          replace(k, v) match {
+            case None => acc
+            case Some(c) => acc + (k -> c)
+          }
+        }
+        if (m.isEmpty) None else Some(m)
       }
     else
-      cmap
+      trie
   }
 
   def empty: Slice = Slice(0, Map.empty)
 
-  def mk(dataSize: Int, cmap0: CMap): Slice =
+  def mk(dataSize: Int, trie0: CTrie): Slice =
     new Slice {
       val size = dataSize
-      val cmap = replaceColumnImpl(dataSize, cmap0)
+      val trie = replaceColumnImpl(dataSize, trie0)
     }
 
   def apply(dataSize: Int, columns0: Map[ColumnRef, Column]): Slice =
     mk(dataSize, ctrie.fromLegacy(columns0))
 
-  def updateRefs(rv: List[(CPath, CValue)], into: CMap, sliceIndex: Int, sliceSize: Int): CMap = {
+  def updateRefs(rv: List[(CPath, CValue)], into: CTrie, sliceIndex: Int, sliceSize: Int): CTrie = {
     var acc = into
     var cursor = rv
     while (cursor.isInstanceOf[::[(CPath, CValue)]]) {
@@ -1976,78 +1983,78 @@ object Slice {
         case (cpath, CUndefined) =>
         case (cpath, cvalue) =>
           val cpathNodes = cpath.nodes.toArray
-          val trie: CTrie = acc.getOrElse(cvalue.cType, ctrie.empty)
+          val cols = acc.getOrDefault(cpathNodes, Map.empty)
 
           val updatedColumn: ArrayColumn[_] = cvalue match {
             case CBoolean(b) =>
-              val c = trie.getOrDefault(cpathNodes, ArrayBoolColumn.empty(sliceSize)).asInstanceOf[ArrayBoolColumn]
+              val c = cols.getOrElse(cvalue.cType, ArrayBoolColumn.empty(sliceSize)).asInstanceOf[ArrayBoolColumn]
               c.update(sliceIndex, b)
 
             case CLong(d) =>
-              val c = trie.getOrDefault(cpathNodes, ArrayLongColumn.empty(sliceSize)).asInstanceOf[ArrayLongColumn]
+              val c = cols.getOrElse(cvalue.cType, ArrayLongColumn.empty(sliceSize)).asInstanceOf[ArrayLongColumn]
               c.update(sliceIndex, d.toLong)
 
             case CDouble(d) =>
-              val c = trie.getOrDefault(cpathNodes, ArrayDoubleColumn.empty(sliceSize)).asInstanceOf[ArrayDoubleColumn]
+              val c = cols.getOrElse(cvalue.cType, ArrayDoubleColumn.empty(sliceSize)).asInstanceOf[ArrayDoubleColumn]
               c.update(sliceIndex, d.toDouble)
 
             case CNum(d) =>
-              val c = trie.getOrDefault(cpathNodes, ArrayNumColumn.empty(sliceSize)).asInstanceOf[ArrayNumColumn]
+              val c = cols.getOrElse(cvalue.cType, ArrayNumColumn.empty(sliceSize)).asInstanceOf[ArrayNumColumn]
               c.update(sliceIndex, d)
 
             case CString(s) =>
-              val c = trie.getOrDefault(cpathNodes, ArrayStrColumn.empty(sliceSize)).asInstanceOf[ArrayStrColumn]
+              val c = cols.getOrElse(cvalue.cType, ArrayStrColumn.empty(sliceSize)).asInstanceOf[ArrayStrColumn]
               c.update(sliceIndex, s)
 
             case COffsetDateTime(d) =>
-              val c = trie.getOrDefault(cpathNodes, ArrayOffsetDateTimeColumn.empty(sliceSize)).asInstanceOf[ArrayOffsetDateTimeColumn]
+              val c = cols.getOrElse(cvalue.cType, ArrayOffsetDateTimeColumn.empty(sliceSize)).asInstanceOf[ArrayOffsetDateTimeColumn]
               c.update(sliceIndex, d)
 
             case COffsetTime(d) =>
-              val c = trie.getOrDefault(cpathNodes, ArrayOffsetTimeColumn.empty(sliceSize)).asInstanceOf[ArrayOffsetTimeColumn]
+              val c = cols.getOrElse(cvalue.cType, ArrayOffsetTimeColumn.empty(sliceSize)).asInstanceOf[ArrayOffsetTimeColumn]
               c.update(sliceIndex, d)
 
             case COffsetDate(d) =>
-              val c = trie.getOrDefault(cpathNodes, ArrayOffsetDateColumn.empty(sliceSize)).asInstanceOf[ArrayOffsetDateColumn]
+              val c = cols.getOrElse(cvalue.cType, ArrayOffsetDateColumn.empty(sliceSize)).asInstanceOf[ArrayOffsetDateColumn]
               c.update(sliceIndex, d)
 
             case CLocalDateTime(d) =>
-              val c = trie.getOrDefault(cpathNodes, ArrayLocalDateTimeColumn.empty(sliceSize)).asInstanceOf[ArrayLocalDateTimeColumn]
+              val c = cols.getOrElse(cvalue.cType, ArrayLocalDateTimeColumn.empty(sliceSize)).asInstanceOf[ArrayLocalDateTimeColumn]
               c.update(sliceIndex, d)
 
             case CLocalTime(d) =>
-              val c = trie.getOrDefault(cpathNodes, ArrayLocalTimeColumn.empty(sliceSize)).asInstanceOf[ArrayLocalTimeColumn]
+              val c = cols.getOrElse(cvalue.cType, ArrayLocalTimeColumn.empty(sliceSize)).asInstanceOf[ArrayLocalTimeColumn]
               c.update(sliceIndex, d)
 
             case CLocalDate(d) =>
-              val c = trie.getOrDefault(cpathNodes, ArrayLocalDateColumn.empty(sliceSize)).asInstanceOf[ArrayLocalDateColumn]
+              val c = cols.getOrElse(cvalue.cType, ArrayLocalDateColumn.empty(sliceSize)).asInstanceOf[ArrayLocalDateColumn]
               c.update(sliceIndex, d)
 
             case CInterval(p) =>
-              val c = trie.getOrDefault(cpathNodes, ArrayIntervalColumn.empty(sliceSize)).asInstanceOf[ArrayIntervalColumn]
+              val c = cols.getOrElse(cvalue.cType, ArrayIntervalColumn.empty(sliceSize)).asInstanceOf[ArrayIntervalColumn]
               c.update(sliceIndex, p)
 
             case CArray(arr, cType) =>
-              val c = trie.getOrDefault(cpathNodes, ArrayHomogeneousArrayColumn.empty(sliceSize)(cType)).asInstanceOf[ArrayHomogeneousArrayColumn[cType.tpe]]
+              val c = cols.getOrElse(cvalue.cType, ArrayHomogeneousArrayColumn.empty(sliceSize)(cType)).asInstanceOf[ArrayHomogeneousArrayColumn[cType.tpe]]
               c.update(sliceIndex, arr)
 
             case CEmptyArray =>
-              val c = trie.getOrDefault(cpathNodes, MutableEmptyArrayColumn.empty()).asInstanceOf[MutableEmptyArrayColumn]
+              val c = cols.getOrElse(cvalue.cType, MutableEmptyArrayColumn.empty()).asInstanceOf[MutableEmptyArrayColumn]
               c.update(sliceIndex, true)
 
             case CEmptyObject =>
-              val c = trie.getOrDefault(cpathNodes, MutableEmptyObjectColumn.empty()).asInstanceOf[MutableEmptyObjectColumn]
+              val c = cols.getOrElse(cvalue.cType, MutableEmptyObjectColumn.empty()).asInstanceOf[MutableEmptyObjectColumn]
               c.update(sliceIndex, true)
 
             case CNull =>
-              val c = trie.getOrDefault(cpathNodes, MutableNullColumn.empty()).asInstanceOf[MutableNullColumn]
+              val c = cols.getOrElse(cvalue.cType, MutableNullColumn.empty()).asInstanceOf[MutableNullColumn]
               c.update(sliceIndex, true)
 
             case x =>
               sys.error(s"Unexpected arg $x")
           }
 
-          acc = acc.updated(cvalue.cType, trie.merge(RadixTree(cpathNodes -> updatedColumn)))
+          acc = acc.merge(RadixTree(cpathNodes -> (cols + (cvalue.cType -> updatedColumn))))
       }
       cursor = cursor.tail
     }
@@ -2070,7 +2077,7 @@ object Slice {
     @tailrec
     def inner(
       next: ArraySliced[RValue], rows: Int, colsOverflowed: Boolean,
-      acc: CMap, allocatedColSize: Int
+      acc: CTrie, allocatedColSize: Int
     ): (Slice, ArraySliced[RValue]) = {
       if (next.size == 0) {
         // there's no more data to make slices of.
@@ -2143,7 +2150,7 @@ object Slice {
       (Slice.empty, ArraySliced.noRValues)
     } else {
       val size = Math.min(maxRows, startingSize)
-      inner(values, 0, false, Map.empty, size)
+      inner(values, 0, false, ctrie.empty, size)
     }
   }
 
@@ -2188,8 +2195,8 @@ object Slice {
   def fromRValues(values: Stream[RValue]): Slice = {
     val sliceSize = values.size
 
-    @tailrec def buildColArrays(from: Stream[RValue], into: CMap, sliceIndex: Int)
-        : (CMap, Int) =
+    @tailrec def buildColArrays(from: Stream[RValue], into: CTrie, sliceIndex: Int)
+        : (CTrie, Int) =
       from match {
         case jv #:: xs =>
           val refs = updateRefs(jv.flattenWithPath, into, sliceIndex, sliceSize)
@@ -2198,8 +2205,8 @@ object Slice {
           (into, sliceIndex)
       }
 
-    val (cmap, size) = buildColArrays(values, Map.empty, 0)
-    Slice.mk(size, cmap)
+    val (trie, size) = buildColArrays(values, ctrie.empty, 0)
+    Slice.mk(size, trie)
   }
 
   /**

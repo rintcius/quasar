@@ -19,30 +19,30 @@ package quasar.yggdrasil.table
 import quasar.precog.common._
 
 import com.rklaehn.radixtree.RadixTree
+import com.rklaehn.sonicreducer.Reducer
 import scalaz._, Scalaz._
 import shims._
 
 object ctrie {
 
-  type CTrie = RadixTree[Array[CPathNode], Column]
-  type CMap = Map[CType, CTrie]
+  type CTrie = RadixTree[Array[CPathNode], Map[CType, Column]]
 
-  def empty: RadixTree[Array[CPathNode], Column] = RadixTree.empty
+  def empty: RadixTree[Array[CPathNode], Map[CType, Column]] = RadixTree.empty
 
-  def nrColumns(cmap: CMap): Int = cmap.values.map(_.count).foldLeft(0)(_ + _)
+  def nrColumns(trie: CTrie): Int = (Reducer.reduce(trie.values.map(_.size))(_ + _)).getOrElse(0)
 
-  def fromLegacy(map: Map[ColumnRef, Column]): CMap = {
-    val l: List[(CType, (Array[CPathNode], Column))] =
-      map.toList.map(p => (p._1.ctype, (p._1.selector.nodes.toArray, p._2)))
-    l.groupBy(_._1).mapValues(p => RadixTree(p.map(_._2): _*))
+  def fromLegacy(map: Map[ColumnRef, Column]): CTrie = {
+    val l: List[(List[CPathNode], CType, Column)] =
+      map.toList.map(p => (p._1.selector.nodes, p._1.ctype, p._2))
+    val m: Map[List[CPathNode], Map[CType, Column]] =
+      l.groupBy(_._1).mapValues(ts => ts.map(t => (t._2, t._3)).toMap)
+    RadixTree(m.toList.map { case (k, v) => (k.toArray, v)} :_*)
   }
 
-  def toLegacy(cmap: CMap): Map[ColumnRef, Column] = {
-    def toMap(ctype: CType, trie: CTrie): Map[ColumnRef, Column] =
-      trie.entries.map { case (k, v) => (ColumnRef(CPath(k.toList), ctype), v) }.toMap
+  def toLegacy(trie: CTrie): Map[ColumnRef, Column] = {
+    def toList(pathNodes: Array[CPathNode], map: Map[CType, Column]): List[(ColumnRef, Column)] =
+      map.toList.map { case (tp, c) => (ColumnRef(CPath(pathNodes.toList), tp), c) }
 
-    val l: List[Map[ColumnRef, Column]] = cmap.toList.map(p => toMap(p._1, p._2))
-    l.foldLeft[Map[ColumnRef, Column]](Map.empty) { case (acc, m) => acc ++ m }
+    trie.entries.map(e => toList(e._1, e._2)).flatten.toMap
   }
-
 }
