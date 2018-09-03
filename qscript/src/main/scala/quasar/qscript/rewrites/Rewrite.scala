@@ -17,7 +17,7 @@
 package quasar.qscript.rewrites
 
 import slamdata.Predef.{Map => _, _}
-import quasar.{RenderTree, RenderTreeT}
+import quasar.RenderTreeT
 import quasar.contrib.matryoshka._
 import quasar.contrib.pathy.{ADir, AFile}
 import quasar.contrib.scalaz.bitraverse._
@@ -42,13 +42,6 @@ import scalaz.{:+: => _, Divide => _, _},
   Scalaz._
 
 class Rewrite[T[_[_]]: BirecursiveT: EqualT: ShowT: RenderTreeT] extends TTypes[T] {
-  def rebuildArray[A: Show: RenderTree](funcs: List[FreeMapA[A]]): FreeMapA[A] = funcs match {
-    case Nil    => Free.roll(MFC(EmptyArray[T, FreeMapA[A]]))
-    case h :: t =>
-      t.foldLeft(
-        Free.roll(MFC(MakeArray[T, FreeMapA[A]](h))))(
-        (acc, e) => Free.roll(MFC(ConcatArrays(acc, Free.roll(MFC(MakeArray(e)))))))
-  }
 
   def rewriteShift(idStatus: IdStatus, repair: JoinFunc)
       : Option[(IdStatus, JoinFunc)] =
@@ -122,7 +115,6 @@ class Rewrite[T[_[_]]: BirecursiveT: EqualT: ShowT: RenderTreeT] extends TTypes[
   // TODO: These optimizations should give rise to various property tests:
   //       • elideNopMap ⇒ no `Map(???, HoleF)`
   //       • normalize ⇒ a whole bunch, based on MapFuncsCore
-  //       • elideNopJoin ⇒ no `ThetaJoin(???, HoleF, HoleF, LeftSide === RightSide, ???, ???)`
   //       • coalesceMaps ⇒ no `Map(Map(???, ???), ???)`
   //       • coalesceMapJoin ⇒ no `Map(ThetaJoin(???, …), ???)`
 
@@ -385,16 +377,6 @@ class Rewrite[T[_[_]]: BirecursiveT: EqualT: ShowT: RenderTreeT] extends TTypes[
       branchSide.remap(func).flatMap(branchSide.combine)
   }
 
-  // FIXME: This really needs to ensure that the condition is that of an
-  //        autojoin, otherwise it’ll elide things that are truly meaningful.
-  def elideNopJoin[F[a] <: ACopK[a], A]
-    (rebase: FreeQS => A => Option[A])
-    (implicit QC: QScriptCore :<<: F, FI: Injectable[F, QScriptTotal])
-      : ThetaJoin[A] => Option[F[A]] = {
-    case ThetaJoin(s, l, r, _, _, combine) => unifySimpleBranches[F, A](s, l, r, combine)(rebase)(QC, FI)
-    case _                                 => None
-  }
-
   def compactLeftShift[F[_]: Functor]
       (QCToF: PrismNT[F, QScriptCore])
       : QScriptCore[T[F]] => Option[F[T[F]]] = {
@@ -562,9 +544,7 @@ class Rewrite[T[_[_]]: BirecursiveT: EqualT: ShowT: RenderTreeT] extends TTypes[
       F[A] => G[A] = {
 
     val normTJ = applyTransforms(
-      liftFFTrans[F, G, T[G]](prism)(C.coalesceTJ[G](prism.get)),
-      liftFFTrans[F, G, T[G]](prism)((fa: F[T[G]]) =>
-        TJ.prj(fa).flatMap(elideNopJoin[F, T[G]](rebase))))
+      liftFFTrans[F, G, T[G]](prism)(C.coalesceTJ[G](prism.get)))
 
     normalizeWithBijection[F, G, A](bij)(prism, normTJ compose (prism apply _))
   }
@@ -584,24 +564,4 @@ class Rewrite[T[_[_]]: BirecursiveT: EqualT: ShowT: RenderTreeT] extends TTypes[
              FI: Injectable[F, QScriptTotal]):
       F[Free[F, Hole]] => CoEnv[Hole, F, Free[F, Hole]] =
     normalizeTJBijection[F, CoEnv[Hole, F, ?], Free[F, Hole]](coenvBijection)(coenvPrism, rebaseTCo)
-
-  /** A backend-or-mount-specific `f` is provided, that allows us to rewrite
-    * [[Root]] (and projections, etc.) into [[Read]], so then we can handle
-    * exposing only “true” joins and converting intra-data joins to map
-    * operations.
-    *
-    * `f` takes QScript representing a _potential_ path to a file, converts
-    * [[Root]] and its children to path, with the operations post-file remaining.
-    */
-  def pathify[M[_]: Monad: MonadPlannerErr, IN[_]: Traverse, OUT[a] <: ACopK[a]: Traverse]
-    (g: DiscoverPath.ListContents[M])
-    (implicit
-      FS: DiscoverPath.Aux[T, IN, OUT],
-      RD:  Const[Read[ADir], ?] :<<: OUT,
-      RF: Const[Read[AFile], ?] :<<: OUT,
-      QC:           QScriptCore :<<: OUT,
-      FI: Injectable[OUT, QScriptTotal])
-      : T[IN] => M[T[OUT]] =
-    _.cataM[M, List[ADir] \&/ FS.IT[FS.OUT]](FS.discoverPath[M](g)) >>=
-      DiscoverPath.unionAll[T, M, OUT](g)
 }

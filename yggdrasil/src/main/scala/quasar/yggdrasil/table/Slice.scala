@@ -1949,10 +1949,8 @@ abstract class Slice { source =>
 }
 
 object Slice {
-  def empty: Slice = Slice(0, Map.empty)
 
-  def apply(dataSize: Int, columns0: Map[ColumnRef, Column]): Slice = {
-
+  private def replaceColumnImpl(size: Int, cols: Map[ColumnRef, Column]): Map[ColumnRef, Column] = {
     def step(acc: Map[ColumnRef, Column], cref: ColumnRef, col: Column): Map[ColumnRef, Column] =
       if (col.isDefinedAt(0)) {
         val c = cref.ctype match {
@@ -1978,19 +1976,21 @@ object Slice {
       } else
         acc
 
-    if (dataSize == 1)
-      new Slice {
-        val size = 1
-        val columns = columns0.foldLeft[Map[ColumnRef, Column]](Map.empty) {
-          case (acc, (cref, col)) => step(acc, cref, col)
-        }
+    if (size == 1)
+      cols.foldLeft[Map[ColumnRef, Column]](Map.empty) {
+        case (acc, (cref, col)) => step(acc, cref, col)
       }
     else
-      new Slice {
-        val size    = dataSize
-        val columns = columns0
-      }
+      cols
   }
+
+  def empty: Slice = Slice(0, Map.empty)
+
+  def apply(dataSize: Int, columns0: Map[ColumnRef, Column]): Slice =
+    new Slice {
+      val size = dataSize
+      val columns = replaceColumnImpl(dataSize, columns0)
+    }
 
   def updateRefs(rv: List[(CPath, CValue)], into: Map[ColumnRef, ArrayColumn[_]], sliceIndex: Int, sliceSize: Int): Map[ColumnRef, ArrayColumn[_]] = {
     var acc = into
@@ -2006,97 +2006,66 @@ object Slice {
               val c = acc.getOrElse(ref, ArrayBoolColumn.empty(sliceSize)).asInstanceOf[ArrayBoolColumn]
               c.update(sliceIndex, b)
 
-              c
-
             case CLong(d) =>
               val c = acc.getOrElse(ref, ArrayLongColumn.empty(sliceSize)).asInstanceOf[ArrayLongColumn]
               c.update(sliceIndex, d.toLong)
-
-              c
 
             case CDouble(d) =>
               val c = acc.getOrElse(ref, ArrayDoubleColumn.empty(sliceSize)).asInstanceOf[ArrayDoubleColumn]
               c.update(sliceIndex, d.toDouble)
 
-              c
-
             case CNum(d) =>
               val c = acc.getOrElse(ref, ArrayNumColumn.empty(sliceSize)).asInstanceOf[ArrayNumColumn]
               c.update(sliceIndex, d)
-
-              c
 
             case CString(s) =>
               val c = acc.getOrElse(ref, ArrayStrColumn.empty(sliceSize)).asInstanceOf[ArrayStrColumn]
               c.update(sliceIndex, s)
 
-              c
-
             case COffsetDateTime(d) =>
               val c = acc.getOrElse(ref, ArrayOffsetDateTimeColumn.empty(sliceSize)).asInstanceOf[ArrayOffsetDateTimeColumn]
               c.update(sliceIndex, d)
-
-              c
 
             case COffsetTime(d) =>
               val c = acc.getOrElse(ref, ArrayOffsetTimeColumn.empty(sliceSize)).asInstanceOf[ArrayOffsetTimeColumn]
               c.update(sliceIndex, d)
 
-              c
-
             case COffsetDate(d) =>
               val c = acc.getOrElse(ref, ArrayOffsetDateColumn.empty(sliceSize)).asInstanceOf[ArrayOffsetDateColumn]
               c.update(sliceIndex, d)
-
-              c
 
             case CLocalDateTime(d) =>
               val c = acc.getOrElse(ref, ArrayLocalDateTimeColumn.empty(sliceSize)).asInstanceOf[ArrayLocalDateTimeColumn]
               c.update(sliceIndex, d)
 
-              c
-
             case CLocalTime(d) =>
               val c = acc.getOrElse(ref, ArrayLocalTimeColumn.empty(sliceSize)).asInstanceOf[ArrayLocalTimeColumn]
               c.update(sliceIndex, d)
-
-              c
 
             case CLocalDate(d) =>
               val c = acc.getOrElse(ref, ArrayLocalDateColumn.empty(sliceSize)).asInstanceOf[ArrayLocalDateColumn]
               c.update(sliceIndex, d)
 
-              c
-
             case CInterval(p) =>
               val c = acc.getOrElse(ref, ArrayIntervalColumn.empty(sliceSize)).asInstanceOf[ArrayIntervalColumn]
               c.update(sliceIndex, p)
-
-              c
 
             case CArray(arr, cType) =>
               val c = acc.getOrElse(ref, ArrayHomogeneousArrayColumn.empty(sliceSize)(cType)).asInstanceOf[ArrayHomogeneousArrayColumn[cType.tpe]]
               c.update(sliceIndex, arr)
 
-              c
-
             case CEmptyArray =>
               val c = acc.getOrElse(ref, MutableEmptyArrayColumn.empty()).asInstanceOf[MutableEmptyArrayColumn]
               c.update(sliceIndex, true)
-
-              c
 
             case CEmptyObject =>
               val c = acc.getOrElse(ref, MutableEmptyObjectColumn.empty()).asInstanceOf[MutableEmptyObjectColumn]
               c.update(sliceIndex, true)
 
-              c
-
             case CNull =>
               val c = acc.getOrElse(ref, MutableNullColumn.empty()).asInstanceOf[MutableNullColumn]
               c.update(sliceIndex, true)
 
-              c
             case x =>
               sys.error(s"Unexpected arg $x")
           }
