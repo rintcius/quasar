@@ -310,7 +310,22 @@ trait StringLib extends Library {
     partialTyperV[nat._1] {
       case Sized(Type.Const(Data.Str(str))) =>
         \/.fromTryCatchNonFatal(BigDecimal(str)).fold(
-           κ(failureNel(invalidStringCoercionError(str, "a string containing an decimal number".wrapNel))),
+           κ(failureNel(invalidStringCoercionError(str, "a string containing a decimal number".wrapNel))),
+          i => success(Type.Const(Data.Dec(i))))
+      case Sized(Type.Str) => success(Type.Dec)
+    },
+    untyper[nat._1](x => ToString.tpe(Func.Input1(x)).map(Func.Input1(_))))
+
+  val Number = UnaryFunc(
+    Mapping,
+    "Converts strings containing a number into a number. This is a partial function – arguments that don’t satisfy the constraint have undefined results.",
+    Type.Dec,
+    Func.Input1(Type.Str),
+    noSimplification,
+    partialTyperV[nat._1] {
+      case Sized(Type.Const(Data.Str(str))) =>
+        \/.fromTryCatchNonFatal(BigDecimal(str)).fold(
+           κ(failureNel(invalidStringCoercionError(str, "a string containing a number".wrapNel))),
           i => success(Type.Const(Data.Dec(i))))
       case Sized(Type.Str) => success(Type.Dec)
     },
