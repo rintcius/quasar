@@ -20,8 +20,9 @@ import quasar.precog.BitSet
 import quasar.precog.common._
 import quasar.std.StringLib
 import quasar.yggdrasil.bytecode._
-
 import quasar.yggdrasil.table._
+import quasar.yggdrasil.util.RangeUtil
+
 import java.util.regex.{ Pattern, PatternSyntaxException }
 
 /* DEPRECATED
