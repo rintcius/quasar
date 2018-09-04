@@ -2100,6 +2100,11 @@ abstract class StdLibSpec extends Qspec {
         "any Dec" >> prop { (x: BigDecimal) =>
           unary(Negate(_).embed, Data.Dec(x), Data.Dec(-x))
         }
+
+        "any Double" >> prop { (x: Double) =>
+          val bd = BigDecimal(x)
+          unary(Negate(_).embed, Data.Dec(bd), Data.Dec(-bd))
+        }
       }
 
       "Abs" >> {
@@ -2109,6 +2114,11 @@ abstract class StdLibSpec extends Qspec {
 
         "any Dec" >> prop { (x: BigDecimal) =>
           unary(Abs(_).embed, Data.Dec(x), Data.Dec(x.abs))
+        }
+
+        "any Double" >> prop { (x: Double) =>
+          val bd = BigDecimal(x)
+          unary(Abs(_).embed, Data.Dec(bd), Data.Dec(bd.abs))
         }
       }
 
@@ -2120,6 +2130,15 @@ abstract class StdLibSpec extends Qspec {
         "any Dec" >> prop { (x: BigDecimal) =>
           unary(Trunc(_).embed, Data.Dec(x), Data.Dec(x.setScale(0, RoundingMode.DOWN)))
         }
+
+        "any Double" >> prop { (x: Double) =>
+          val bd = BigDecimal(x)
+          unary(Trunc(_).embed, Data.Dec(bd), Data.Dec(bd.setScale(0, RoundingMode.DOWN)))
+        }
+
+        "-1.9" >> {
+          unary(Trunc(_).embed, Data.Dec(BigDecimal(-1.9)), Data.Dec(BigDecimal(-1)))
+        }
       }
 
       "Ceil" >> {
@@ -2130,6 +2149,11 @@ abstract class StdLibSpec extends Qspec {
         "any Dec" >> prop { (x: BigDecimal) =>
           unary(Ceil(_).embed, Data.Dec(x), Data.Dec(x.setScale(0, RoundingMode.CEILING)))
         }
+
+        "any Double" >> prop { (x: Double) =>
+          val bd = BigDecimal(x)
+          unary(Ceil(_).embed, Data.Dec(bd), Data.Dec(bd.setScale(0, RoundingMode.CEILING)))
+        }
       }
 
       "Floor" >> {
@@ -2139,6 +2163,11 @@ abstract class StdLibSpec extends Qspec {
 
         "any Dec" >> prop { (x: BigDecimal) =>
           unary(Floor(_).embed, Data.Dec(x), Data.Dec(x.setScale(0, RoundingMode.FLOOR)))
+        }
+
+        "any Double" >> prop { (x: Double) =>
+          val bd = BigDecimal(x)
+          unary(Floor(_).embed, Data.Dec(bd), Data.Dec(bd.setScale(0, RoundingMode.FLOOR)))
         }
       }
 
