@@ -78,4 +78,11 @@ object ctrie {
       toCMap(RadixTree(m.toList :_*))
     }
   }
+
+  // temp. function to check that we don't have a HashMap impl anymore
+  def assertNoHashMap(m: Map[_, _]) =
+    if (m.isInstanceOf[scala.collection.immutable.HashMap[_, _]]) {
+      throw new java.lang.RuntimeException(s"$m is a HashMap")
+    }
+
 }

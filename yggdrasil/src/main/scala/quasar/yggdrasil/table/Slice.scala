@@ -2025,6 +2025,7 @@ object Slice {
   def empty: Slice = Slice(0, CTrie.empty)
 
   def apply(dataSize: Int, columns0: Map[ColumnRef, Column]): Slice = {
+    assertNoHashMap(columns0)
     new Slice {
       val size = dataSize
       val columns = replaceColumnImpl(dataSize, columns0)
