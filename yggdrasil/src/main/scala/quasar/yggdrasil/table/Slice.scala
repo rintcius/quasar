@@ -25,6 +25,7 @@ import quasar.precog.util.RingDeque
 import quasar.yggdrasil._
 import quasar.yggdrasil.TransSpecModule._
 import quasar.yggdrasil.bytecode._
+import quasar.yggdrasil.table.ctrie._
 import quasar.yggdrasil.util.{CPathUtils, RangeUtil}
 
 import qdata.json.PreciseKeys
@@ -2021,13 +2022,14 @@ object Slice {
       cols
   }
 
-  def empty: Slice = Slice(0, Map.empty)
+  def empty: Slice = Slice(0, CTrie.empty)
 
-  def apply(dataSize: Int, columns0: Map[ColumnRef, Column]): Slice =
+  def apply(dataSize: Int, columns0: Map[ColumnRef, Column]): Slice = {
     new Slice {
       val size = dataSize
       val columns = replaceColumnImpl(dataSize, columns0)
     }
+  }
 
   def allFromQData[F[_], A: QDataDecode](
       values: fs2.Stream[F, A],
