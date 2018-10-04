@@ -2058,7 +2058,7 @@ object Slice {
           (into, sliceIndex)
       }
 
-    val (columns, size) = buildColArrays(values, Map.empty[ColumnRef, ArrayColumn[_]], 0)
+    val (columns, size) = buildColArrays(values, CTrie.empty[ArrayColumn[_]], 0)
     Slice(size, columns)
   }
 
