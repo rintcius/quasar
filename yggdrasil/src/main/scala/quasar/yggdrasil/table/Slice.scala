@@ -456,7 +456,7 @@ abstract class Slice { source =>
     val columns = if (Schema.subsumes(tuples, jtpe)) {
       source.columns filter { case (ColumnRef(path, ctpe), _) => Schema.requiredBy(jtpe, path, ctpe) }
     } else {
-      Map.empty[ColumnRef, Column]
+      CTrie.emptyCol
     }
 
     Slice(source.size, columns)
@@ -558,14 +558,14 @@ abstract class Slice { source =>
               }
           }
         }
-        Map[ColumnRef, BitsetColumn](
+        CTrie.mk[BitsetColumn](
           ColumnRef(CPath.Identity, CLong) -> lc,
           ColumnRef(CPath.Identity, CDouble) -> dc,
-          ColumnRef(CPath.Identity, CNum) -> nc).foldLeft(Map.empty[ColumnRef, Column])
+          ColumnRef(CPath.Identity, CNum) -> nc).foldLeft(CTrie.emptyCol)
         { case (acc, (cref, col)) =>
             if (col.definedAt.size > 0) acc + (cref -> col.asInstanceOf[Column])
             else acc }
-      case _ => Map.empty[ColumnRef, Column]
+      case _ => CTrie.emptyCol
     }
     Slice(size, columns)
   }
@@ -2015,14 +2015,14 @@ object Slice {
         acc
 
     if (size == 1)
-      cols.foldLeft[Map[ColumnRef, Column]](Map.empty) {
+      cols.foldLeft[Map[ColumnRef, Column]](CTrie.emptyCol) {
         case (acc, (cref, col)) => step(acc, cref, col)
       }
     else
       cols
   }
 
-  def empty: Slice = Slice(0, CTrie.empty)
+  def empty: Slice = Slice(0, CTrie.emptyCol)
 
   def apply(dataSize: Int, columns0: Map[ColumnRef, Column]): Slice = {
     assertNoHashMap(columns0)
@@ -2067,7 +2067,7 @@ object Slice {
     * concatenated in the order they appear in `slices`.
     */
   def concat(slices: Seq[Slice]): Slice = {
-    val (_columns, _size) = slices.foldLeft((Map.empty[ColumnRef, List[(Int, Column)]], 0)) {
+    val (_columns, _size) = slices.foldLeft((CTrie.empty[List[(Int, Column)]], 0)) {
       case ((cols, offset), slice) if slice.size > 0 =>
         (slice.columns.foldLeft(cols) {
           case (acc, (ref, col)) =>
