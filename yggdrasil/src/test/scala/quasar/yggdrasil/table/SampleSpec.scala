@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,11 +18,11 @@ package quasar.yggdrasil
 package table
 
 import quasar.blueeyes._, json._
+import quasar.pkg.tests._
 import quasar.precog.common._
-import scalaz.syntax.comonad._
-import quasar.precog.TestSupport._
+import quasar.yggdrasil.TestIdentities._
 
-trait SampleSpec[M[+_]] extends ColumnarTableModuleTestSupport[M] with SpecificationLike with ScalaCheck {
+trait SampleSpec extends ColumnarTableModuleTestSupport with SpecificationLike with ScalaCheck {
   import trans._
 
   val simpleData: Stream[JValue] = Stream.tabulate(100) { i =>
@@ -39,10 +39,10 @@ trait SampleSpec[M[+_]] extends ColumnarTableModuleTestSupport[M] with Specifica
   def testSample = {
     val data = SampleData(simpleData)
     val table = fromSample(data)
-    table.sample(15, Seq(TransSpec1.Id, TransSpec1.Id)).copoint.toList must beLike {
+    table.sample(15, Seq(TransSpec1.Id, TransSpec1.Id)).unsafeRunSync.toList must beLike {
       case s1 :: s2 :: Nil =>
-        val result1 = toJson(s1).copoint
-        val result2 = toJson(s2).copoint
+        val result1 = toJson(s1).getJValues
+        val result2 = toJson(s2).getJValues
         result1 must have size(15)
         result2 must have size(15)
         simpleData must containAllOf(result1)
@@ -53,7 +53,7 @@ trait SampleSpec[M[+_]] extends ColumnarTableModuleTestSupport[M] with Specifica
   def testSampleEmpty = {
     val data = SampleData(simpleData)
     val table = fromSample(data)
-    table.sample(15, Seq()).copoint.toList mustEqual Nil
+    table.sample(15, Seq()).unsafeRunSync.toList mustEqual Nil
   }
 
   def testSampleTransSpecs = {
@@ -61,15 +61,15 @@ trait SampleSpec[M[+_]] extends ColumnarTableModuleTestSupport[M] with Specifica
     val table = fromSample(data)
     val specs = Seq(trans.DerefObjectStatic(TransSpec1.Id, CPathField("id")), trans.DerefObjectStatic(TransSpec1.Id, CPathField("value")))
 
-    table.sample(15, specs).copoint.toList must beLike {
+    table.sample(15, specs).unsafeRunSync.toList must beLike {
       case s1 :: s2 :: Nil =>
-        val result1 = toJson(s1).copoint
-        val result2 = toJson(s2).copoint
+        val result1 = toJson(s1).unsafeRunSync
+        val result2 = toJson(s2).unsafeRunSync
         result1 must have size(15)
         result2 must have size(15)
 
-        val expected1 = toJson(table.transform(trans.DerefObjectStatic(TransSpec1.Id, CPathField("id")))).copoint
-        val expected2 = toJson(table.transform(trans.DerefObjectStatic(TransSpec1.Id, CPathField("value")))).copoint
+        val expected1 = toJson(table.transform(trans.DerefObjectStatic(TransSpec1.Id, CPathField("id")))).unsafeRunSync
+        val expected2 = toJson(table.transform(trans.DerefObjectStatic(TransSpec1.Id, CPathField("value")))).unsafeRunSync
         expected1 must containAllOf(result1)
         expected2 must containAllOf(result2)
     }
@@ -77,18 +77,18 @@ trait SampleSpec[M[+_]] extends ColumnarTableModuleTestSupport[M] with Specifica
 
   def testLargeSampleSize = {
     val data = SampleData(simpleData)
-    fromSample(data).sample(1000, Seq(TransSpec1.Id)).copoint.toList must beLike {
+    fromSample(data).sample(1000, Seq(TransSpec1.Id)).unsafeRunSync.toList must beLike {
       case s :: Nil =>
-        val result = toJson(s).copoint
+        val result = toJson(s).unsafeRunSync
         result must have size(100)
     }
   }
 
   def test0SampleSize = {
     val data = SampleData(simpleData)
-    fromSample(data).sample(0, Seq(TransSpec1.Id)).copoint.toList must beLike {
+    fromSample(data).sample(0, Seq(TransSpec1.Id)).unsafeRunSync.toList must beLike {
       case s :: Nil =>
-        val result = toJson(s).copoint
+        val result = toJson(s).unsafeRunSync
         result must have size(0)
     }
   }

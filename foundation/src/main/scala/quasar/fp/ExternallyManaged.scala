@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,7 +35,7 @@ final case object Extern extends ExternallyManaged
 object ExternallyManaged {
   def unit = Iso[ExternallyManaged, Unit](κ(()))(κ(Extern))
 
-  implicit val equal: Equal[ExternallyManaged] = Equal.equalRef
+  implicit val equal: Equal[ExternallyManaged] = Equal.equalA
   implicit val show: Show[ExternallyManaged] = Show.showFromToString
   implicit val renderTree: RenderTree[ExternallyManaged] =
     RenderTree.fromShow("ExternallyManaged")

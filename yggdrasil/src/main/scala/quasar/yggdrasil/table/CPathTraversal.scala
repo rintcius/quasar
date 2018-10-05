@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,11 +17,13 @@
 package quasar.yggdrasil
 package table
 
-import quasar.blueeyes._
 import quasar.precog.common._
 import quasar.yggdrasil.util._
-import scala.collection.mutable
+
 import scalaz._, Scalaz._
+
+import scala.annotation.tailrec
+import scala.collection.mutable
 
 /**
   * Represents a way to traverse a list of CPaths in sorted order. This takes
@@ -33,10 +35,10 @@ sealed trait CPathTraversal { self =>
 
   /**
     * Creates an order on rows in a set of columns. You can also optionally use
-    * 2 column sets for the 1st and 2nd paramters of the SpireOrder. This order will
+    * 2 column sets for the 1st and 2nd paramters of the spire.algebra.Order. This order will
     * not allocate any objects or arrays, but it is also not threadsafe.
     */
-  def rowOrder(cpaths: List[CPath], left: Map[CPath, Set[Column]], optRight: Option[Map[CPath, Set[Column]]] = None): SpireOrder[Int] = {
+  def rowOrder(cpaths: List[CPath], left: Map[CPath, Set[Column]], optRight: Option[Map[CPath, Set[Column]]] = None): spire.algebra.Order[Int] = {
     val right = optRight getOrElse left
 
     def plan0(t: CPathTraversal, paths: List[(List[CPathNode], List[CPathNode])], idx: Int): CPathComparator = t match {
@@ -147,7 +149,7 @@ sealed trait CPathTraversal { self =>
         }
     }
 
-    new SpireOrder[Int] {
+    new spire.algebra.Order[Int] {
       private val indices  = new Array[Int](self.arrayDepth)
       private val pathComp = plan0(self, cpaths map (_.nodes -> Nil), 0)
 
@@ -255,10 +257,10 @@ object CPathTraversal {
       loop(ps, path.nodes)
     }
 
-    implicit object CPathPositionOrder extends ScalazOrder[CPathPosition] {
+    implicit object CPathPositionOrder extends scalaz.Order[CPathPosition] {
       import scalaz.Ordering._
 
-      private val nodeOrder = implicitly[ScalazOrder[CPathNode]]
+      private val nodeOrder = implicitly[scalaz.Order[CPathNode]]
 
       def order(p1: CPathPosition, p2: CPathPosition): scalaz.Ordering = (p1, p2) match {
         case (CPathPoint(CPathIndex(i)), CPathRange(_, l, r)) =>
@@ -270,7 +272,7 @@ object CPathTraversal {
           else if (l2 < l1) GT
           else {
             (r1, r2) match {
-              case (Some(r1), Some(r2)) => implicitly[ScalazOrder[Int]].order(r1, r2)
+              case (Some(r1), Some(r2)) => implicitly[scalaz.Order[Int]].order(r1, r2)
               case (None, None)         => EQ
               case (_, None)            => LT
               case (None, _)            => GT
@@ -384,7 +386,7 @@ object CPathTraversal {
       import scalaz.std.list._
 
       val pq = mutable.PriorityQueue[List[CPathPosition]](paths map (position(_)): _*) {
-        implicitly[ScalazOrder[List[CPathPosition]]].reverseOrder.toScalaOrdering
+        implicitly[scalaz.Order[List[CPathPosition]]].reverseOrder.toScalaOrdering
       }
 
       @tailrec

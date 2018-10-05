@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,63 +16,36 @@
 
 package quasar
 
-import scalaz._
-import scalaz.std.scalaFuture._
-
-import scala.concurrent.{ExecutionContext, Future}
-
-import java.nio.ByteBuffer
-import java.time.ZoneOffset.UTC
-
+import quasar.precog.BitSet
 import quasar.precog.util._
 
-package object blueeyes extends precog.PackageTime with precog.PackageAliases {
-  type spec    = scala.specialized
-  type switch  = scala.annotation.switch
-  type tailrec = scala.annotation.tailrec
+import scalaz._
 
-  type MimeType = quasar.precog.MimeType
-  val MimeType  = quasar.precog.MimeType
-  val MimeTypes = quasar.precog.MimeTypes
+import scala.math.BigDecimal
 
-  // Temporary
-  type BitSet             = quasar.precog.BitSet
-  type RawBitSet          = Array[Int]
-  val RawBitSet           = quasar.precog.util.RawBitSet
-  type ByteBufferPoolS[A] = State[quasar.precog.util.ByteBufferPool -> List[ByteBuffer], A]
+import java.nio.ByteBuffer
+import java.nio.charset.Charset
 
-  val HNil = shapeless.HNil
-  val Iso  = shapeless.Generic
+package object blueeyes extends precog.PackageTime {
+  type ByteBufferPoolS[A] = State[(ByteBufferPool, List[ByteBuffer]), A]
 
-  def Utf8Charset: Charset                                               = java.nio.charset.Charset forName "UTF-8"
-  def utf8Bytes(s: String): Array[Byte]                                  = s getBytes Utf8Charset
-  def uuid(s: String): UUID                                              = java.util.UUID fromString s
-  def randomUuid(): UUID                                                 = java.util.UUID.randomUUID
-  def randomInt(end: Int): Int                                           = scala.util.Random.nextInt(end)
-  def ByteBufferWrap(xs: Array[Byte]): ByteBuffer                        = java.nio.ByteBuffer.wrap(xs)
-  def ByteBufferWrap(xs: Array[Byte], offset: Int, len: Int): ByteBuffer = java.nio.ByteBuffer.wrap(xs, offset, len)
+  def Utf8Charset: Charset                                               = Charset forName "UTF-8"
+  def ByteBufferWrap(xs: Array[Byte]): ByteBuffer                        = ByteBuffer.wrap(xs)
+  def ByteBufferWrap(xs: Array[Byte], offset: Int, len: Int): ByteBuffer = ByteBuffer.wrap(xs, offset, len)
   def abort(msg: String): Nothing                                        = throw new RuntimeException(msg)
   def decimal(d: String): BigDecimal                                     = BigDecimal(d, java.math.MathContext.UNLIMITED)
-  def lp[T](label: String): T => Unit                                    = (t: T) => println(label + ": " + t)
-  def lpf[T](label: String)(f: T => Any): T => Unit                      = (t: T) => println(label + ": " + f(t))
-
-  def doto[A](x: A)(f: A => Unit): A = { f(x) ; x }
-
-  implicit val GlobalEC: ExecutionContext = scala.concurrent.ExecutionContext.global
-
-  implicit def comparableOrder[A <: Comparable[A]] : ScalazOrder[A] =
-    scalaz.Order.order[A]((x, y) => ScalazOrdering.fromInt(x compareTo y))
 
   @inline implicit def ValidationFlatMapRequested[E, A](d: scalaz.Validation[E, A]): scalaz.ValidationFlatMap[E, A] =
     scalaz.Validation.FlatMap.ValidationFlatMapRequested[E, A](d)
 
-  implicit def bigDecimalOrder: scalaz.Order[blueeyes.BigDecimal] =
+  implicit def bigDecimalOrder: scalaz.Order[BigDecimal] =
     scalaz.Order.order((x, y) => Ordering.fromInt(x compare y))
 
   implicit class ScalaSeqOps[A](xs: scala.collection.Seq[A]) {
     def sortMe(implicit z: scalaz.Order[A]): Vector[A] =
       xs sortWith ((a, b) => z.order(a, b) == Ordering.LT) toVector
   }
+
   def arrayEq[@specialized A](a1: Array[A], a2: Array[A]): Boolean = {
     val len = a1.length
     if (len != a2.length) return false

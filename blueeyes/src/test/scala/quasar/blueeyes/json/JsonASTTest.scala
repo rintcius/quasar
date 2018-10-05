@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,10 +14,8 @@
  * limitations under the License.
  */
 
-package quasar.blueeyes
-package json
+package quasar.blueeyes.json
 
-import org.scalacheck._
 import scalaz._, Scalaz._, Ordering._
 import quasar.precog.JsonTestSupport._
 
@@ -27,19 +25,6 @@ object JsonASTSpec extends quasar.Qspec {
     prop(identityProp)
   }
 
-  /*"Functor composition" in {
-    // Works in scalacheck 1.12.5
-    // Fails in ScalaCheck 1.13.0
-    //
-    // [error] /l/w/platform/blueeyes/src/test/scala/blueeyes/json/JsonASTTest.scala:33: could not find implicit value for parameter arbitrary2: org.scalacheck.Arbitrary[blueeyes.json.JValue => blueeyes.json.JValue]
-    // [error]     prop(compositionProp)
-    // [error]         ^
-    // [error] one error found
-    val compositionProp = (json: JValue, fa: JValue => JValue, fb: JValue => JValue) => json.mapUp(fb).mapUp(fa) == json.mapUp(fa compose fb)
-
-    prop(compositionProp)
-  }*/
-
   "Monoid identity" in {
     val identityProp = (json: JValue) => (json ++ JUndefined == json) && (JUndefined ++ json == json)
     prop(identityProp)
@@ -48,42 +33,6 @@ object JsonASTSpec extends quasar.Qspec {
   "Monoid associativity" in {
     val assocProp = (x: JValue, y: JValue, z: JValue) => x ++ (y ++ z) == (x ++ y) ++ z
     prop(assocProp)
-  }
-
-  "Merge identity" in {
-    val identityProp = (json: JValue) => (json merge JUndefined) == json && (JUndefined merge json) == json
-    prop(identityProp)
-  }
-
-  "Merge idempotency" in {
-    val idempotencyProp = (x: JValue) => (x merge x) == x
-    prop(idempotencyProp)
-  }
-
-  "Diff identity" in {
-    val identityProp = (json: JValue) =>
-      (json diff JUndefined) == Diff(JUndefined, JUndefined, json) &&
-        (JUndefined diff json) == Diff(JUndefined, json, JUndefined)
-
-    prop(identityProp)
-  }
-
-  "Diff with self is empty" in {
-    val emptyProp = (x: JValue) => (x diff x) == Diff(JUndefined, JUndefined, JUndefined)
-    prop(emptyProp)
-  }
-
-  "Diff is subset of originals" in {
-    val subsetProp = (x: JObject, y: JObject) => {
-      val Diff(c, a, d) = x diff y
-      y == (y merge (c merge a))
-    }
-    prop(subsetProp)
-  }
-
-  "Diff result is same when fields are reordered" in {
-    val reorderProp = (x: JObject) => (x diff reorderFields(x)) == Diff(JUndefined, JUndefined, JUndefined)
-    prop(reorderProp)
   }
 
   "delete" in {
@@ -160,7 +109,7 @@ object JsonASTSpec extends quasar.Qspec {
     prop(inverse)
   }.flakyTest
 
-  "Set and retrieve an arbitrary jvalue at an arbitrary path" in {
+  "Set and retrieve an arbitrary jvalue at an arbitrary path" in skipped { // FIXME skipped per #2185
     runArbitraryPathSpec
   }
 
@@ -248,13 +197,4 @@ object JsonASTSpec extends quasar.Qspec {
     prop(setProp) && prop(insertProp)
   }
 
-  private def reorderFields(json: JValue) = json mapUp {
-    case JObject(xs) => JObject(scala.collection.immutable.TreeMap(xs.toSeq: _*))
-    case x           => x
-  }
-
-  private def typePredicate(clazz: Class[_])(json: JValue) = json match {
-    case x if x.getClass == clazz => true
-    case _                        => false
-  }
 }

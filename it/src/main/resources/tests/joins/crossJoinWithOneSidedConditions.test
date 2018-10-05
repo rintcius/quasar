@@ -1,26 +1,19 @@
 {
-    "name": "cross join with conditions that must be pushed ahead of the join (or else the join explodes, taking several minutes to complete)",
+    "name": "[qa_s07] cross join with conditions that must be pushed ahead of the join (or else the join explodes, taking several minutes to complete)",
 
     "backends": {
-        "couchbase":         "skip",
-        "mongodb_read_only": "pending",
-        "mongodb_q_3_2":     "pending",
-        "postgresql":        "pending"
+        "lwc_local": "pendingIgnoreFieldOrder",
+        "mimir":     "pendingIgnoreFieldOrder"
     },
-
-    "NB": "#1587: Disabled in couchbase due to lack of general join.",
 
     "data": ["../largeZips.data", "../zips.data"],
 
     "query": "select a.city as a, b.city as b, b.pop - a.pop as diff
-            from `../zips` as a, `../largeZips` as b
+            from `../zips.data` as a, `../largeZips.data` as b
             where a.`_id` like \"80301\" and b.`_id` like \"95928\"",
 
-    "predicate": "equalsExactly",
+    "predicate": "exactly",
+    "ignoreResultOrder": true,
 
-    "ignoreFieldOrder": ["marklogic_json"],
-
-    "expected": [
-        { "a": "BOULDER", "b": "CHICO", "diff": 9278 }
-    ]
+    "expected": [{ "a": "BOULDER", "b": "CHICO", "diff": 9278 }]
 }

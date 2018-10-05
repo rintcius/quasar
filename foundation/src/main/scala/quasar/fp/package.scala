@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,12 +18,13 @@ package quasar
 
 import slamdata.Predef._
 
+import quasar.contrib.iota.{:<<:, ACopK}
 import matryoshka._
 import matryoshka.data._
 import matryoshka.implicits._
 import matryoshka.patterns._
-import monocle.Lens
-import scalaz.{Lens => _, _}, BijectionT._, Kleisli._, Liskov._, Scalaz._
+import monocle.{Lens, PLens}
+import scalaz.{Lens => _, PLens => _, _}, BijectionT._, Kleisli._, Liskov._, Scalaz._
 import shapeless.{Fin, Nat, Sized, Succ}
 
 sealed abstract class ListMapInstances {
@@ -132,7 +133,6 @@ package object fp
     extends ListMapInstances
     with PartialFunctionOps
     with JsonOps
-    with ProcessOps
     with DebugOps {
 
   import ski._
@@ -154,7 +154,7 @@ package object fp
     */
   def ignore[A](a: A): Unit = ()
 
-  def reflNT[F[_]] = λ[F ~> F](x => x)
+  def reflNT[F[_]]: F ~> F = NaturalTransformation.refl[F]
 
   /** `liftM` as a natural transformation
     *
@@ -167,7 +167,7 @@ package object fp
 
   def evalNT[F[_]: Monad, S](initial: S) = λ[StateT[F, S, ?] ~> F](_ eval initial)
 
-  def liftFG[F[_], G[_], A](orig: F[A] => G[A])(implicit F: F :<: G):
+  def liftFG[F[_], G[a] <: ACopK[a], A](orig: F[A] => G[A])(implicit F: F :<<: G):
       G[A] => G[A] =
     ftf => F.prj(ftf).fold(ftf)(orig)
 
@@ -175,10 +175,21 @@ package object fp
       G[A] => M[G[A]] =
     ftf => F.prj(ftf).fold(ftf.point[M])(orig)
 
+  def liftFGTrans[F[_], G[_], A](prism: PrismNT[G, F])(f: F[A] => Option[G[A]])
+      : G[A] => Option[G[A]] =
+    ga => prism.get(ga).flatMap(f)
 
   def liftFF[F[_], G[_], A](orig: F[A] => F[A])(implicit F: F :<: G):
       G[A] => G[A] =
     ftf => F.prj(ftf).fold(ftf)(orig.andThen(F.inj))
+
+  def liftFFCopK[F[_], G[a] <: ACopK[a], A](orig: F[A] => F[A])(implicit F: F :<<: G):
+      G[A] => G[A] =
+    ftf => F.prj(ftf).fold(ftf)(orig.andThen(F.inj))
+
+  def liftFFTrans[F[_], G[_], A](prism: PrismNT[G, F])(f: F[A] => Option[F[A]])
+      : G[A] => Option[G[A]] =
+    ga => prism.get(ga).flatMap(f).map(prism.reverseGet(_))
 
   def liftR[T[_[_]]: BirecursiveT, F[_]: Traverse, G[_]: Traverse](orig: T[F] => T[F])(implicit F: F:<: G):
       T[G] => T[G] =
@@ -236,8 +247,13 @@ package object fp
   implicit def finEqual[N <: Succ[_]]: Equal[Fin[N]] = Equal.equal((a, b) => true)
   implicit def finShow[N <: Succ[_]]: Show[Fin[N]] = Show.showFromToString
 
-  implicit val symbolEqual: Equal[Symbol] = Equal.equalA
   implicit val symbolShow: Show[Symbol] = Show.showFromToString
+  implicit val symbolOrder: Order[Symbol] = Order.orderBy(_.name)
+
+  implicit final class LensOps[S, T, A, B](val plens: PLens[S, T, A, B]) extends scala.AnyVal {
+    def store(s: S): IndexedStore[A, B, T] =
+      IndexedStoreT.indexedStore(plens.get(s))((b: B) => plens.set(b)(s))
+  }
 
   implicit final class QuasarFreeOps[F[_], A](val self: Free[F, A]) extends scala.AnyVal {
     type Self    = Free[F, A]
@@ -255,13 +271,9 @@ package object fp
       : CoEnv[A, F, B] => CoEnv[A, F, B] =
     liftCoM[T, Id, F, A, B](f)
 
-  def idPrism[F[_]] = PrismNT[F, F](
-    λ[F ~> (Option ∘ F)#λ](_.some),
-    reflNT[F])
+  def idPrism[F[_]] = PrismNT.id[F]
 
-  def coenvPrism[F[_], A] = PrismNT[CoEnv[A, F, ?], F](
-    λ[CoEnv[A, F, ?] ~> λ[α => Option[F[α]]]](_.run.toOption),
-    λ[F ~> CoEnv[A, F, ?]](fb => CoEnv(fb.right[A])))
+  def coenvPrism[F[_], A] = PrismNT.coEnv[F, A]
 
   def coenvBijection[T[_[_]]: BirecursiveT, F[_]: Functor, A]:
       Bijection[Free[F, A], T[CoEnv[A, F, ?]]] =
@@ -276,6 +288,7 @@ package object fp
     modify: T[CoEnv[A, F, ?]] => T[CoEnv[A, F, ?]]):
       Free[F, A] => Free[F, A] =
     applyFrom[Free[F, A], T[CoEnv[A, F, ?]]](coenvBijection[T, F, A])(modify)
+
 }
 
 package fp {

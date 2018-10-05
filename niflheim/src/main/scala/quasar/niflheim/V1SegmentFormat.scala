@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,23 +18,19 @@ package quasar.niflheim
 
 import quasar.precog.common._
 
-import quasar.precog.util.PrecogUnit
 import quasar.precog.BitSet
 import quasar.precog.util.BitSetUtil.Implicits._
 
+import java.io.IOException
 import java.nio.channels.{ ReadableByteChannel, WritableByteChannel }
 import java.nio.ByteBuffer
 
 import scala.{ specialized => spec }
-import scala.annotation.tailrec
-import scala.collection.mutable
 
 import scalaz.{Validation, Success, Failure}
 import scalaz.syntax.monad._
 
 object V1SegmentFormat extends SegmentFormat {
-  private val checksum = true
-
   object reader extends SegmentReader {
     private def wrapException[A](f: => A): Validation[IOException, A] = try {
       Success(f)
@@ -103,7 +99,7 @@ object V1SegmentFormat extends SegmentFormat {
   }
 
   object writer extends SegmentWriter {
-    def writeSegment(channel: WritableByteChannel, segment: Segment): Validation[IOException, PrecogUnit] = {
+    def writeSegment(channel: WritableByteChannel, segment: Segment): Validation[IOException, Unit] = {
       for {
         _ <- writeSegmentId(channel, segment)
         _ <- segment match {
@@ -114,10 +110,10 @@ object V1SegmentFormat extends SegmentFormat {
           case seg: NullSegment =>
             writeNullSegment(channel, seg)
         }
-      } yield PrecogUnit
+      } yield ()
     }
 
-    private def writeSegmentId(channel: WritableByteChannel, segment: Segment): Validation[IOException, PrecogUnit] = {
+    private def writeSegmentId(channel: WritableByteChannel, segment: Segment): Validation[IOException, Unit] = {
       val tpeFlag = CTypeFlags.getFlagFor(segment.ctype)
       val strPath = segment.cpath.toString
       val maxSize = Codec.Utf8Codec.maxSize(strPath) + tpeFlag.length + 8
@@ -126,12 +122,11 @@ object V1SegmentFormat extends SegmentFormat {
         buffer.putLong(segment.blockid)
         Codec.Utf8Codec.writeUnsafe(strPath, buffer)
         buffer.put(tpeFlag)
-        PrecogUnit
       }
     }
 
     private def writeArraySegment[@spec(Boolean,Long,Double) A](channel: WritableByteChannel,
-        segment: ArraySegment[A], codec: Codec[A]): Validation[IOException, PrecogUnit] = {
+        segment: ArraySegment[A], codec: Codec[A]): Validation[IOException, Unit] = {
       var maxSize = Codec.BitSetCodec.maxSize(segment.defined) + 4
       segment.defined.foreach { row =>
         maxSize += codec.maxSize(segment.values(row))
@@ -140,10 +135,9 @@ object V1SegmentFormat extends SegmentFormat {
       writeChunk(channel, maxSize) { buffer =>
         buffer.putInt(segment.values.length)
         Codec.BitSetCodec.writeUnsafe(segment.defined, buffer)
-        segment.defined.foreach { row =>
+        segment.defined foreach { row =>
           codec.writeUnsafe(segment.values(row), buffer)
         }
-        PrecogUnit
       }
     }
 
@@ -153,7 +147,6 @@ object V1SegmentFormat extends SegmentFormat {
         buffer.putInt(segment.length)
         Codec.BitSetCodec.writeUnsafe(segment.defined, buffer)
         Codec.BitSetCodec.writeUnsafe(segment.values, buffer)
-        PrecogUnit
       }
     }
 
@@ -162,7 +155,6 @@ object V1SegmentFormat extends SegmentFormat {
       writeChunk(channel, maxSize) { buffer =>
         buffer.putInt(segment.length)
         Codec.BitSetCodec.writeUnsafe(segment.defined, buffer)
-        PrecogUnit
       }
     }
   }
@@ -211,15 +203,18 @@ object V1SegmentFormat extends SegmentFormat {
   }
 
   private def getCodecFor[A](ctype: CValueType[A]): Codec[A] = ctype match {
-    case CPeriod => ???
-      // there doesn't appear to be a sane way to handle this
-      // Codec.LongCodec.as[Period](_.toStandardDuration.getMillis, new Period(_))
     case CBoolean => Codec.BooleanCodec
     case CString => Codec.Utf8Codec
     case CLong => Codec.PackedLongCodec
     case CDouble => Codec.DoubleCodec
     case CNum => Codec.BigDecimalCodec
-    case CDate => Codec.DateCodec
+    case COffsetDateTime => Codec.OffsetDateTimeCodec
+    case COffsetTime => Codec.OffsetTimeCodec
+    case COffsetDate => Codec.OffsetDateCodec
+    case CLocalDateTime => Codec.LocalDateTimeCodec
+    case CLocalTime => Codec.LocalTimeCodec
+    case CLocalDate => Codec.LocalDateCodec
+    case CInterval => Codec.IntervalCodec
     case CArrayType(elemType) =>
       Codec.ArrayCodec(getCodecFor(elemType))(elemType.classTag)
   }

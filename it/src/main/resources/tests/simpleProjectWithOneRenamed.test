@@ -2,19 +2,16 @@
     "name": "simple $project with one renamed field and one unchanged (see #598)",
 
     "backends": {
-        "mongodb_2_6":       "pending",
-        "mongodb_3_0":       "pending",
-        "mongodb_read_only": "pending",
-        "mongodb_3_2":       "pending",
-        "postgresql":        "pending"
+        "lwc_local": "ignoreFieldOrder",
+        "mimir": "ignoreFieldOrder"
     },
 
     "data": "zips.data",
 
-    "query": "select `_id` as zip, city from zips where pop = 18174",
+    "query": "select `_id` as zip, city from `zips.data` where pop = 18174",
 
-    "predicate": "containsExactly",
-    "ignoreFieldOrder": ["couchbase"],
+    "predicate": "exactly",
+    "ignoreResultOrder": true,
     "expected": [{ "zip": "80301", "city": "BOULDER"   },
                  { "zip": "92029", "city": "ESCONDIDO" }]
 }

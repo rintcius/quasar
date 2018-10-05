@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,14 +18,9 @@ package quasar.niflheim
 
 import quasar.precog.BitSet
 import quasar.precog.common._
-import quasar.precog.common.accounts.AccountId
-import quasar.precog.common.ingest.EventId
-import quasar.precog.common.security.Authorities
-import quasar.precog.util._
 
 import org.slf4j.LoggerFactory
 
-import scala.collection.mutable
 import scala.collection.immutable.SortedMap
 
 import java.util.Arrays

@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,21 +17,25 @@
 package quasar.blueeyes.json
 
 import quasar.blueeyes._
-import quasar.precog._
+import quasar.common.data.Data
 
-import scalaz._, Scalaz._, Ordering._, Validation._, FlatMap._
+import scalaz._, Scalaz._
+
+import scala.annotation.{switch, tailrec}
+import scala.collection.immutable.ListMap
 import scala.util.Sorting.quickSort
-import java.lang.Double.isInfinite
+import scala.util.Try
 
-import JValue.{ RenderMode, Compact, Pretty, Canonical }
+import java.lang.Double.isInfinite
 
 /**
   * Data type for Json AST.
   */
-sealed trait JValue extends Product with Ordered[JValue] with ToString {
+sealed trait JValue extends Product with Ordered[JValue] {
   def compare(that: JValue): Int = this.typeIndex compare that.typeIndex
-  def to_s = this.renderPretty
+  override def toString = this.renderPretty
 }
+
 sealed trait JContainer extends JValue {
   assert(contained forall (_ != null), contained)
 
@@ -50,6 +54,58 @@ object JValue {
   case object Canonical extends RenderMode
 
   def apply(p: JPath, v: JValue) = JUndefined.set(p, v)
+
+  def coerceNumerics(v: JValue): JValue = v match {
+    case JNum(d) =>
+      val isLong = try {
+        d.toLongExact
+        true
+      } catch {
+        case _: ArithmeticException => false
+      }
+
+      lazy val isDouble =
+        try decimal(d.toDouble.toString) == d
+        catch { case _: NumberFormatException | _: ArithmeticException => false }
+
+      if (isLong)
+        JNumLong(d.toLong)
+      else if (isDouble)
+        JNumDouble(d.toDouble)
+      else
+        JNumBigDec(d)
+    case JArray(vs) => JArray(vs.map(coerceNumerics))
+    case JObject(vs) => JObject(vs.map { case (k, v) => k -> coerceNumerics(v) })
+    case x => x
+  }
+
+  def fromData(data: Data): JValue = data match {
+    case Data.Null => JNull
+    case Data.Str(value) => JString(value)
+    case Data.Bool(b) => JBool(b)
+    case Data.Dec(value) => JNumStr(value.toString)
+    case Data.Int(value) => JNumStr(value.toString)
+    case Data.Obj(fields) => JObject(fields.mapValues(fromData))
+    case Data.Arr(values) => JArray(values.map(fromData))
+    case Data.OffsetDateTime(value) => JString(value.toString)
+    case Data.OffsetDate(value) => JString(value.toString)
+    case Data.OffsetTime(value) => JString(value.toString)
+    case Data.LocalDateTime(value) => JString(value.toString)
+    case Data.LocalDate(value) => JString(value.toString)
+    case Data.LocalTime(value) => JString(value.toString)
+    case Data.Interval(value) => JString(value.toString)
+    case Data.NA => JUndefined
+  }
+
+  def toData(jv: JValue): Data = jv match {
+    case JUndefined => Data.NA
+    case JNull => Data.Null
+    case JBool(value) => Data.Bool(value)
+    case num: JNum => Data.Dec(num.toBigDecimal)
+    case JString(value) => Data.Str(value)
+    case JObject(fields) => Data.Obj(ListMap(fields.mapValues(toData).toSeq: _*))
+    case JArray(values) => Data.Arr(values.map(toData))
+  }
 
   private def unflattenArray(elements: Seq[(JPath, JValue)]): JArray = {
     elements.foldLeft(JArray(Nil)) { (arr, t) =>
@@ -305,7 +361,7 @@ object JString {
 final case class JField(name: String, value: JValue) extends Product2[String, JValue] {
   def _1                        = name
   def _2                        = value
-  def toTuple: String -> JValue = name -> value
+  def toTuple: (String, JValue) = name -> value
   def isUndefined               = value == JUndefined
 }
 

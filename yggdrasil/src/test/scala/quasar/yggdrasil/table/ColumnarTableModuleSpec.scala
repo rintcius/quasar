@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,65 +17,83 @@
 package quasar.yggdrasil
 package table
 
-import quasar.precog.common._, security._
+import quasar.blueeyes._, json._
+import quasar.common.data.{Data, DataGenerators}
+import quasar.contrib.cats.effect.liftio._
+import quasar.frontend.data.DataCodec
+import quasar.pkg.tests._, Gen._
+import quasar.precog.common._
+import quasar.yggdrasil.TestIdentities._
 import quasar.yggdrasil.bytecode.JType
+
 import org.slf4j.LoggerFactory
 
-import quasar.blueeyes._, json._
+import cats.effect.IO
 import scalaz._, Scalaz._
+import shims._
+
 import TableModule._
 import SampleData._
-import quasar.precog.TestSupport._, Gen._
 
-trait TestColumnarTableModule[M[+_]] extends ColumnarTableModuleTestSupport[M] {
-  type GroupId = Int
+import java.nio.CharBuffer
+import scala.concurrent.ExecutionContext.Implicits.global
+
+trait TestColumnarTableModule extends ColumnarTableModuleTestSupport { self =>
   import trans._
 
-  private val groupId = new java.util.concurrent.atomic.AtomicInteger
-  def newGroupId = groupId.getAndIncrement
+  def addThree: CFN = CFNP {
+    case List(x: LongColumn, y: LongColumn, z: LongColumn) =>
+      new LongColumn {
+        def apply(row: Int) = x(row) + y(row) + z(row)
 
-  class Table(slices: StreamT[M, Slice], size: TableSize) extends ColumnarTable(slices, size) {
+        def isDefinedAt(row: Int) =
+          x.isDefinedAt(row) && y.isDefinedAt(row) && z.isDefinedAt(row)
+      }
+  }
+
+  class Table(slices: StreamT[IO, Slice], size: TableSize) extends ColumnarTable(slices, size) {
     import trans._
-    def load(apiKey: APIKey, jtpe: JType) = sys.error("todo")
-    def sort(sortKey: TransSpec1, sortOrder: DesiredSortOrder, unique: Boolean = false) = M.point(this)
-    def groupByN(groupKeys: Seq[TransSpec1], valueSpec: TransSpec1, sortOrder: DesiredSortOrder = SortAscending, unique: Boolean = false): M[Seq[Table]] = sys.error("todo")
+    def load(jtpe: JType) = sys.error("todo")
+    def sort(sortKey: TransSpec1, sortOrder: DesiredSortOrder, unique: Boolean = false) = IO(this)
+    def groupByN(groupKeys: Seq[TransSpec1], valueSpec: TransSpec1, sortOrder: DesiredSortOrder = SortAscending, unique: Boolean = false): IO[Seq[Table]] = sys.error("todo")
   }
 
   trait TableCompanion extends ColumnarTableCompanion {
-    def apply(slices: StreamT[M, Slice], size: TableSize) = new Table(slices, size)
+    def apply(slices: StreamT[IO, Slice], size: TableSize) = new Table(slices, size)
 
-    def singleton(slice: Slice) = new Table(slice :: StreamT.empty[M, Slice], ExactSize(1))
+    def singleton(slice: Slice) = new Table(slice :: StreamT.empty[IO, Slice], ExactSize(1))
 
-    def align(sourceLeft: Table, alignOnL: TransSpec1, sourceRight: Table, alignOnR: TransSpec1): M[(Table, Table)] =
+    def align(sourceLeft: Table, alignOnL: TransSpec1, sourceRight: Table, alignOnR: TransSpec1): IO[(Table, Table)] =
       sys.error("not implemented here")
   }
 
   object Table extends TableCompanion
 }
 
-trait ColumnarTableModuleSpec[M[+_]] extends TestColumnarTableModule[M]
-    with TableModuleSpec[M]
-    with CogroupSpec[M]
-    with CrossSpec[M]
-    with TransformSpec[M]
-    with CompactSpec[M]
-    with TakeRangeSpec[M]
-    with CanonicalizeSpec[M]
-    with PartitionMergeSpec[M]
-    with ToArraySpec[M]
-    with SampleSpec[M]
-    with DistinctSpec[M]
-    with SchemasSpec[M]
-    { spec =>
+trait ColumnarTableModuleSpec extends TestColumnarTableModule
+    with TableModuleSpec
+    with CogroupSpec
+    with CrossSpec
+    with LeftShiftSpec
+    with TransformSpec
+    with CompactSpec
+    with TakeRangeSpec
+    with CanonicalizeSpec
+    with PartitionMergeSpec
+    with ToArraySpec
+    with SampleSpec
+    with DistinctSpec
+    with SchemasSpec { spec =>
 
+  import DataGenerators._
   import trans._
 
   def testConcat = {
     val json1 = """{ "a": 1, "b": "x", "c": null }"""
     val json2 = """[4, "foo", null, true]"""
 
-    val data1: Stream[JValue] = Stream.fill(25)(JParser.parse(json1))
-    val data2: Stream[JValue] = Stream.fill(35)(JParser.parse(json2))
+    val data1: Stream[JValue] = Stream.fill(25)(JParser.parseUnsafe(json1))
+    val data2: Stream[JValue] = Stream.fill(35)(JParser.parseUnsafe(json2))
 
     val table1 = fromSample(SampleData(data1), Some(10))
     val table2 = fromSample(SampleData(data2), Some(10))
@@ -83,28 +101,37 @@ trait ColumnarTableModuleSpec[M[+_]] extends TestColumnarTableModule[M]
     val results = toJson(table1.concat(table2))
     val expected = data1 ++ data2
 
-    results.copoint must_== expected
+    results.getJValues must_== expected
   }
 
   lazy val xlogger = LoggerFactory.getLogger("quasar.yggdrasil.table.ColumnarTableModuleSpec")
 
-  def streamToString(stream: StreamT[M, CharBuffer]): String = {
-    def loop(stream: StreamT[M, CharBuffer], sb: StringBuilder): M[String] =
+  def streamToString(stream: StreamT[IO, CharBuffer]): String = {
+    def loop(stream: StreamT[IO, CharBuffer], sb: StringBuilder): IO[String] =
       stream.uncons.flatMap {
         case None =>
-          M.point(sb.toString)
+          IO.pure(sb.toString)
         case Some((cb, tail)) =>
-          sb.append(cb)
-          loop(tail, sb)
+          IO.suspend {
+            sb.append(cb)
+            loop(tail, sb)
+          }
       }
-    loop(stream, new StringBuilder).copoint
+    loop(stream, new StringBuilder).unsafeRunSync
   }
 
+  def testRenderCsv(
+      json: String,
+      assumeHomogeneity: Boolean = false,
+      maxSliceRows: Option[Int] = None)
+      : String = {
+    // we coerce numerics so we create DoubleColumn and LongColumn and not just NumColumn
+    val es: Seq[JValue] =
+      JParser.parseManyFromString(json).valueOr(throw _).map(JValue.coerceNumerics)
 
-  def testRenderCsv(json: String, maxSliceSize: Option[Int] = None): String = {
-    val es    = JParser.parseManyFromString(json).valueOr(throw _)
-    val table = fromJson(es.toStream, maxSliceSize)
-    streamToString(table.renderCsv())
+    val table = fromJson(es.toStream, maxSliceRows)
+
+    streamToString(table.renderCsv(assumeHomogeneity))
   }
 
   def testRenderJson(seq: Seq[JValue]) = {
@@ -133,14 +160,37 @@ trait ColumnarTableModuleSpec[M[+_]] extends TestColumnarTableModule[M]
     val arrayM = table.renderJson("[", ",", "]").foldLeft("")(_ + _.toString).map(JParser.parseUnsafe)
 
     val minimized = minimize(expected) getOrElse JArray(Nil)
-    arrayM.copoint mustEqual minimized
+    arrayM.unsafeRunSync mustEqual minimized
   }
 
-  def renderLotsToCsv(lots: Int, maxSliceSize: Option[Int] = None) = {
-    val event    = "{\"x\":123,\"y\":\"foobar\",\"z\":{\"xx\":1.0,\"yy\":2.0}}"
+  def testRenderJsonPrecise(seq: List[Data]) = {
+    type XT[F[_], A] = WriterT[F, List[IO[Unit]], A]
+    type X[A] = XT[IO, A]
+
+    val eff = for {
+      table <- Table.fromQDataStream[X, Data](fs2.Stream.emits(seq).covary[IO])
+      jsonStr <- table.renderJson("[", ",", "]", precise = true).foldLeft("")(_ + _.toString).liftM[XT]
+    } yield jsonStr
+
+    val ioa = eff.run flatMap {
+      case (finalizers, result) =>
+        finalizers.sequence.as(result)
+    }
+
+    val jsonStr = ioa.unsafeRunSync
+
+    val parsed = argonaut.Parse.parse(jsonStr) flatMap { json =>
+      DataCodec.Precise.decode(json).leftMap(_.toString).toEither
+    }
+
+    parsed must beRight(Data.Arr(seq))
+  }
+
+  def renderLotsToCsv(lots: Int, assumeHomogeneity: Boolean, maxSliceRows: Option[Int] = None) = {
+    val event    = "{\"x\":123,\"y\":\"foobar\",\"z\":{\"xx\":1.0,\"yy\":2.3}}"
     val events   = event * lots
-    val csv      = testRenderCsv(events, maxSliceSize)
-    val expected = ".x,.y,.z.xx,.z.yy\r\n" + ("123,foobar,1,2\r\n" * lots)
+    val csv      = testRenderCsv(events, assumeHomogeneity, maxSliceRows)
+    val expected = "x,y,z.xx,z.yy\r\n" + ("123,foobar,1,2.3\r\n" * lots) // `JValue.coerceNumerics` coerces 1.0 to 1L
     csv must_== expected
   }
 
@@ -169,16 +219,41 @@ trait ColumnarTableModuleSpec[M[+_]] extends TestColumnarTableModule[M]
 
       val dataset = fromJson(sample.toStream)
       val results = dataset.toJson
-      results.copoint.toList must_== sample
+      results.unsafeRunSync.toList.map(_.toJValue) must_== sample
     }
 
     "verify bijection from JSON" in checkMappings(this)
 
-    "verify renderJson round tripping" in {
+    "verify renderJson (readable) round tripping" in {
       implicit val gen = sample(schema)
 
       prop { data: SampleData =>
-        testRenderJson(data.data)
+        testRenderJson(data.data.map(_.toJValueRaw))
+      }.set(minTestsOk = 20000, workers = Runtime.getRuntime.availableProcessors)
+    }
+
+    "verify renderJson (precise) round tripping" in {
+      def removal(data: Data): Option[Data] = data match {
+        case Data.NA =>
+          None
+
+        case Data.Arr(values) =>
+          Some(Data.Arr(values.flatMap(removal)))
+
+        case Data.Obj(map) =>
+          val map2 = map flatMap {
+            case (key, value) => removal(value).map(key -> _)
+          }
+
+          Some(Data.Obj(map2))
+
+        case other => Some(other)
+      }
+
+      prop { data0: List[Data] =>
+        val data = data0.flatMap(removal)
+
+        testRenderJsonPrecise(data)
       }.set(minTestsOk = 20000, workers = Runtime.getRuntime.availableProcessors)
     }
 
@@ -240,6 +315,7 @@ trait ColumnarTableModuleSpec[M[+_]] extends TestColumnarTableModule[M]
 
     "in cogroup" >> {
       "perform a trivial cogroup" in testTrivialCogroup(identity[Table])
+      "perform a trivial no-record cogroup" in testTrivialNoRecordCogroup(identity[Table])
       "perform a simple cogroup" in testSimpleCogroup(identity[Table])
       "perform another simple cogroup" in testAnotherSimpleCogroup
       "cogroup for unions" in testUnionCogroup
@@ -265,7 +341,7 @@ trait ColumnarTableModuleSpec[M[+_]] extends TestColumnarTableModule[M]
     "in cross" >> {
       "perform a simple cartesian" in testSimpleCross
 
-      "split a cross that would exceed maxSliceSize boundaries" in {
+      "split a cross that would exceed maxSliceRows boundaries" in {
         val sample: List[JValue] = List(
           JObject(
             JField("key", JArray(JNum(-1L) :: JNum(0L) :: Nil)) ::
@@ -295,10 +371,9 @@ trait ColumnarTableModuleSpec[M[+_]] extends TestColumnarTableModule[M]
         )
 
         val dataset1 = fromJson(sample.toStream, Some(3))
-        val dataset2 = fromJson(sample.toStream, Some(3))
 
-        dataset1.cross(dataset1)(InnerObjectConcat(Leaf(SourceLeft), Leaf(SourceRight))).slices.uncons.copoint must beLike {
-          case Some((head, _)) => head.size must beLessThanOrEqualTo(yggConfig.maxSliceSize)
+        dataset1.cross(dataset1)(InnerObjectConcat(Leaf(SourceLeft), Leaf(SourceRight))).slices.uncons.unsafeRunSync must beLike {
+          case Some((head, _)) => head.size must beLessThanOrEqualTo(Config.maxSliceRows)
         }
       }
 
@@ -308,6 +383,30 @@ trait ColumnarTableModuleSpec[M[+_]] extends TestColumnarTableModule[M]
       }
     }
 
+    def emitToString(emit: Boolean) = if (emit) "emit" else "omit"
+
+    List(true, false).foreach { emit =>
+      s"in leftShift (${emitToString(emit)} on undefined)" >> {
+        "shift empty" in testEmptyLeftShift(emit)
+        "shift a string" in testTrivialStringLeftShift(emit)
+        "shift undefined" in testTrivialUndefinedLeftShift(emit)
+        "shift a simple array" in testTrivialArrayLeftShift(emit)
+        "shift a simple empty array" in testTrivialEmptyArrayLeftShift(emit)
+        "shift a simple object" in testTrivialObjectLeftShift(emit)
+        "shift a simple empty object" in testTrivialEmptyObjectLeftShift(emit)
+        "shift a mixture of objects and arrays" in testTrivialObjectArrayLeftShift(emit)
+        "shift a heterogeneous structure" in testHeterogenousLeftShift(emit)
+        "shift a set of arrays" in testSetArrayLeftShift(emit)
+        "shift a heterogeneous array" in testHeteroArrayLeftShift(emit)
+        "shift a simple array with an inner object" in testTrivialArrayLeftShiftWithInnerObject(emit)
+      }
+    }
+
+    // this is separated because of how these specs are structured 🙄
+    "in leftShift (emit on undefined... still)" >> {
+      "shift a homogeneous (but uneven) array with an empty member" in testUnevenHomogeneousArraysEmit
+    }
+
     "in transform" >> {
       "perform the identity transform" in checkTransformLeaf
 
@@ -315,20 +414,21 @@ trait ColumnarTableModuleSpec[M[+_]] extends TestColumnarTableModule[M]
       "perform deepmap1 using numeric coercion" in testDeepMap1CoerceToDouble
       "perform map1 using numeric coercion" in testMap1CoerceToDouble
       "fail to map1 into array and object" in testMap1ArrayObject
-      "perform a less trivial map1" in checkMap1.pendingUntilFixed
+      "perform a less trivial map1" in checkMap1
 
-      //"give the identity transform for the trivial filter" in checkTrivialFilter
       "give the identity transform for the trivial 'true' filter" in checkTrueFilter
-      "give the identity transform for a nontrivial filter" in checkFilter.pendingUntilFixed
-      "give a transformation for a big decimal and a long" in testMod2Filter.pendingUntilFixed
+      "give the identity transform for a nontrivial filter" in checkFilter
+      "give a transformation for a big decimal and a long" in testMod2Filter
 
       "perform an object dereference" in checkObjectDeref
       "perform an array dereference" in checkArrayDeref
       "perform metadata dereference on data without metadata" in checkMetaDeref
 
-      "perform a trivial map2 add" in checkMap2Add.pendingUntilFixed
+      "perform a trivial map2 add" in checkMap2Add
       "perform a trivial map2 eq" in checkMap2Eq
       "perform a map2 add over but not into arrays and objects" in testMap2ArrayObject
+
+      "perform a mapN add over arrays and objects" in testMapNAddThree
 
       "perform a trivial equality check" in checkEqualSelf
       "perform a trivial equality check on an array" in checkEqualSelfArray
@@ -342,9 +442,15 @@ trait ColumnarTableModuleSpec[M[+_]] extends TestColumnarTableModule[M]
       "perform a equal-literal check" in checkEqualLiteral
       "perform a not-equal-literal check" in checkNotEqualLiteral
 
+      "perform a trivial within check" in checkWithinSelf
+      "perform a trivial negative within check" in checkNotWithin
+      "perform a non-trivial within test" in testNonTrivialWithin
+
       "wrap the results of a transform in an object as the specified field" in checkWrapObject
       "give the identity transform for self-object concatenation" in checkObjectConcatSelf
       "use a right-biased overwrite strategy in object concat conflicts" in checkObjectConcatOverwrite
+      "use a right-biased overwrite strategy in object concat conflicts (with differing types)" in checkObjectConcatOverwriteDifferingTypes
+      "use a right-biased overright strategy in object concat conflicts with differing vector types" in testObjectOverwriteWithDifferingVectorTypes
       "test inner object concat with a single boolean" in testObjectConcatSingletonNonObject
       "test inner object concat with a boolean and an empty object" in testObjectConcatTrivial
       "concatenate dissimilar objects" in checkObjectConcat
@@ -387,7 +493,7 @@ trait ColumnarTableModuleSpec[M[+_]] extends TestColumnarTableModule[M]
           {"bar" :23, "baz": 24}
         ]""")
 
-        results.copoint mustEqual expected.toStream
+        results.getJValues mustEqual expected.toStream
       }
 
       "perform a basic IsType transformation" in testIsTypeTrivial
@@ -424,7 +530,12 @@ trait ColumnarTableModuleSpec[M[+_]] extends TestColumnarTableModule[M]
       "perform an array swap" in checkArraySwap
       "replace defined rows with a constant" in checkConst
 
-      "check cond" in checkCond.pendingUntilFixed
+      "perform a ToNumber transformation resulting in longs" in testToNumberLongs
+      "perform a ToNumber transformation resulting in doubles" in testToNumberDoubles
+      "perform a ToNumber transformation resulting in big decimals" in testToNumberBigDecimals
+      "perform a ToNumber transformation resulting in a mix of longs, doubles and big decimals" in testToNumberMix
+
+      "check cond" in checkCond
     }
 
     "in compact" >> {
@@ -514,7 +625,7 @@ trait ColumnarTableModuleSpec[M[+_]] extends TestColumnarTableModule[M]
 
         val table = fromSample(sample)
         val t0 = table.transform(TransSpec1.Id)
-        t0.toJson.copoint must_== sample.data
+        t0.toJson.unsafeRunSync must_== sample.data
 
         table.metrics.startCount must_== 1
         table.metrics.sliceTraversedCount must_== expectedSlices
@@ -530,7 +641,7 @@ trait ColumnarTableModuleSpec[M[+_]] extends TestColumnarTableModule[M]
 
         val table = fromSample(sample)
         val t0 = table.transform(TransSpec1.Id).transform(TransSpec1.Id).transform(TransSpec1.Id)
-        t0.toJson.copoint must_== sample.data
+        t0.toJson.unsafeRunSync must_== sample.data
 
         table.metrics.startCount must_== 1
         table.metrics.sliceTraversedCount must_== expectedSlices
@@ -546,8 +657,8 @@ trait ColumnarTableModuleSpec[M[+_]] extends TestColumnarTableModule[M]
 
         val table = fromSample(sample)
         val t0 = table.compact(TransSpec1.Id).compact(TransSpec1.Id).compact(TransSpec1.Id)
-        table.toJson.copoint must_== sample.data
-        t0.toJson.copoint must_== sample.data
+        table.toJson.unsafeRunSync must_== sample.data
+        t0.toJson.unsafeRunSync must_== sample.data
 
         table.metrics.startCount must_== 2
         table.metrics.sliceTraversedCount must_== (expectedSlices * 2)
@@ -558,37 +669,120 @@ trait ColumnarTableModuleSpec[M[+_]] extends TestColumnarTableModule[M]
 
     "render to CSV in a simple case" in {
       val events = """
-{"a": 1, "b": {"bc": 999, "bd": "foooooo", "be": true, "bf": null, "bg": false}, "c": [1.999], "d": "dog"}
-{"a": 2, "b": {"bc": 998, "bd": "fooooo", "be": null, "bf": false, "bg": true}, "c": [2.999], "d": "dogg"}
-{"a": 3, "b": {"bc": 997, "bd": "foooo", "be": false, "bf": true, "bg": null}, "c": [3.999], "d": "doggg"}
-{"a": 4, "b": {"bc": 996, "bd": "fooo", "be": true, "bf": null, "bg": false}, "c": [4.999], "d": "dogggg"}
-""".trim
+        {"a": 1, "b": {"bc": 999, "bd": "foooooo", "be": true, "bf": null, "bg": false}, "c": [1.999], "d": "dog"}
+        {"a": 2, "b": {"bc": 998, "bd": "fooooo", "be": null, "bf": false, "bg": true}, "c": [2.999], "d": "dogg"}
+        {"a": 3, "b": {"bc": 997, "bd": "foooo", "be": false, "bf": true, "bg": null}, "c": [3.999], "d": "doggg"}
+        {"a": 4, "b": {"bc": 996, "bd": "fooo", "be": true, "bf": null, "bg": false}, "c": [4.999], "d": "dogggg"}
+        """.trim
 
       val expected = "" +
-      ".a,.b.bc,.b.bd,.b.be,.b.bf,.b.bg,.c[0],.d\r\n" +
-      "1,999,foooooo,true,null,false,1.999,dog\r\n" +
-      "2,998,fooooo,null,false,true,2.999,dogg\r\n" +
-      "3,997,foooo,false,true,null,3.999,doggg\r\n" +
-      "4,996,fooo,true,null,false,4.999,dogggg\r\n"
+        "a,b.bc,b.bd,b.be,b.bf,b.bg,c[0],d\r\n" +
+        "1,999,foooooo,true,null,false,1.999,dog\r\n" +
+        "2,998,fooooo,null,false,true,2.999,dogg\r\n" +
+        "3,997,foooo,false,true,null,3.999,doggg\r\n" +
+        "4,996,fooo,true,null,false,4.999,dogggg\r\n"
 
       testRenderCsv(events) must_== expected
     }
 
     "test rendering uniform tables of varying sizes" in {
-      renderLotsToCsv(100)
-      renderLotsToCsv(1000)
-      renderLotsToCsv(10000)
-      renderLotsToCsv(100000)
+      renderLotsToCsv(100, false)
+      renderLotsToCsv(1000, false)
+      renderLotsToCsv(10000, false)
+      renderLotsToCsv(100000, false)
+    }
+
+    "test rendering uniform tables of varying sizes assuming homogeneity" in {
+      renderLotsToCsv(100, true)
+      renderLotsToCsv(1000, true)
+      renderLotsToCsv(10000, true)
+      renderLotsToCsv(100000, true)
+    }
+
+    "render homogeneous (but with holes) assuming homogeneity" in {
+      val events = """
+        {"a": 1, "b": true}
+        {"a": 2}
+        {"a": 3, "b": false}
+        """.trim
+
+      val expected =
+        "a,b\r\n" +
+        "1,true\r\n" +
+        "2,\r\n" +
+        "3,false\r\n"
+
+      testRenderCsv(events, assumeHomogeneity = true) must_== expected
+    }
+
+    "render homogeneous (but with holes) assuming homogeneity crossing slice boundaries" in {
+      val events = """
+        {"a": 1, "b": true}
+        {"a": 2}
+        {"a": 3, "b": false}
+        """.trim
+
+      val expected =
+        "a,b\r\n" +
+        "1,true\r\n" +
+        "2,\r\n" +
+        "3,false\r\n"
+
+      testRenderCsv(events, assumeHomogeneity = true, maxSliceRows = Some(1)) must_== expected
+    }
+
+    "render homogeneous (but with holes and different numeric types) assuming homogeneity" in {
+      val events = """
+        {"a": 1, "b": true}
+        {"a": 2}
+        {"a": 3.33, "b": false}
+        """.trim
+
+      val expected =
+        "a,b\r\n" +
+        "1,true\r\n" +
+        "2,\r\n" +
+        "3.33,false\r\n"
+
+      testRenderCsv(events, assumeHomogeneity = true) must_== expected
+    }
+
+    "render homogeneous (but with holes and different numeric types) assuming homogeneity crossing slice boundaries" in {
+      val events = """
+        {"a": 1, "b": true}
+        {"a": 2}
+        {"a": 3.33, "b": false}
+        """.trim
+
+      val expected =
+        "a,b\r\n" +
+        "1,true\r\n" +
+        "2,\r\n" +
+        "3.33,false\r\n"
+
+      testRenderCsv(events, assumeHomogeneity = true, maxSliceRows = Some(1)) must_== expected
     }
 
     "test string escaping" in {
-      val csv = testRenderCsv("{\"s\":\"a\\\"b\",\"t\":\",\",\"u\":\"aa\\nbb\",\"v\":\"a,b\\\"c\\r\\nd\"}")
+      val csv = testRenderCsv("""{"s":"a\"b","t":",","u":"aa\nbb","v":"a,b\"c\r\nd"}""")
 
       val expected = "" +
-".s,.t,.u,.v\r\n" +
-"\"a\"\"b\",\",\",\"aa\n" +
-"bb\",\"a,b\"\"c\r\n" +
-"d\"\r\n"
+        "s,t,u,v\r\n" +
+        "\"a\"\"b\",\",\",\"aa\n" +
+        "bb\",\"a,b\"\"c\r\n" +
+        "d\"\r\n"
+
+      csv must_== expected
+    }
+
+    "test header string escaping" in {
+      val csv = testRenderCsv("""{"a\"b":"s",",":"t","aa\nbb":"u","a,b\"c\r\nd":"v"}""")
+
+      val expected = "" +
+        "\",\",\"a\"\"b\",\"a,b\"\"c\r\n" +
+        "d\",\"aa\n" +
+        "bb\"\r\n" +
+        "t,s,v,u\r\n"
 
       csv must_== expected
     }
@@ -596,40 +790,31 @@ trait ColumnarTableModuleSpec[M[+_]] extends TestColumnarTableModule[M]
     "test mixed rows" in {
 
       val input = """
-{"a": 1}
-{"b": 99.1}
-{"a": true}
-{"c": "jgeiwgjewigjewige"}
-{"b": "foo", "d": 999}
-{"e": null}
-{"f": {"aaa": 9}}
-{"c": 100, "g": 934}
-""".trim
+        {"a": 1}
+        {"b": 99.1}
+        {"a": true}
+        {"c": "jgeiwgjewigjewige"}
+        {"b": "foo", "d": 999}
+        {"e": null}
+        {"f": {"aaa": 9}}
+        {"c": 100, "g": 934}
+        """.trim
 
       val expected = "" +
-".a,.b,.c,.d,.e,.f.aaa,.g\r\n" +
-"1,,,,,,\r\n" +
-",99.1,,,,,\r\n" +
-"true,,,,,,\r\n" +
-",,jgeiwgjewigjewige,,,,\r\n" +
-",foo,,999,,,\r\n" +
-",,,,null,,\r\n" +
-",,,,,9,\r\n" +
-",,100,,,,934\r\n"
+        "a,b,c,d,e,f.aaa,g\r\n" +
+        "1,,,,,,\r\n" +
+        ",99.1,,,,,\r\n" +
+        "true,,,,,,\r\n" +
+        ",,jgeiwgjewigjewige,,,,\r\n" +
+        ",foo,,999,,,\r\n" +
+        ",,,,null,,\r\n" +
+        ",,,,,9,\r\n" +
+        ",,100,,,,934\r\n"
 
       testRenderCsv(input) must_== expected
-
-      val expected2 = "" +
-".a,.b\r\n1,\r\n,99.1\r\n\r\n" +
-".a,.c\r\ntrue,\r\n,jgeiwgjewigjewige\r\n\r\n" +
-".b,.d,.e\r\nfoo,999,\r\n,,null\r\n\r\n" +
-".c,.f.aaa,.g\r\n,9,\r\n100,,934\r\n"
-
-      testRenderCsv(input, Some(2)) must_== expected2
+      testRenderCsv(input, maxSliceRows = Some(2)) must_== expected
     }
   }
 }
 
-object ColumnarTableModuleSpec extends ColumnarTableModuleSpec[Need] {
-  implicit def M = Need.need
-}
+object ColumnarTableModuleSpec extends ColumnarTableModuleSpec

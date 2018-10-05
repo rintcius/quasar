@@ -2,23 +2,18 @@
     "name": "timestamp and interval syntax",
 
     "backends": {
-        "couchbase":      "skip",
-        "marklogic_json": "pending",
-        "marklogic_xml":  "pending",
-        "mongodb_q_3_2":  "pending",
-        "postgresql":     "pending",
-        "spark_hdfs":     "pending",
-        "spark_local":    "pending"
+        "lwc_local":"pendingIgnoreFieldOrder",
+        "mimir":"pendingIgnoreFieldOrder"
     },
-
     "data": "../days.data",
 
-    "query": "select day, (ts - timestamp(\"2014-08-17T00:00:00.000Z\")) / interval(\"PT1H0M0S\") as hoursSinceSunday
-            from `../days`
+    "query": "select day, (ts - timestamp(\"2014-08-17T00:00:00.000Z\")) * (1 / (60 * 60 * 1000)) as hoursSinceSunday
+            from `../days.data`
             where ts < timestamp(\"2014-08-17T12:00:00Z\")
               or ts - interval(\"PT12H\") > timestamp(\"2014-08-22T00:00:00Z\")",
 
-    "predicate": "containsExactly",
+    "predicate": "exactly",
+    "ignoreResultOrder": true,
 
     "expected": [
         { "day": "Sunday",    "hoursSinceSunday":        6.0       },

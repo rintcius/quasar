@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@
 package quasar.precog
 package common
 
-import quasar.blueeyes._
 import scalaz.syntax.semigroup._
 import scalaz.syntax.order._
 
@@ -26,11 +25,11 @@ case class ColumnRef(selector: CPath, ctype: CType)
 object ColumnRef {
   def identity(ctype: CType) = ColumnRef(CPath.Identity, ctype)
 
-  implicit object order extends ScalazOrder[ColumnRef] {
-    def order(r1: ColumnRef, r2: ColumnRef): ScalazOrdering = {
+  implicit object order extends scalaz.Order[ColumnRef] {
+    def order(r1: ColumnRef, r2: ColumnRef): scalaz.Ordering = {
       (r1.selector ?|? r2.selector) |+| (r1.ctype ?|? r2.ctype)
     }
   }
 
-  implicit val ordering: ScalaMathOrdering[ColumnRef] = order.toScalaOrdering
+  implicit val ordering: scala.math.Ordering[ColumnRef] = order.toScalaOrdering
 }

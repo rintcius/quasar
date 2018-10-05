@@ -1,17 +1,21 @@
 {
     "name": "handle nested let binding and selects",
 
+    "backends": {},
+
     "backends": {
-        "postgresql": "pending"
+        "lwc_local": "ignoreFieldOrder",
+        "mimir": "ignoreFieldOrder"
     },
 
     "data": "zips.data",
 
     "query": "min_pop := 10000;
               max_pop := 20000;
-                select zips.city, zips.pop from zips where zips.pop > min_pop and zips.pop < max_pop",
+                select zips.city, zips.pop from `zips.data` as zips where zips.pop > min_pop and zips.pop < max_pop",
 
-    "predicate": "containsAtLeast",
+    "predicate": "atLeast",
+    "ignoreResultOrder": true,
 
     "expected": [{ "city": "AGAWAM",          "pop": 15338 },
                  { "city": "BELCHERTOWN",     "pop": 10579 },

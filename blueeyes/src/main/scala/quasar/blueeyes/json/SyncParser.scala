@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,8 @@
 
 package quasar.blueeyes.json
 
-import quasar.blueeyes._
+import scala.annotation.switch
+import scala.collection.mutable
 
 private[json] trait SyncParser extends Parser {
 
@@ -51,7 +52,7 @@ private[json] trait SyncParser extends Parser {
     * and other characters will become parse errors.
     */
   final def parseMany(): Seq[JValue] = {
-    val results = ArrayBuffer.empty[JValue]
+    val results = mutable.ArrayBuffer.empty[JValue]
     var i = 0
     while (!atEof(i)) {
       (at(i): @switch) match {

@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,13 +17,13 @@
 package quasar.niflheim
 
 import quasar.precog.common._
-import quasar.precog.util.PrecogUnit
 
 import scalaz.{ Validation, Success, Failure }
 
 import scala.annotation.tailrec
 import scala.collection.mutable
 
+import java.io.IOException
 import java.nio.ByteBuffer
 
 object CTypeFlags {
@@ -33,8 +33,14 @@ object CTypeFlags {
     val FLong: Byte = 3
     val FDouble: Byte = 4
     val FBigDecimal: Byte = 5
-    val FDate: Byte = 6
-    val FArray: Byte = 7
+    val FOffsetDateTime: Byte = 6
+    val FOffsetTime: Byte = 7
+    val FOffsetDate: Byte = 8
+    val FLocalDateTime: Byte = 9
+    val FLocalTime: Byte = 10
+    val FLocalDate: Byte = 11
+    val FDuration: Byte = 12
+    val FArray: Byte = 13
     val FNull: Byte = 16
     val FEmptyArray: Byte = 17
     val FEmptyObject: Byte = 18
@@ -54,10 +60,16 @@ object CTypeFlags {
           case CLong => buffer += FLong
           case CDouble => buffer += FDouble
           case CNum => buffer += FBigDecimal
-          case CDate => buffer += FDate
+          case COffsetDateTime => buffer += FOffsetDateTime
+          case COffsetTime => buffer += FOffsetTime
+          case COffsetDate => buffer += FOffsetDate
+          case CLocalDateTime => buffer += FLocalDateTime
+          case CLocalTime => buffer += FLocalTime
+          case CLocalDate => buffer += FLocalDate
           case CArrayType(tpe) =>
             buffer += FArray
             flagForCValueType(tpe)
+          case CInterval => buffer += FDuration
         }
       }
 
@@ -91,9 +103,15 @@ object CTypeFlags {
       case FLong => Success(CLong)
       case FDouble => Success(CDouble)
       case FBigDecimal => Success(CNum)
-      case FDate => Success(CDate)
+      case FOffsetDateTime => Success(COffsetDateTime)
+      case FOffsetTime => Success(COffsetTime)
+      case FOffsetDate => Success(COffsetDate)
+      case FLocalDateTime => Success(CLocalDateTime)
+      case FLocalTime => Success(CLocalTime)
+      case FLocalDate => Success(CLocalDate)
+      case FDuration => Success(CInterval)
       case FArray => readCValueType(buffer.get()) map (CArrayType(_))
-      case flag => Failure(new IOException("Unexpected segment type flag: %x" format flag))
+      case _ => Failure(new IOException("Unexpected segment type flag: %x" format flag))
     }
 
     buffer.get() match {

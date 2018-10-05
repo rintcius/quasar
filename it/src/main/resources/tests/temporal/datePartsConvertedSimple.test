@@ -2,8 +2,7 @@
   "name": "date_part, after conversion to JS (see #1238)",
 
   "backends": {
-    "mongodb_read_only": "pending",
-    "postgresql":        "pending"
+        "mimir": "ignoreFieldOrder"
   },
 
   "data": "../slamengine_commits.data",
@@ -11,10 +10,10 @@
   "query": "select
               date_part(\"day\", timestamp(commit.committer.date)) as dayOfMonth,
               to_string(author.id) as id
-              from `../slamengine_commits`",
+              from `../slamengine_commits.data`",
 
-  "predicate": "containsAtLeast",
-  "ignoreFieldOrder": [ "couchbase", "marklogic_json" ],
+  "predicate": "atLeast",
+  "ignoreResultOrder": true,
   "expected": [
     { "dayOfMonth": 29.0, "id": "33031" }
   ]

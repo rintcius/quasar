@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,17 +16,11 @@
 
 package quasar
 
-import quasar.common.PhaseResultW
-import quasar.effect.Failure
-import quasar.frontend.SemanticErrsT
-
-import scalaz._
+import quasar.contrib.scalaz.MonadError_
 
 package object connector {
-  type CompileM[A] = SemanticErrsT[PhaseResultW, A]
+  type MonadResourceErr[F[_]] = MonadError_[F, ResourceError]
 
-  type EnvErr[A] = Failure[EnvironmentError, A]
-  type EnvErrT[F[_], A] = EitherT[F, EnvironmentError, A]
-
-  type PlannerErrT[F[_], A] = EitherT[F, Planner.PlannerError, A]
+  def MonadResourceErr[F[_]](implicit ev: MonadResourceErr[F])
+      : MonadResourceErr[F] = ev
 }

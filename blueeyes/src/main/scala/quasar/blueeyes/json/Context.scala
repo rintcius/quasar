@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package quasar.blueeyes.json
 
-import quasar.blueeyes._
+import scala.collection.mutable
 
 // context used by JParser, taken from jawn under MIT license.
 // (https://github.com/non/jawn)
@@ -37,7 +37,7 @@ private[json] final class SingleContext extends Context {
 }
 
 private[json] final class ArrContext extends Context {
-  private val vs = ArrayBuffer[JValue]()
+  private val vs = mutable.ArrayBuffer[JValue]()
 
   def add(s: String): Unit = vs.append(JString(s))
   def add(v: JValue): Unit = vs.append(v)
@@ -47,7 +47,7 @@ private[json] final class ArrContext extends Context {
 
 private[json] final class ObjContext extends Context {
   private var key: String = null
-  private val vs          = scmMap[String, JValue]()
+  private val vs          = mutable.HashMap[String, JValue]()
 
   def add(s: String): Unit =
     if (key == null) {

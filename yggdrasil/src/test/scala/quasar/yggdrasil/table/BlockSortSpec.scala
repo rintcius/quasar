@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,9 +19,7 @@ package table
 
 import quasar.blueeyes._, json._
 import quasar.precog.common._
-import scalaz._, Scalaz._
-import quasar.precog.TestSupport._
-// import org.scalacheck._, Gen._, Arbitrary._
+import quasar.pkg.tests._
 import SampleData._
 import TableModule._
 
@@ -32,24 +30,25 @@ import PrecogJValueOrder._
 
 trait BlockSortSpec extends SpecificationLike with ScalaCheck {
   def testSortDense(sample: SampleData, sortOrder: DesiredSortOrder, unique: Boolean, sortKeys: JPath*) = {
-    val module = BlockStoreTestModule.empty[Need]
+    val module = BlockStoreTestModule.empty
 
-    val jvalueOrdering     = ScalazOrder[JValue].toScalaOrdering
+    val jvalueOrdering = scalaz.Order[JValue].toScalaOrdering
     val desiredJValueOrder = if (sortOrder.isAscending) jvalueOrdering else jvalueOrdering.reverse
 
     val globalIdPath = JPath(".globalId")
 
     val original = if (unique) {
-      sample.data.map { jv => JArray(sortKeys.map(_.extract(jv \ "value")).toList) -> jv }.toMap.toList.unzip._2.toStream
+      sample.data.map(_.toJValue).map { jv => JArray(sortKeys.map(_.extract(jv \ "value")).toList) -> jv }.toMap.toList.unzip._2.toStream
     } else {
-      sample.data
+      sample.data.map(_.toJValue)
     }
 
     // We have to add in and then later remove the global Id (insert
     // order) to match real sort semantics for disambiguation of equal
     // values
     val sorted = original.zipWithIndex.map {
-      case (jv, i) => JValue.unsafeInsert(jv, globalIdPath, JNum(i))
+      case (jv, i) if sortOrder.isAscending  => JValue.unsafeInsert(jv, globalIdPath, JNum(i))
+      case (jv, i) if !sortOrder.isAscending => JValue.unsafeInsert(jv, globalIdPath, JNum(-i))
     }.sortBy { v =>
       JArray(sortKeys.map(_.extract(v \ "value")).toList ::: List(v \ "globalId")).asInstanceOf[JValue]
     }(desiredJValueOrder).map(_.delete(globalIdPath).get).toList
@@ -61,9 +60,9 @@ trait BlockSortSpec extends SpecificationLike with ScalaCheck {
       json <- sorted.toJson
     } yield (json, sorted)
 
-    val (result, resultTable) = resultM.copoint
+    val (result, resultTable) = resultM.unsafeRunSync
 
-    result.toList must_== sorted
+    result.toList.map(_.toJValue) must_== sorted
 
     resultTable.size mustEqual ExactSize(sorted.size)
   }
@@ -99,7 +98,7 @@ trait BlockSortSpec extends SpecificationLike with ScalaCheck {
           },
           "key":[2]
         }
-      ]""") --> classOf[JArray]).elements.toStream,
+      ]""") --> classOf[JArray]).elements.toStream.flatMap(RValue.fromJValue),
       Some(
         (1 , List(JPath(".uid") -> CString, JPath(".u") -> CBoolean, JPath(".md") -> CString, JPath(".l") -> CEmptyArray))
       )
@@ -114,7 +113,7 @@ trait BlockSortSpec extends SpecificationLike with ScalaCheck {
       (JParser.parseUnsafe("""[
         {"key":[2],"value":6},
         {"key":[1],"value":5}
-      ]""") --> classOf[JArray]).elements.toStream,
+      ]""") --> classOf[JArray]).elements.toStream.flatMap(RValue.fromJValue),
       Some(
         (1 , List(JPath(".") -> CString))
       )
@@ -144,7 +143,7 @@ trait BlockSortSpec extends SpecificationLike with ScalaCheck {
           },
           "key":[1]
         }
-      ]""") --> classOf[JArray]).elements.toStream,
+      ]""") --> classOf[JArray]).elements.toStream.flatMap(RValue.fromJValue),
       Some(
         (1, List(JPath(".uid") -> CString, JPath(".fa") -> CNull, JPath(".hW") -> CDouble, JPath(".rzp") -> CEmptyObject))
       )
@@ -167,7 +166,7 @@ trait BlockSortSpec extends SpecificationLike with ScalaCheck {
           },
           "key":[2]
         }
-      ]""") --> classOf[JArray]).elements.toStream,
+      ]""") --> classOf[JArray]).elements.toStream.flatMap(RValue.fromJValue),
       Some(
         (1, List(JPath("[0]") -> CLong, JPath("[1]") -> CLong, JPath(".uid") -> CString, JPath("abc") -> CLong))
       )
@@ -202,7 +201,7 @@ trait BlockSortSpec extends SpecificationLike with ScalaCheck {
           },
           "key":[2.0,1.0]
         }
-      ]""") --> classOf[JArray]).elements.toStream,
+      ]""") --> classOf[JArray]).elements.toStream.flatMap(RValue.fromJValue),
       Some((2,List(
         JPath(".m") -> CEmptyArray,
         JPath(".f") -> CBoolean,
@@ -219,7 +218,7 @@ trait BlockSortSpec extends SpecificationLike with ScalaCheck {
         {"key":[1,4,3],"value":{"b0":["",{"alxk":-1},-5.170005125478374E+307],"y":{"pvbT":[-1458654748381439976,{}]}}},
         {"key":[1,4,4],"value":{"y":false,"qvd":[],"aden":{}}},
         {"key":[3,3,3],"value":{"b0":["gxy",{"alxk":-1},6.614267528783459E+307],"y":{"pvbT":[1,{}]}}}
-      ]""") --> classOf[JArray]).elements.toStream,
+      ]""") --> classOf[JArray]).elements.toStream.flatMap(RValue.fromJValue),
       None)
 
     testSortDense(sampleData, SortDescending, false, JPath(".y"))
@@ -231,7 +230,7 @@ trait BlockSortSpec extends SpecificationLike with ScalaCheck {
       (JParser.parseUnsafe("""[
         {"key":[2],"value":{"y":false}},
         {"key":[3],"value":{"y":{"pvbT":1}}}
-      ]""") --> classOf[JArray]).elements.toStream,
+      ]""") --> classOf[JArray]).elements.toStream.flatMap(RValue.fromJValue),
       None)
 
     testSortDense(sampleData, SortDescending, false, JPath(".y"))
@@ -243,7 +242,7 @@ trait BlockSortSpec extends SpecificationLike with ScalaCheck {
       (JParser.parseUnsafe("""[
         {"key":[2],"value":{"y":false}},
         {"key":[3],"value":{"y":{"pvbT":1}}}
-      ]""") --> classOf[JArray]).elements.toStream,
+      ]""") --> classOf[JArray]).elements.toStream.flatMap(RValue.fromJValue),
       None)
 
     testSortDense(sampleData, SortAscending, false, JPath(".y"))
@@ -277,7 +276,7 @@ trait BlockSortSpec extends SpecificationLike with ScalaCheck {
           },
           "key":[2,1,1]
         }
-      ]""") --> classOf[JArray]).elements.toStream,
+      ]""") --> classOf[JArray]).elements.toStream.flatMap(RValue.fromJValue),
       Some(
         (3, List(JPath(".uid") -> CLong,
                  JPath(".uid") -> CDouble,
@@ -315,7 +314,7 @@ trait BlockSortSpec extends SpecificationLike with ScalaCheck {
             "zw1":81740903825956729.9
           },
           "key":[2.0]
-        }]""") --> classOf[JArray]).elements.toStream,
+        }]""") --> classOf[JArray]).elements.toStream.flatMap(RValue.fromJValue),
       Some(
         (1, List(JPath(".e") -> CNull,
                  JPath(".chl") -> CNum,
@@ -470,7 +469,7 @@ trait BlockSortSpec extends SpecificationLike with ScalaCheck {
           },
           "key":[10.0,1.0,4.0]
         }
-      ]""") --> classOf[JArray]).elements.toStream,
+      ]""") --> classOf[JArray]).elements.toStream.flatMap(RValue.fromJValue),
       Some(
         (3, List(JPath(".zbtQhnpnun") -> CLong,
                  JPath(".ohvhwN") -> CNum,
@@ -486,7 +485,7 @@ trait BlockSortSpec extends SpecificationLike with ScalaCheck {
       (JParser.parseUnsafe("""[
         { "key" : [2], "value" : { "foo" : 10 } },
         { "key" : [1], "value" : { "foo" : 10 } }
-       ]""") --> classOf[JArray]).elements.toStream,
+       ]""") --> classOf[JArray]).elements.toStream.flatMap(RValue.fromJValue),
       Some(
         (1 , List())
       )
@@ -497,7 +496,7 @@ trait BlockSortSpec extends SpecificationLike with ScalaCheck {
 
   def emptySort = {
     val sampleData = SampleData(
-      (JParser.parseUnsafe("""[]""") --> classOf[JArray]).elements.toStream,
+      (JParser.parseUnsafe("""[]""") --> classOf[JArray]).elements.toStream.flatMap(RValue.fromJValue),
       Some(
         (1 , List())
       )

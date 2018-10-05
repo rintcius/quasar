@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,35 +16,44 @@
 
 package quasar.yggdrasil
 
-import quasar.blueeyes._
+import qdata.time.OffsetDate
+import quasar.precog._
+import quasar.pkg.tests._
 import quasar.precog.common._
-import quasar.yggdrasil.table._
 import quasar.precog.util._
-import quasar.precog._, TestSupport._
+import quasar.yggdrasil.table._
 
-import java.time.LocalDateTime
+import java.time._
+
+import scala.reflect.ClassTag
+import scala.specialized
 
 class CPathTraversalSpec extends Specification {
   import CPathTraversal._
 
-  sealed trait ColBuilder[@spec(Boolean, Long, Double) A] {
+  sealed trait ColBuilder[@specialized(Boolean, Long, Double) A] {
     def apply(defined: BitSet, items: Array[A]): Column
   }
 
   object ColBuilder {
-    private def builder[@spec(Boolean, Long, Double) A](f: (BitSet, Array[A]) => Column): ColBuilder[A] = {
+    private def builder[@specialized(Boolean, Long, Double) A](f: (BitSet, Array[A]) => Column): ColBuilder[A] = {
       new ColBuilder[A] {
         def apply(defined: BitSet, items: Array[A]): Column = f(defined, items)
       }
     }
 
-    implicit val LongColBuilder   = builder[Long](ArrayLongColumn(_, _))
-    implicit val StrColBuilder    = builder[String](ArrayStrColumn(_, _))
-    implicit val BoolColBuilder   = builder[Boolean](ArrayBoolColumn(_, _))
+    implicit val LongColBuilder = builder[Long](ArrayLongColumn(_, _))
+    implicit val StrColBuilder = builder[String](ArrayStrColumn(_, _))
+    implicit val BoolColBuilder = builder[Boolean](ArrayBoolColumn(_, _))
     implicit val DoubleColBuilder = builder[Double](ArrayDoubleColumn(_, _))
-    implicit val NumColBuilder    = builder[BigDecimal](ArrayNumColumn(_, _))
-    implicit val DateColBuilder   = builder[LocalDateTime](ArrayDateColumn(_, _))
-    implicit def HomogeneousArrayColBuilder[@spec(Boolean, Long, Double) A: CValueType] =
+    implicit val NumColBuilder = builder[BigDecimal](ArrayNumColumn(_, _))
+    implicit val LocalDateTimeColBuilder = builder[LocalDateTime](ArrayLocalDateTimeColumn(_, _))
+    implicit val LocalTimeColBuilder = builder[LocalTime](ArrayLocalTimeColumn(_, _))
+    implicit val LocalDateColBuilder = builder[LocalDate](ArrayLocalDateColumn(_, _))
+    implicit val OffsetDateTimeColBuilder = builder[OffsetDateTime](ArrayOffsetDateTimeColumn(_, _))
+    implicit val OffsetTimeColBuilder = builder[OffsetTime](ArrayOffsetTimeColumn(_, _))
+    implicit val OffsetDateColBuilder = builder[OffsetDate](ArrayOffsetDateColumn(_, _))
+    implicit def HomogeneousArrayColBuilder[@specialized(Boolean, Long, Double) A: CValueType] =
       builder[Array[A]](ArrayHomogeneousArrayColumn(_, _))
   }
 
@@ -62,7 +71,7 @@ class CPathTraversalSpec extends Specification {
       )))
     }
   }
-  def col[@spec(Boolean, Long, Double) A](defined: Int*)(values: A*)(implicit builder: ColBuilder[A], m: CTag[A]) = {
+  def col[@specialized(Boolean, Long, Double) A](defined: Int*)(values: A*)(implicit builder: ColBuilder[A], m: ClassTag[A]) = {
     val max = defined.max + 1
     val column = m.newArray(max)
     (defined zip values) foreach { case (i, x) =>

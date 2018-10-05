@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@
 package quasar.niflheim
 
 import quasar.precog.common._
-import quasar.precog.util._
 
 import java.io._
 import java.nio.channels.WritableByteChannel
@@ -29,9 +28,10 @@ import scalaz.syntax.monad._
 import scalaz.syntax.traverse._
 import scalaz.std.list._
 
-case class Prepare(blockid: Long, seqId: Long, root: File, source: StorageReader)
-case class Spoilt(blockid: Long, seqId: Long)
-case class Cooked(blockid: Long, seqId: Long, root: File, metadata: File)
+final case class Prepare(blockid: Long, seqId: Long, root: File, source: StorageReader, onComplete: () => Unit)
+final case class PrepareSegments(blockid: Long, seqId: Long, root: File, offset: Long, length: Int, segments: List[Segment], onComplete: () => Unit)
+final case class Spoilt(blockid: Long, seqId: Long, onComplete: () => Unit)
+final case class Cooked(blockid: Long, seqId: Long, root: File, metadata: File, onComplete: () => Unit)
 
 final case class Chef(blockFormat: CookedBlockFormat, format: SegmentFormat) extends Actor {
   private def typeCode(ctype: CType): String = CType.nameOf(ctype)
@@ -41,29 +41,29 @@ final case class Chef(blockFormat: CookedBlockFormat, format: SegmentFormat) ext
     "segment-" + id.blockid + "-" + pathHash + "-" + typeCode(id.ctype)
   }
 
-  def cook(root: File, reader: StorageReader): ValidationNel[IOException, File] = {
+  def cookSegments(root: File, id: Long, length: Int, segments: List[Segment]): ValidationNel[IOException, File] ={
     assert(root.exists)
     assert(root.isDirectory)
     assert(root.canWrite)
-    val files0 = reader.snapshot(None).segments map { seg =>
+
+    val files = segments traverse { seg =>
       val file = File.createTempFile(prefix(seg), ".cooked", root)
       val relativized = new File(file.getName)
       val channel: WritableByteChannel = new FileOutputStream(file).getChannel()
       val result = try {
-        format.writer.writeSegment(channel, seg) map { _ => (seg.id, relativized) }
+        format.writer.writeSegment(channel, seg).map(_ => (seg.id, relativized))
       } finally {
         channel.close()
       }
       result.toValidationNel
     }
 
-    val files = files0.toList.sequence[({ type λ[α] = ValidationNel[IOException, α] })#λ, (SegmentId, File)]
     files flatMap { segs =>
-      val metadata = CookedBlockMetadata(reader.id, reader.length, segs.toArray)
-      val mdFile = File.createTempFile("block-%08x".format(reader.id), ".cookedmeta", root)
+      val metadata = CookedBlockMetadata(id, length, segs.toArray)
+      val mdFile = File.createTempFile("block-%08x".format(id), ".cookedmeta", root)
       val channel = new FileOutputStream(mdFile).getChannel()
       try {
-        blockFormat.writeCookedBlock(channel, metadata).toValidationNel.map { _ : PrecogUnit =>
+        blockFormat.writeCookedBlock(channel, metadata).toValidationNel map { _: Unit =>
           new File(mdFile.getName)
         }
       } finally {
@@ -72,13 +72,24 @@ final case class Chef(blockFormat: CookedBlockFormat, format: SegmentFormat) ext
     }
   }
 
+  def cook(root: File, reader: StorageReader): ValidationNel[IOException, File] =
+    cookSegments(root, reader.id, reader.length, reader.snapshot(None).segments.toList)
+
   def receive = {
-    case Prepare(blockid, seqId, root, source) =>
+    case Prepare(blockid, seqId, root, source, onComplete) =>
       cook(root, source) match {
         case Success(file) =>
-          sender ! Cooked(blockid, seqId, root, file)
+          sender ! Cooked(blockid, seqId, root, file, onComplete)
         case Failure(_) =>
-          sender ! Spoilt(blockid, seqId)
+          sender ! Spoilt(blockid, seqId, onComplete)
+      }
+
+    case PrepareSegments(blockid, seqId, root, offset, length, segments, onComplete) =>
+      cookSegments(root, offset, length, segments) match {
+        case Success(file) =>
+          sender ! Cooked(blockid, seqId, root, file, onComplete)
+        case Failure(_) =>
+          sender ! Spoilt(blockid, seqId, onComplete)
       }
   }
 }

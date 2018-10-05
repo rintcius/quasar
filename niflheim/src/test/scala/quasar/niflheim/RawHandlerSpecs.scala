@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,16 +17,13 @@
 package quasar.niflheim
 
 import java.io._
+
 import quasar.blueeyes.json._
 import quasar.precog.common._
-
 import quasar.precog.BitSet
 
 import org.specs2.mutable._
 import org.specs2.ScalaCheck
-import org.scalacheck._
-
-import scala.collection.mutable
 
 abstract class cleanup(f: File) extends After {
   def after = {
@@ -49,7 +46,7 @@ object RawHandlerSpecs extends Specification with ScalaCheck {
   implicit val ordering = scala.math.Ordering.by[(String, CType), String](_.toString)
 
   def slurp(f: File): String =
-    new java.util.Scanner(f, "UTF-8").useDelimiter("\0").next()
+    new java.util.Scanner(f, "UTF-8").useDelimiter("\u0000").next()
 
   def json(s: String): Seq[JValue] =
     JParser.parseManyFromString(s).valueOr(throw _)
@@ -351,5 +348,6 @@ object RawHandlerSpecs extends Specification with ScalaCheck {
 
       a3REmpty.toSet must_== Set()
     }
+
   }
 }

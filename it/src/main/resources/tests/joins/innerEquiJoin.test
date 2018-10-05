@@ -1,34 +1,19 @@
 {
-    "name": "perform inner equi-join",
+    "name": "[qa_s07] perform inner equi-join",
 
     "backends": {
-        "couchbase":         "skip",
-        "marklogic_json":    "skip",
-        "marklogic_xml":     "skip",
-        "mongodb_read_only": "pending",
-        "mongodb_q_3_2":     "pending",
-        "postgresql":        "pending"
+        "mimir": "ignoreFieldOrder"
     },
 
-    "NB": "#2120: Disabled in marklogic due to slow performance.
-           #1587: Disabled in couchbase due to lack of general join.",
+    "data": ["../cars.data", "../cars2.data"],
 
-    "data": ["../smallZips.data", "../zips.data"],
+    "query": "select cars.name as c1, cars2.name as c2
+              from `../cars.data` as cars inner join `../cars2.data` as cars2
+              on cars.`_id` = cars2.`_id`",
 
-    "query": "select smallZips.city, zips.state
-              from `../smallZips` join `../zips`
-              on smallZips.`_id` = zips.`_id`",
+    "predicate": "exactly",
+    "ignoreResultOrder": true,
 
-    "predicate": "containsAtLeast",
-
-    "expected": [{"city": "AGAWAM",       "state": "MA"},
-                 {"city": "CUSHMAN",      "state": "MA"},
-                 {"city": "BARRE",        "state": "MA"},
-                 {"city": "BELCHERTOWN",  "state": "MA"},
-                 {"city": "BLANDFORD",    "state": "MA"},
-                 {"city": "BRIMFIELD",    "state": "MA"},
-                 {"city": "CHESTER",      "state": "MA"},
-                 {"city": "CHESTERFIELD", "state": "MA"},
-                 {"city": "CHICOPEE",     "state": "MA"},
-                 {"city": "CHICOPEE",     "state": "MA"}]
+    "expected": [{ "c1": "RangeRover-Evoque", "c2": "Dodge-Caravan" },
+                 { "c1": "BMW-X5",            "c2": "Jeep-Liberty" }]
 }

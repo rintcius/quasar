@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,10 +17,12 @@
 package quasar.yggdrasil
 package jdbm3
 
-import quasar.blueeyes._
 import quasar.precog.common._
-import org.slf4j.LoggerFactory
 import quasar.yggdrasil.table._
+
+import org.slf4j.LoggerFactory
+
+import scala.annotation.tailrec
 
 object JDBMSlice {
   private lazy val log = LoggerFactory.getLogger("quasar.yggdrasil.jdbm3.JDBMSlice")
@@ -77,12 +79,17 @@ object JDBMSlice {
   def columnFor(prefix: CPath, sliceSize: Int)(ref: ColumnRef): (ColumnRef, ArrayColumn[_]) =
     (ref.copy(selector = (prefix \ ref.selector)), ref.ctype match {
       case CString              => ArrayStrColumn.empty(sliceSize)
-      case CBoolean             => ArrayBoolColumn.empty()
+      case CBoolean             => ArrayBoolColumn.empty(sliceSize)
       case CLong                => ArrayLongColumn.empty(sliceSize)
       case CDouble              => ArrayDoubleColumn.empty(sliceSize)
       case CNum                 => ArrayNumColumn.empty(sliceSize)
-      case CDate                => ArrayDateColumn.empty(sliceSize)
-      case CPeriod              => ArrayPeriodColumn.empty(sliceSize)
+      case COffsetDateTime      => ArrayOffsetDateTimeColumn.empty(sliceSize)
+      case COffsetTime          => ArrayOffsetTimeColumn.empty(sliceSize)
+      case COffsetDate          => ArrayOffsetDateColumn.empty(sliceSize)
+      case CLocalDateTime       => ArrayLocalDateTimeColumn.empty(sliceSize)
+      case CLocalTime           => ArrayLocalTimeColumn.empty(sliceSize)
+      case CLocalDate           => ArrayLocalDateColumn.empty(sliceSize)
+      case CInterval            => ArrayIntervalColumn.empty(sliceSize)
       case CNull                => MutableNullColumn.empty()
       case CEmptyObject         => MutableEmptyObjectColumn.empty()
       case CEmptyArray          => MutableEmptyArrayColumn.empty()

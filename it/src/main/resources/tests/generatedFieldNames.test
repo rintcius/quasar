@@ -2,18 +2,15 @@
   "name": "generated field names",
 
   "backends": {
-    "marklogic_xml":     "pending",
-    "mongodb_read_only": "pending",
-    "postgresql":        "pending"
+    "mimir": "ignoreFieldOrder"
   },
 
   "data": "smallZips.data",
 
-  "query": "select TO_STRING(city), state || \"S\" from smallZips",
+  "query": "select TO_STRING(city), state || \"S\" from `smallZips.data`",
 
-  "predicate": "containsAtLeast",
-
-  "ignoreFieldOrder": [ "couchbase" ],
+  "predicate": "atLeast",
+  "ignoreResultOrder": true,
 
   "expected": [
     { "0": "NEW SALEM", "1": "MAS" }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,20 @@
 
 package quasar.contrib.scalaz
 
+import slamdata.Predef._
+
 import scalaz._, Scalaz._
 import scalaz.stream._
 
 final class FoldableOps[F[_], A] private[scalaz] (self: F[A])(implicit F0: Foldable[F]) {
+
+  /** Returns whether this `Foldable` is equal to `other` when viewed as sets.
+    *
+    * NB: Has O(n^2) complexity.
+    */
+  def equalsAsSets(other: F[A])(implicit A: Equal[A]): Boolean =
+    self.all(other element _) && other.all(self element _)
+
   /** The pure `Process` of the values in this `Foldable`. */
   final def toProcess: Process0[A] =
     self.foldRight[Process0[A]](Process.halt)((a, p) => Process.emit(a) ++ p)

@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@ package serialization
 import DefaultSerialization._
 import IsoSerialization._
 import shapeless._
-import quasar.precog.TestSupport._
+import quasar.pkg.tests._
 
 object IsoSerializationSpec {
   case class Foo(s: String, i: Option[Int], b: Boolean)
@@ -43,6 +43,10 @@ object IsoSerializationSpec {
   case class Baz(s: String, l: List[Foo])
   val baz       = Baz("Hello world", List(foo, foo2))
   val bazSchema = "s" :: "l" :: HNil
+
+  def jarray(elements: JValue*): JValue = JArray(elements.toList)
+  def jobject(fields: JField*): JValue = JObject(fields.toList)
+  def jfield[A](name: String, value: A)(implicit d: Decomposer[A]): JField = JField(name, d(value))
 }
 
 class IsoSerializationSpec extends Specification {

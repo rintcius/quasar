@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,19 +19,21 @@ package quasar.frontend.logicalplan
 import slamdata.Predef._
 import quasar._
 import quasar.common.JoinType
+import quasar.common.data.Data
+import quasar.common.effect.NameGenerator
 import quasar.contrib.shapeless._
 import quasar.fp._
 import quasar.fp.binder._
 import quasar.fp.ski._
 import quasar.frontend.logicalplan.{LogicalPlan => LP}
-import quasar.namegen._
-import quasar.sql.JoinDir
 
 import scala.Predef.$conforms
 
 import matryoshka._
+import matryoshka.data._
 import matryoshka.implicits._
-import scalaz._, Scalaz.{ToIdOps => _, _}
+import matryoshka.patterns._
+import scalaz.{Free => Freez, _}, Scalaz.{ToIdOps => _, _}
 import shapeless.{Data => _, :: => _, _}
 
 sealed abstract class Component[T, A] {
@@ -137,16 +139,6 @@ final class Optimizer[T: Equal]
     case _ => None
   }
 
-  // TODO delete this when old mongo is deleted
-  val reconstructOldJoins: Algebra[LP, T] = {
-    case JoinSideName(name) => lpr.free(name)
-    case Join(left, right, tpe, JoinCondition(lName, rName, cond)) =>
-      lpr.let(lName, left,
-        lpr.let(rName, right,
-          lpr.invoke3(LP.funcFromJoinType(tpe), lpr.free(lName), lpr.free(rName), cond)))
-    case lp => lp.embed
-  }
-
   val namesƒ: Algebra[LP, Set[Symbol]] = {
     case Free(name) => Set(name)
     case x          => x.fold
@@ -156,6 +148,7 @@ final class Optimizer[T: Equal]
     prefix: String, plans: F[T]):
       Symbol = {
     val existingNames = plans.map(_.cata(namesƒ)).fold
+    @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
     def loop(pre: String): Symbol =
       if (existingNames.contains(Symbol(prefix)))
         loop(pre + "_")
@@ -169,10 +162,10 @@ final class Optimizer[T: Equal]
     case Constant(Data.Obj(map)) =>
       Some(map.keys.map(n => lpr.constant(Data.Str(n))).toList)
     case Sort(src, _) => src._2
-    case InvokeUnapply(DeleteField, Sized(src, field)) =>
-      src._2.map(_.filterNot(_ ≟ field._1))
-    case InvokeUnapply(MakeObject, Sized(field, _)) => Some(List(field._1))
-    case InvokeUnapply(ObjectConcat, srcs) => srcs.traverse(_._2).map(_.flatten)
+    case InvokeUnapply(DeleteKey, Sized(src, key)) =>
+      src._2.map(_.filterNot(_ ≟ key._1))
+    case InvokeUnapply(MakeMap, Sized(key, _)) => Some(List(key._1))
+    case InvokeUnapply(MapConcat, srcs) => srcs.traverse(_._2).map(_.flatten)
     // NB: the remaining Invoke cases simply pass through or combine shapes
     //     from their inputs. It would be great if this information could be
     //     handled generically by the type system.
@@ -182,8 +175,6 @@ final class Optimizer[T: Equal]
     case Join(_, _, _, _) =>
       Some(List(JoinDir.Left.const, JoinDir.Right.const))
     case InvokeUnapply(GroupBy, Sized(src, _)) => src._2
-    case InvokeUnapply(Distinct, Sized(src, _)) => src._2
-    case InvokeUnapply(DistinctBy, Sized(src, _)) => src._2
     case InvokeUnapply(identity.Squash, Sized(src)) => src._2
     case _ => None
   }
@@ -208,14 +199,14 @@ final class Optimizer[T: Equal]
       preserveFree0(x)(_._1)
 
     (node match {
-      case InvokeUnapply(DeleteField, Sized(src, field)) =>
+      case InvokeUnapply(DeleteKey, Sized(src, key)) =>
         src._2._2.fold(
-          DeleteField(preserveFree(src), preserveFree(field)).embed) {
-          fields =>
-            val name = uniqueName("src", fields)
+          DeleteKey(preserveFree(src), preserveFree(key)).embed) {
+          keys =>
+            val name = uniqueName("src", keys)
               lpr.let(name, preserveFree(src),
-                MakeObjectN(fields.filterNot(_ == field._2._1).map(f =>
-                  f -> ObjectProject(lpr.free(name), f).embed): _*).embed)
+                MakeMapN(keys.filterNot(_ == key._2._1).map(f =>
+                  f -> MapProject(lpr.free(name), f).embed): _*).embed)
         }
       case lp => lp.map(preserveFree).embed
     },
@@ -225,12 +216,6 @@ final class Optimizer[T: Equal]
   def preferProjections(t: T): T =
     boundPara(t)(preferProjectionsƒ)._1.transCata[T](repeatedly(simplifyƒ))
 
-  // FIXME: Make this a transformation instead of an algebra.
-  val elideTypeCheckƒ: Algebra[LP, T] = {
-    case Typecheck(_, _, cont, _) => cont
-    case x => x.embed
-  }
-
   /** Rewrite joins and subsequent filtering so that:
     * 1) Filtering that is equivalent to an equi-join is rewritten into the join condition.
     * 2) Filtering that refers to only side of the join is hoisted prior to the join.
@@ -239,17 +224,18 @@ final class Optimizer[T: Equal]
     *
     * TODO: Separate the combining of filter and join from ...
     */
-  val rewriteCrossJoinsƒ: LP[(T, T)] => State[NameGen, T] = { node =>
+  def rewriteCrossJoinsƒ[F[_]: Monad: NameGenerator]: LP[(T, T)] => F[T] = { node =>
     def preserveFree(x: (T, T)) = preserveFree0(x)(ι)
 
+    @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
     def flattenAnd: T => List[T] = {
       case Embed(InvokeUnapply(relations.And, ts)) => ts.unsized.flatMap(flattenAnd)
       case t                                       => List(t)
     }
 
     @SuppressWarnings(Array("org.wartremover.warts.Equals"))
-    def toComp(left: T, right: T)(c: T):
-        (List[Component[T, T]], Component[T, T]) =
+    def toComp(left: T, right: T)(c: T): (List[Component[T, T]], Component[T, T]) = {
+
       boundParaM[T, (List[Component[T, T]], ?), LP, Component[T, T]](c) {
         case t if t.map(_._1) ≟ left.project  => (Nil, LeftCond(ι))
         case t if t.map(_._1) ≟ right.project => (Nil, RightCond(ι))
@@ -260,29 +246,18 @@ final class Optimizer[T: Equal]
         case InvokeUnapply(relations.Eq, Sized((_, RightCond(rc)), (_, LeftCond(lc)))) =>
           (Nil, EquiCond((l, r) => relations.Eq(rc(r), lc(l)).embed))
 
-        case Typecheck((_, LeftCond(lc)), tpe, (_, cont), (Embed(Constant(Data.NA)), _)) =>
-          (List(LeftCond(l =>
-            Typecheck(lc(l), tpe, Constant[T](Data.Bool(true)).embed, Constant[T](Data.Bool(false)).embed).embed)), cont)
-
-        case Typecheck((_, RightCond(rc)), tpe, (_, cont), (Embed(Constant(Data.NA)), _)) =>
-          (List(RightCond(r =>
-            Typecheck(rc(r), tpe, Constant[T](Data.Bool(true)).embed, Constant[T](Data.Bool(false)).embed).embed)), cont)
-
-        case Typecheck((_, cond), tpe, (_, cont), (_, fallback)) =>
-          (Nil, (cond |@| cont |@| fallback)(lpr.typecheck(_, tpe, _, _)))
-
-        case InvokeUnapply(func @ UnaryFunc(_, _, _, _, _, _, _), Sized(t1)) =>
+        case InvokeUnapply(func @ UnaryFunc(_, _, _), Sized(t1)) =>
           (Nil, Func.Input1(t1).traverse(_._2).map(lpr.invoke(func, _)))
 
         // Preserve the previously-computed components in the `And`.
         // Return a constant `true` which is included as a no-op filter post-join.
-        case t @ InvokeUnapply(func @ BinaryFunc(_, _, _, _, _, _, _), Sized(t1, t2)) if func == relations.And =>
+        case t @ InvokeUnapply(func @ BinaryFunc(_, _, _), Sized(t1, t2)) if func == relations.And =>
           (List(t1._2, t2._2), NeitherCond(lpr.constant(Data.Bool(true))))
 
-        case InvokeUnapply(func @ BinaryFunc(_, _, _, _, _, _, _), Sized(t1, t2)) =>
+        case InvokeUnapply(func @ BinaryFunc(_, _, _), Sized(t1, t2)) =>
           (Nil, Func.Input2(t1, t2).traverse(_._2).map(lpr.invoke(func, _)))
 
-        case InvokeUnapply(func @ TernaryFunc(_, _, _, _, _, _, _), Sized(t1, t2, t3)) =>
+        case InvokeUnapply(func @ TernaryFunc(_, _, _), Sized(t1, t2, t3)) =>
           (Nil, Func.Input3(t1, t2, t3).traverse(_._2).map(lpr.invoke(func, _)))
 
         case Let(ident, form, body) =>
@@ -290,13 +265,13 @@ final class Optimizer[T: Equal]
 
         case t =>
           (Nil, NeitherCond(t.map(_._1).embed))
+      }
     }
 
     def assembleCond(conds: List[T]): T =
       conds.foldLeft(lpr.constant(Data.True))(relations.And(_, _).embed)
 
-    def newJoin(lSrc: T, rSrc: T, comps: List[Component[T, T]])
-        : State[NameGen, T] = {
+    def newJoin(lSrc: T, rSrc: T, comps: List[Component[T, T]]): F[T] = {
       val equis    = comps.collect { case c @ EquiCond(_) => c }
       val lefts    = comps.collect { case c @ LeftCond(_) => c }
       val rights   = comps.collect { case c @ RightCond(_) => c }
@@ -304,13 +279,13 @@ final class Optimizer[T: Equal]
       val neithers = comps.collect { case c @ NeitherCond(_) => c }
 
       for {
-        lName     <- freshName("leftSrc")
-        rName     <- freshName("rightSrc")
-        lJoinName <- freshName("leftJoin")
-        rJoinName <- freshName("rightJoin")
-        lFName    <- freshName("left")
-        rFName    <- freshName("right")
-        jName     <- freshName("joined")
+        lName     <- freshSym[F]("leftSrc")
+        rName     <- freshSym[F]("rightSrc")
+        lJoinName <- freshSym[F]("leftJoin")
+        rJoinName <- freshSym[F]("rightJoin")
+        lFName    <- freshSym[F]("left")
+        rFName    <- freshSym[F]("right")
+        jName     <- freshSym[F]("joined")
       } yield {
         // NB: simplifying eagerly to make matching easier up the tree
         simplify(
@@ -329,7 +304,6 @@ final class Optimizer[T: Equal]
       }
     }
 
-
     node match {
       case InvokeUnapply(Filter, Sized((src, Embed(Join(joinL, joinR, JoinType.Inner, JoinCondition(lName, rName, joinCond0)))), (cond0, _))) =>
         val joinCond = joinCond0.transCata[T](orOriginal(elideLets))
@@ -340,10 +314,12 @@ final class Optimizer[T: Equal]
             JoinDir.Left.projectFrom(src),
             JoinDir.Right.projectFrom(src))).bifoldMap(ι)(ι)
         newJoin(joinL, joinR, comps)
+
       case Join((srcL, _), (srcR, _), JoinType.Inner, JoinCondition(lName, rName, (_, joinCond0))) =>
         val joinCond = joinCond0.transCata[T](orOriginal(elideLets))
         newJoin(srcL, srcR, flattenAnd(joinCond).traverse(toComp(lpr.joinSideName(lName), lpr.joinSideName(rName))(_)).bifoldMap(ι)(ι))
-      case _ => State.state(node.map(preserveFree).embed)
+
+      case _ => node.map(preserveFree).embed.point[F]
     }
   }
 
@@ -355,25 +331,25 @@ final class Optimizer[T: Equal]
   val optimize: T => T =
     NonEmptyList[T => T](
       // Eliminate extraneous constants, etc.:
-      simplify,
+      simplify(_),
 
       // NB: must precede normalizeLets to eliminate possibility of shadowing:
-      lpr.normalizeTempNames,
+      lpr.normalizeTempNames(_),
 
       // NB: must precede rewriteCrossJoins to normalize Filter/Join shapes:
-      lpr.normalizeLets,
+      lpr.normalizeLets(_),
 
       // Now for the big one:
-      boundParaS(_)(rewriteCrossJoinsƒ).evalZero,
+      (t: T) => boundParaS(t)(rewriteCrossJoinsƒ[State[Long, ?]]).evalZero[Long],
 
       // Eliminate trivial bindings introduced in rewriteCrossJoins:
-      simplify,
+      simplify(_),
 
       // Final pass to normalize the resulting plans for better matching in tests:
-      lpr.normalizeLets,
+      lpr.normalizeLets(_),
 
       // This time, fix the names last so they will read naturally:
-      lpr.normalizeTempNames
+      lpr.normalizeTempNames(_)
 
     ).foldLeft1(_ >>> _)
 
@@ -385,19 +361,67 @@ final class Optimizer[T: Equal]
   val rewriteJoins: T => T =
     NonEmptyList[T => T](
       // Eliminate extraneous constants, etc.:
-      simplify,
+      simplify(_),
 
       // NB: must precede normalizeLets to eliminate possibility of shadowing:
-      lpr.normalizeTempNames,
+      lpr.normalizeTempNames(_),
 
       // Now for the big one:
-      boundParaS(_)(rewriteCrossJoinsƒ).evalZero,
+      (t: T) => boundParaS(t)(rewriteCrossJoinsƒ[State[Long, ?]]).evalZero[Long],
 
       // Eliminate trivial bindings introduced in rewriteCrossJoins:
-      simplify,
+      simplify(_),
 
       // This time, fix the names last so they will read naturally:
-      lpr.normalizeTempNames
+      lpr.normalizeTempNames(_)
 
     ).foldLeft1(_ >>> _)
+
+  /** Pulls a nested GroupBy up to the immediate child of the nearest Arbitrary,
+    * applying any intermediate expressions to the source of the GroupBy.
+    */
+  def pullUpGroupBy
+    (tree: T)
+    (implicit TR: Recursive.Aux[T, LP], TC: Corecursive.Aux[T, LP])
+      : T = {
+
+    val paritionArbitraryƒ: T => Option[CoEnv[(T, T), LP, T]] = _.project match {
+      case InvokeUnapply(agg.Arbitrary, Sized(_)) => none
+      case InvokeUnapply(set.GroupBy, Sized(src, keys)) => some(CoEnv(-\/((src, keys))))
+      case other => some(CoEnv(\/-(other)))
+    }
+
+    val partitionArbitrary: T => Option[Freez[LP, (T, T)]] =
+      _.anaM[Freez[LP, (T, T)]](paritionArbitraryƒ)
+
+    def unfold: LP[T] => LP[T] = {
+      case InvokeUnapply(agg.Arbitrary, Sized(arg)) =>
+        val partitioned = partitionArbitrary(arg)
+
+        val existsNonMapping =
+          partitioned.exists(ftt =>
+            Recursive[Freez[LP, (T, T)], CoEnv[(T, T), LP, ?]].any(ftt)(_.project match {
+              case CoEnv(\/-(InvokeUnapply(fn, _))) =>
+                fn.effect =/= Mapping
+              case _ => false
+            }))
+
+        val arbArg = if (existsNonMapping) {
+          partitioned.flatMap(part => part.findLeft(_ => true) map {
+            case (src, keys) =>
+              Invoke(set.GroupBy, Func.Input2(
+                part.cata(interpret(_ => src, (_: LP[T]).embed)),
+                keys))
+          }).fold(arg)(_.embed)
+        } else {
+          arg
+        }
+
+        Invoke(agg.Arbitrary, Func.Input1(arbArg))
+
+      case other => other
+    }
+
+    tree.transAna[T](unfold)
+  }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -60,13 +60,8 @@ object IdentityPolicy {
 
 sealed trait FunctionLike[T] {
   val tpe: T
-  val namespace: Vector[String]
-  val name: String
   val opcode: Int
   val rowLevel: Boolean
-
-  lazy val fqn          = namespace :+ name mkString "::"
-  override def toString = "[0x%06x]".format(opcode) + fqn
 }
 
 trait Morphism1Like extends FunctionLike[UnaryOperationType] {
@@ -87,12 +82,4 @@ trait Library {
   type Op1 <: Op1Like
   type Op2 <: Op2Like
   type Reduction <: ReductionLike
-
-  def expandGlob: Morphism1
-
-  def libMorphism1: Set[Morphism1]
-  def libMorphism2: Set[Morphism2]
-  def lib1: Set[Op1]
-  def lib2: Set[Op2]
-  def libReduction: Set[Reduction]
 }

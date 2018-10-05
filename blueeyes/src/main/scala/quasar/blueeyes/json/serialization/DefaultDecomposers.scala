@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -48,7 +48,7 @@ trait DefaultDecomposers {
   }
 
   implicit val FloatDecomposer: Decomposer[Float] = new Decomposer[Float] {
-    def decompose(tvalue: Float): JValue = JNum(BigDecimal(tvalue, MathContext.UNLIMITED))
+    def decompose(tvalue: Float): JValue = JNum(BigDecimal.decimal(tvalue, MathContext.UNLIMITED))
   }
 
   implicit val DoubleDecomposer: Decomposer[Double] = new Decomposer[Double] {

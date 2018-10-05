@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,10 +17,12 @@
 package quasar.yggdrasil
 
 import quasar.blueeyes.json._
-import scalaz.syntax.comonad._
-import quasar.precog.TestSupport._
+import quasar.pkg.tests._
+import quasar.precog.common._
 
-trait CrossSpec[M[+_]] extends TableModuleTestSupport[M] with SpecificationLike with ScalaCheck {
+import cats.effect.IO
+
+trait CrossSpec extends TableModuleTestSupport with SpecificationLike with ScalaCheck {
   import SampleData._
   import trans._
 
@@ -34,19 +36,19 @@ trait CrossSpec[M[+_]] extends TableModuleTestSupport[M] with SpecificationLike 
       case v                      => v
     }
 
-    val expected: Stream[JValue] = for {
+    val expected: Stream[RValue] = for {
       lv <- l.data
       rv <- r.data
     } yield {
-      JObject(JField("left", removeUndefined(lv)) :: JField("right", removeUndefined(rv)) :: Nil)
+      RValue.fromJValueRaw(JObject(JField("left", removeUndefined(lv.toJValueRaw)) :: JField("right", removeUndefined(rv.toJValueRaw)) :: Nil))
     }
 
     val result = ltable.cross(rtable)(
       InnerObjectConcat(WrapObject(Leaf(SourceLeft), "left"), WrapObject(Leaf(SourceRight), "right"))
     )
 
-    val jsonResult: M[Stream[JValue]] = toJson(result)
-    jsonResult.copoint must_== expected
+    val jsonResult: IO[Stream[RValue]] = toJson(result)
+    jsonResult.unsafeRunSync must_== expected
   }
 
   def testSimpleCross = {

@@ -1,83 +1,63 @@
 language: scala
-scala: 2.11.8
+scala: 2.12.4 # this needs to be in sync with Scala version used in .appveyor.yml
 jdk: oraclejdk8
+
 dist: trusty
 sudo: required
 
-services:
-  - docker
+env:
+  global:
+    - COURSIER_PROGRESS=0
+    - SBT=./sbt
+    - BUILD_HACK_TIMEOUT=60
 
-# travis installs postgres by default this will stop and free up the psql port
-# needed by the  postgreql container
-before_install:
-  - sudo /etc/init.d/postgresql stop
+    # base64 encoded just for obfuscation
+    - DISCORD_WEBHOOK_TOKENS="$(echo 'NDMxMTk3MzQwNDE0NTA5MDY2L3o1TlVmbWtibXFua250Q0FMcEhNbWo4c1ZJaDZwa2UwN3d4QVZic0ZfbzJuYmEyU08zN082UC04bnpFckNHWVpWNlZuCg==' | base64 --decode)"
 
-# create all the docker containers we need for IT testing
-install:
-  - cd $TRAVIS_BUILD_DIR/docker/scripts
-  - ./initContainer quasar_metastore
-  - ./initContainer quasar_$CONNECTOR
-  - docker-compose ps
+    # ENCRYPTION_PASSWORD
+    - secure: "YIfY4y2fR4jMOim40r7m4zIHDXI6sXIk+J8qaPJyfPx/cmDRKs5DfbHddb0Rp7Ny0tnRiwRZDt+pEZvfSiuxCIeQQ6/2vi76Jg1iK2ZMO7ZP2wFg5m2t3T+vRIx9WVBr3JVmI4lPuP9FCNTUmxHIzYgozgZM+KdhticW5k3BABY="
+    # GITHUB_ACCESS_TOKEN
+    - secure: "Cuba400Wq7DxPe/1fXWlgI/aS3oXTj64jQJY588dQZ84wLDnTNbdP4SgZMcGJgzVs4f14PTIGTkK5xJ6WjNLIrUVxBhsB5sRRlX/oMkTVo3ALl/+/q6XXzG6JFuzc2lOHAiryuqQ4ndVNbwSmm5u9u/Krgl2lUlrDqKhhq6LdJI="
+    # GITHUB_TOKEN
+    - secure: "lH3uaFqFM+4fXAQiF+cQ6eo89HI4Vc7QuIaVUuA7xcVTkPy52cWg6ivrX1ZIG1HQXo5UOFEJDxPmGyeobF/8BrcgacigvEbiHkVhiXzRnWtpZYEPFac3cUmnKd8VRgYA68gXX3pBuF29v+v91MmznDiuBkfKn8r7z/sTykUdHV4="
 
-# run db config scripts and populate the it/testing.conf file
 before_script:
-  - cd $TRAVIS_BUILD_DIR/docker/scripts
-  - ./setupContainers -c quasar_metastore
-  - ./setupContainers -c quasar_$CONNECTOR
-  - ./assembleTestingConf -c quasar_metastore
-  - ./assembleTestingConf -i quasar_$CONNECTOR
-  - cd $TRAVIS_BUILD_DIR/it && cat testing.conf
+  # confirm we are using travis' premium VMs
+  - nproc 2>/dev/null && python -c 'import multiprocessing;print multiprocessing.cpu_count()'
+  - free && cat /proc/meminfo
 
-# export some needed env vars, build, then publish and tag resources
 script:
-  - cd $TRAVIS_BUILD_DIR
-  - export ANSI_RED ANSI_GREEN ANSI_RESET ANSI_CLEAR
-  - export -f travis_wait travis_jigger
-  - ./scripts/build
-  - ./scripts/quasarPublishAndTag
+  - set -e
 
-after_success:
-  - ./scripts/afterSuccess
+  - |-
+    ./sbt -DisIsolatedEnv=${ISOLATED_ENV:=false} ++$TRAVIS_SCALA_VERSION \
+      checkHeaders \
+      test:compile \
+      "testOnly -- failtrace" \
+      "exclusive:testOnly -- failtrace" \
+      repl/assembly
 
-notifications:
-  irc:
-    template:
-      - "%{result}: %{repository_slug}#%{build_number} (%{branch}@%{commit}: %{author})
-        %{build_url}"
-  slack:
-    secure: k7tat0w0CSokOD1K0nfPhFY9Z3xkYHXboNlW1WgNAjqtq56hQsfQWhN8z6cXRAs/CgT8ME0K//wDN/HgdG91/aVh1smv/hxMa6P/o70GclhvUkB4iTis3kv9la3Kf2w3K5pbWJ6fFLdAZqc5i9XpQ8q+d7UTgwAxj1ZcYwaCSVo=
+  - scripts/testJar
+
+  - |-
+    if [ $TRAVIS_PULL_REQUEST == "false" ] && [[ "$TRAVIS_BRANCH" =~ backport/v.*|master ]]; then
+      scripts/quasarPublishAndTag
+    fi
+
+after_success: scripts/discordTravisPost success https://discordapp.com/api/webhooks/$DISCORD_WEBHOOK_TOKENS
+
+after_failure: scripts/discordTravisPost failure https://discordapp.com/api/webhooks/$DISCORD_WEBHOOK_TOKENS
 
 branches:
   except:
     - /^v\d+\.\d+\.\d+$/ # don't redundantly build tags
-    - mimir
 
 cache:
   directories:
     - $HOME/.coursier/cache
     - $HOME/.ivy2/cache
     - $HOME/.sbt
-    - target
-    - .targets
-    - project/project/target
-    - project/target
 
 before_cache:
   - find "$HOME/.sbt/" -name '*.lock' -print0 | xargs -0 rm
   - find "$HOME/.ivy2/" -name 'ivydata-*.properties' -print0 | xargs -0 rm
-
-env:
-  matrix:
-    - CONNECTOR=mongodb_2_6
-    - CONNECTOR=marklogic_xml
-    - CONNECTOR=marklogic_json
-    - CONNECTOR=couchbase
-    - CONNECTOR=mongodb_3_0
-    - CONNECTOR=mongodb_read_only
-    - CONNECTOR=mongodb_3_2
-    - CONNECTOR=mongodb_3_4
-    - CONNECTOR=postgresql
-    - CONNECTOR=spark_local_test
-
-  global:
-    - COURSIER_PROGRESS=0

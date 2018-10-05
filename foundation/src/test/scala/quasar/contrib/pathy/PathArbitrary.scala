@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,6 +32,9 @@ trait PathArbitrary {
 
   implicit val arbitraryFPath: Arbitrary[FPath] =
     Arbitrary(Gen.oneOf(Arbitrary.arbitrary[AFile], Arbitrary.arbitrary[RFile]))
+
+  implicit val arbitraryDPath: Arbitrary[DPath] =
+    Arbitrary(Gen.oneOf(Arbitrary.arbitrary[ADir], Arbitrary.arbitrary[RDir]))
 
   implicit val shrinkAFile: Shrink[AFile] = Shrink { aFile =>
     if (depth(aFile) <= 1) Stream.empty

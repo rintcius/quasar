@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,13 +16,12 @@
 
 package quasar.niflheim
 
-import quasar.precog.util.PrecogUnit
-
-import java.nio.ByteBuffer
 import java.nio.channels.{ReadableByteChannel, WritableByteChannel}
 
-import scalaz.{Validation, Success, Failure}
+import scalaz.{Validation, Failure}
 import scalaz.syntax.monad._
+
+import java.io.IOException
 
 /**
  * A `VersionedSegmentFormat` wraps formats and is used to deal with multiple
@@ -45,7 +44,7 @@ case class VersionedSegmentFormat(formats: Map[Int, SegmentFormat]) extends Segm
       for {
         _ <- writeVersion(channel)
         _ <- format.writer.writeSegment(channel, segment)
-      } yield PrecogUnit
+      } yield ()
     }
   }
 

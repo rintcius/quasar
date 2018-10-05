@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,34 +17,31 @@
 package quasar.yggdrasil
 
 import quasar.blueeyes._, json._
-import scalaz._, Scalaz._
-import quasar.precog.TestSupport._
+import quasar.pkg.tests._
+import quasar.precog.common.RValue
+import quasar.yggdrasil.table.CScanner
 
-trait TestLib[M[+_]] extends TableModule[M] {
-  def lookupF1(namespace: List[String], name: String): F1
-  def lookupF2(namespace: List[String], name: String): F2
-  def lookupScanner(namespace: List[String], name: String): Scanner
+import cats.effect.IO
+
+trait TestLib extends TableModule {
+  def lookupScanner(namespace: List[String], name: String): CScanner
 }
 
-trait TableModuleTestSupport[M[+_]] extends TableModule[M] with TestLib[M] {
-  implicit def M: Monad[M] with Comonad[M]
-
+trait TableModuleTestSupport extends FNModule with TestLib {
   def fromJson(data: Stream[JValue], maxBlockSize: Option[Int] = None): Table
-  def toJson(dataset: Table): M[Stream[JValue]] = dataset.toJson.map(_.toStream)
+  def toJson(dataset: Table): IO[Stream[RValue]] = dataset.toJson.map(_.toStream)
 
-  def fromSample(sampleData: SampleData, maxBlockSize: Option[Int] = None): Table = fromJson(sampleData.data, maxBlockSize)
+  def fromSample(sampleData: SampleData, maxBlockSize: Option[Int] = None): Table = fromJson(sampleData.data.map(_.toJValueRaw), maxBlockSize)
 }
 
-trait TableModuleSpec[M[+_]] extends SpecificationLike with ScalaCheck {
+trait TableModuleSpec extends SpecificationLike with ScalaCheck {
   import SampleData._
 
-  implicit def M: Monad[M] with Comonad[M]
-
-  def checkMappings(testSupport: TableModuleTestSupport[M]) = {
+  def checkMappings(testSupport: TableModuleTestSupport) = {
     implicit val gen = sample(schema)
     prop { (sample: SampleData) =>
       val dataset = testSupport.fromSample(sample)
-      testSupport.toJson(dataset).copoint.toSet must_== sample.data.toSet
+      testSupport.toJson(dataset).unsafeRunSync.toSet must_== sample.data.toSet
     }
   }
 }

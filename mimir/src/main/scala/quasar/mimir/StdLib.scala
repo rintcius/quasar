@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,70 +16,48 @@
 
 package quasar.mimir
 
-import quasar.blueeyes._
 import quasar.precog.common._
 import quasar.yggdrasil._
 import quasar.yggdrasil.bytecode._
 import quasar.yggdrasil.table._
-import quasar.yggdrasil.execution.EvaluationContext
 
-import scalaz._, Scalaz._
+import cats.effect.IO
+import qdata.time.OffsetDate
+import scalaz._
 
-import java.time.LocalDateTime
+import java.time._
 
-trait TableLibModule[M[+ _]] extends TableModule[M] with TransSpecModule {
+trait TableLibModule extends TableModule with TransSpecModule {
   type Lib <: TableLib
-  implicit def M: Monad[M]
 
   object TableLib {
     private val defaultMorphism1Opcode = new java.util.concurrent.atomic.AtomicInteger(0)
     private val defaultReductionOpcode = new java.util.concurrent.atomic.AtomicInteger(0)
   }
 
-  trait MorphLogger {
-    def info(msg: String): M[Unit]
-    def warn(msg: String): M[Unit]
-    def error(msg: String): M[Unit]
-    def die(): M[Unit]
-  }
-
-  case class MorphContext(evalContext: EvaluationContext, logger: MorphLogger)
-
   trait TableLib extends Library {
     import TableLib._
     import trans._
 
-    lazy val libMorphism1 = _libMorphism1
-    lazy val libMorphism2 = _libMorphism2
-    lazy val lib1         = _lib1
-    lazy val lib2         = _lib2
-    lazy val libReduction = _libReduction
-
-    def _libMorphism1: Set[Morphism1] = Set()
-    def _libMorphism2: Set[Morphism2] = Set()
-    def _lib1: Set[Op1]               = Set()
-    def _lib2: Set[Op2]               = Set()
-    def _libReduction: Set[Reduction] = Set()
-
     trait Morph1Apply {
-      def apply(input: Table, ctx: MorphContext): M[Table]
+      def apply(input: Table): IO[Table]
     }
 
     sealed trait MorphismAlignment
     object MorphismAlignment {
-      case class Match(morph: M[Morph1Apply])                                                    extends MorphismAlignment
-      case class Cross(morph: M[Morph1Apply])                                                    extends MorphismAlignment
-      case class Custom(alignment: IdentityPolicy, f: (Table, Table) => M[(Table, Morph1Apply)]) extends MorphismAlignment
+      case class Match(morph: IO[Morph1Apply]) extends MorphismAlignment
+      case class Cross(morph: IO[Morph1Apply]) extends MorphismAlignment
+      case class Custom(alignment: IdentityPolicy, f: (Table, Table) => IO[(Table, Morph1Apply)]) extends MorphismAlignment
     }
 
-    abstract class Morphism1(val namespace: Vector[String], val name: String) extends Morphism1Like with Morph1Apply {
-      val opcode: Int       = defaultMorphism1Opcode.getAndIncrement
+    abstract class Morphism1 extends Morphism1Like with Morph1Apply {
+      val opcode: Int = defaultMorphism1Opcode.getAndIncrement
       val rowLevel: Boolean = false
     }
 
-    abstract class Morphism2(val namespace: Vector[String], val name: String) extends Morphism2Like {
-      val opcode: Int           = defaultMorphism1Opcode.getAndIncrement
-      val rowLevel: Boolean     = false
+    abstract class Morphism2 extends Morphism2Like {
+      val opcode: Int = defaultMorphism1Opcode.getAndIncrement
+      val rowLevel: Boolean = false
       val multivariate: Boolean = false
 
       /**
@@ -90,93 +68,106 @@ trait TableLibModule[M[+ _]] extends TableModule[M] with TransSpecModule {
       def alignment: MorphismAlignment
     }
 
-    abstract class Op1(namespace: Vector[String], name: String) extends Morphism1(namespace, name) with Op1Like {
-      def spec[A <: SourceType](ctx: MorphContext)(source: TransSpec[A]): TransSpec[A]
+    abstract class Op1 extends Morphism1 with Op1Like {
+      def spec[A <: SourceType](source: TransSpec[A]): TransSpec[A]
 
       def fold[A](op1: Op1 => A, op1F1: Op1F1 => A): A = op1(this)
-      def apply(table: Table, ctx: MorphContext)       = sys.error("morphism application of an op1 is wrong")
+      def apply(table: Table) = sys.error("morphism application of an op1 is wrong")
     }
 
-    abstract class Op1F1(namespace: Vector[String], name: String) extends Op1(namespace, name) {
-      def spec[A <: SourceType](ctx: MorphContext)(source: TransSpec[A]): TransSpec[A] =
-        trans.Map1(source, f1(ctx))
+    abstract class Op1F1 extends Op1 {
+      def spec[A <: SourceType](source: TransSpec[A]): TransSpec[A] =
+        trans.Map1(source, f1)
 
-      def f1(ctx: MorphContext): F1
+      def f1: CF1
 
       override val rowLevel: Boolean = true
 
       override def fold[A](op1: Op1 => A, op1F1: Op1F1 => A): A = op1F1(this)
     }
 
-    abstract class Op2(namespace: Vector[String], name: String) extends Morphism2(namespace, name) with Op2Like {
-      val alignment = MorphismAlignment.Match(M.point {
+    abstract class Op2 extends Morphism2 with Op2Like {
+      val alignment = MorphismAlignment.Match(IO.pure {
         new Morph1Apply {
-          def apply(input: Table, ctx: MorphContext) = sys.error("morphism application of an op2 is wrong")
+          def apply(input: Table) = sys.error("morphism application of an op2 is wrong")
         }
       })
 
-      def spec[A <: SourceType](ctx: MorphContext)(left: TransSpec[A], right: TransSpec[A]): TransSpec[A]
+      def spec[A <: SourceType](left: TransSpec[A], right: TransSpec[A]): TransSpec[A]
 
       def fold[A](op2: Op2 => A, op2F2: Op2F2 => A): A = op2(this)
     }
 
     trait Op2Array extends Op2 {
-      def spec[A <: SourceType](ctx: MorphContext)(left: TransSpec[A], right: TransSpec[A]): TransSpec[A] = {
+      def spec[A <: SourceType](left: TransSpec[A], right: TransSpec[A]): TransSpec[A] = {
         trans.MapWith(trans.InnerArrayConcat(trans.WrapArray(trans.Map1(left, prepare)), trans.WrapArray(trans.Map1(right, prepare))), mapper)
       }
 
-      def prepare: F1
+      def prepare: CF1
 
-      def mapper: Mapper
+      def mapper: CMapper
     }
 
-    abstract class Op2F2(namespace: Vector[String], name: String) extends Op2(namespace, name) {
-      def spec[A <: SourceType](ctx: MorphContext)(left: TransSpec[A], right: TransSpec[A]): TransSpec[A] =
-        trans.Map2(left, right, f2(ctx))
+    abstract class Op2F2 extends Op2 {
+      def spec[A <: SourceType](left: TransSpec[A], right: TransSpec[A]): TransSpec[A] =
+        trans.Map2(left, right, f2)
 
-      def f2(ctx: MorphContext): F2
+      def f2: CF2
 
       override val rowLevel: Boolean = true
 
       override def fold[A](op2: Op2 => A, op2F2: Op2F2 => A): A = op2F2(this)
     }
 
-    abstract class Reduction(val namespace: Vector[String], val name: String)(implicit M: Monad[M]) extends ReductionLike with Morph1Apply {
-      val opcode: Int       = defaultReductionOpcode.getAndIncrement
+    abstract class OpNFN {
+      def spec2[A <: SourceType](left: TransSpec[A], right: TransSpec[A]): TransSpec[A] =
+        spec(trans.OuterArrayConcat(trans.WrapArray(left), trans.WrapArray(right)))
+
+      def spec[A <: SourceType](source: TransSpec[A]): TransSpec[A] =
+        trans.MapN(source, fn)
+
+      def fn: CFN
+    }
+
+    abstract class Reduction extends ReductionLike with Morph1Apply {
+      val opcode: Int = defaultReductionOpcode.getAndIncrement
       val rowLevel: Boolean = false
 
       type Result
 
       def monoid: Monoid[Result]
-      def reducer(ctx: MorphContext): Reducer[Result]
+      def reducer: Reducer[Result]
       def extract(res: Result): Table
       def extractValue(res: Result): Option[RValue]
 
-      def apply(table: Table, ctx: MorphContext) = table.reduce(reducer(ctx))(monoid) map extract
+      def apply(table: Table): IO[Table] = table.reduce(reducer)(monoid) map extract
     }
 
-    def coalesce(reductions: List[(Reduction, Option[JType => JType])]): Reduction
+    def coalesce(reductions: List[(Reduction, Option[(JType => JType, ColumnRef => Option[ColumnRef])])]): Reduction
   }
 }
 
-trait ColumnarTableLibModule[M[+ _]] extends TableLibModule[M] with ColumnarTableModule[M] {
+trait ColumnarTableLibModule extends TableLibModule with ColumnarTableModule {
   trait ColumnarTableLib extends TableLib {
-    class WrapArrayTableReduction(val r: Reduction, val jtypef: Option[JType => JType]) extends Reduction(r.namespace, r.name) {
+    class WrapArrayTableReduction(val r: Reduction, val jtypef: Option[(JType => JType, ColumnRef => Option[ColumnRef])]) extends Reduction {
       type Result = r.Result
       val tpe = r.tpe
 
       def monoid = r.monoid
-      def reducer(ctx: MorphContext) = new CReducer[Result] {
+      def reducer = new CReducer[Result] {
         def reduce(schema: CSchema, range: Range): Result = {
           jtypef match {
-            case Some(f) =>
+            case Some((ft, fr)) =>
               val cols0 = new CSchema {
-                def columnRefs          = schema.columnRefs
-                def columns(tpe: JType) = schema.columns(f(tpe))
+                def columnRefs = schema.columnRefs
+                def columnMap(tpe: JType) =
+                  schema.columnMap(ft(tpe)) flatMap {
+                    case (ref, col) => fr(ref).map(_ -> col).toList
+                  }
               }
-              r.reducer(ctx).reduce(cols0, range)
+              r.reducer.reduce(cols0, range)
             case None =>
-              r.reducer(ctx).reduce(schema, range)
+              r.reducer.reduce(schema, range)
           }
         }
       }
@@ -187,24 +178,27 @@ trait ColumnarTableLibModule[M[+ _]] extends TableLibModule[M] with ColumnarTabl
       def extractValue(res: Result) = r.extractValue(res)
     }
 
-    def coalesce(reductions: List[(Reduction, Option[JType => JType])]): Reduction = {
-      def rec(reductions: List[(Reduction, Option[JType => JType])], acc: Reduction): Reduction = {
+    def coalesce(reductions: List[(Reduction, Option[(JType => JType, ColumnRef => Option[ColumnRef])])]): Reduction = {
+      def rec(reductions: List[(Reduction, Option[(JType => JType, ColumnRef => Option[ColumnRef])])], acc: Reduction): Reduction = {
         reductions match {
           case (x, jtypef) :: xs => {
-            val impl = new Reduction(Vector(), "") {
+            val impl = new Reduction {
               type Result = (x.Result, acc.Result)
 
-              def reducer(ctx: MorphContext) = new CReducer[Result] {
+              def reducer = new CReducer[Result] {
                 def reduce(schema: CSchema, range: Range): Result = {
                   jtypef match {
-                    case Some(f) =>
+                    case Some((ft, fr)) =>
                       val cols0 = new CSchema {
-                        def columnRefs          = schema.columnRefs
-                        def columns(tpe: JType) = schema.columns(f(tpe))
+                        def columnRefs = schema.columnRefs
+                        def columnMap(tpe: JType) =
+                          schema.columnMap(ft(tpe)) flatMap {
+                            case (ref, col) => fr(ref).map(_ -> col).toList
+                          }
                       }
-                      (x.reducer(ctx).reduce(cols0, range), acc.reducer(ctx).reduce(schema, range))
+                      (x.reducer.reduce(cols0, range), acc.reducer.reduce(schema, range))
                     case None =>
-                      (x.reducer(ctx).reduce(schema, range), acc.reducer(ctx).reduce(schema, range))
+                      (x.reducer.reduce(schema, range), acc.reducer.reduce(schema, range))
                   }
                 }
               }
@@ -245,20 +239,15 @@ trait ColumnarTableLibModule[M[+ _]] extends TableLibModule[M] with ColumnarTabl
   }
 }
 
-trait StdLibModule[M[+ _]]
-    extends InfixLibModule[M]
-    with UnaryLibModule[M]
-    with ArrayLibModule[M]
-    with MathLibModule[M]
-    with TypeLibModule[M]
-    with StringLibModule[M]
-    with StatsLibModule[M]
-    with SummaryLibModule[M]
-    with NormalizationLibModule[M]
-    with ClusteringLibModule[M]
-    with RandomForestLibModule[M]
-    with FSLibModule[M]
-    with RandomLibModule[M] {
+trait StdLibModule
+    extends InfixLibModule
+    with UnaryLibModule
+    with ArrayLibModule
+    with MathLibModule
+    with TypeLibModule
+    with TimeLibModule
+    with StringLibModule
+    with ReductionLibModule {
   type Lib <: StdLib
 
   trait StdLib
@@ -267,14 +256,9 @@ trait StdLibModule[M[+ _]]
       with ArrayLib
       with MathLib
       with TypeLib
+      with TimeLib
       with StringLib
-      with StatsLib
-      with SummaryLib
-      with NormalizationLib
-      with ClusteringLib
-      with RandomForestLib
-      with FSLib
-      with RandomLib
+      with ReductionLib
 }
 
 object StdLib {
@@ -282,7 +266,12 @@ object StdLib {
 
   def doubleIsDefined(n: Double) = !(isNaN(n) || isInfinite(n))
 
+  class ConstantStrColumn(c: Column, const: String) extends Map1Column(c) with StrColumn {
+    def apply(row: Int) = const
+  }
+
   object StrFrom {
+
     class L(c: LongColumn, defined: Long => Boolean, f: Long => String) extends Map1Column(c) with StrColumn {
 
       override def isDefinedAt(row: Int) =
@@ -315,7 +304,47 @@ object StdLib {
       def apply(row: Int) = f(c(row))
     }
 
-    class Dt(c: DateColumn, defined: LocalDateTime => Boolean, f: LocalDateTime => String) extends Map1Column(c) with StrColumn {
+    class ODTM(c: OffsetDateTimeColumn, defined: OffsetDateTime => Boolean, f: OffsetDateTime => String) extends Map1Column(c) with StrColumn {
+
+      override def isDefinedAt(row: Int) =
+        super.isDefinedAt(row) && defined(c(row))
+
+      def apply(row: Int) = f(c(row))
+    }
+
+    class OTM(c: OffsetTimeColumn, defined: OffsetTime => Boolean, f: OffsetTime => String) extends Map1Column(c) with StrColumn {
+
+      override def isDefinedAt(row: Int) =
+        super.isDefinedAt(row) && defined(c(row))
+
+      def apply(row: Int) = f(c(row))
+    }
+
+    class ODT(c: OffsetDateColumn, defined: OffsetDate => Boolean, f: OffsetDate => String) extends Map1Column(c) with StrColumn {
+
+      override def isDefinedAt(row: Int) =
+        super.isDefinedAt(row) && defined(c(row))
+
+      def apply(row: Int) = f(c(row))
+    }
+
+    class LDTM(c: LocalDateTimeColumn, defined: LocalDateTime => Boolean, f: LocalDateTime => String) extends Map1Column(c) with StrColumn {
+
+      override def isDefinedAt(row: Int) =
+        super.isDefinedAt(row) && defined(c(row))
+
+      def apply(row: Int) = f(c(row))
+    }
+
+    class LTM(c: LocalTimeColumn, defined: LocalTime => Boolean, f: LocalTime => String) extends Map1Column(c) with StrColumn {
+
+      override def isDefinedAt(row: Int) =
+        super.isDefinedAt(row) && defined(c(row))
+
+      def apply(row: Int) = f(c(row))
+    }
+
+    class LDT(c: LocalDateColumn, defined: LocalDate => Boolean, f: LocalDate => String) extends Map1Column(c) with StrColumn {
 
       override def isDefinedAt(row: Int) =
         super.isDefinedAt(row) && defined(c(row))
@@ -360,12 +389,29 @@ object StdLib {
   }
 
   object LongFrom {
+
+    class D(c: DoubleColumn, defined: Long => Boolean, f: Long => Long) extends Map1Column(c) with LongColumn {
+
+      override def isDefinedAt(row: Int) =
+        super.isDefinedAt(row) && defined(c(row).toLong) && c(row).ceil == c(row)
+
+      def apply(row: Int) = f(c(row).toLong)
+    }
+
     class L(c: LongColumn, defined: Long => Boolean, f: Long => Long) extends Map1Column(c) with LongColumn {
 
       override def isDefinedAt(row: Int) =
         super.isDefinedAt(row) && defined(c(row))
 
       def apply(row: Int) = f(c(row))
+    }
+
+    class N(c: NumColumn, defined: Long => Boolean, f: Long => Long) extends Map1Column(c) with LongColumn {
+
+      override def isDefinedAt(row: Int) =
+        super.isDefinedAt(row) && defined(c(row).toLong)
+
+      def apply(row: Int) = f(c(row).toLong)
     }
 
     class S(c: StrColumn, defined: String => Boolean, f: String => Long) extends Map1Column(c) with LongColumn {
@@ -376,7 +422,47 @@ object StdLib {
       def apply(row: Int) = f(c(row))
     }
 
-    class Dt(c: DateColumn, defined: LocalDateTime => Boolean, f: LocalDateTime => Long) extends Map1Column(c) with LongColumn {
+    class ODTM(c: OffsetDateTimeColumn, defined: OffsetDateTime => Boolean, f: OffsetDateTime => Long) extends Map1Column(c) with LongColumn {
+
+      override def isDefinedAt(row: Int) =
+        super.isDefinedAt(row) && defined(c(row))
+
+      def apply(row: Int) = f(c(row))
+    }
+
+    class OTM(c: OffsetTimeColumn, defined: OffsetTime => Boolean, f: OffsetTime => Long) extends Map1Column(c) with LongColumn {
+
+      override def isDefinedAt(row: Int) =
+        super.isDefinedAt(row) && defined(c(row))
+
+      def apply(row: Int) = f(c(row))
+    }
+
+    class ODT(c: OffsetDateColumn, defined: OffsetDate => Boolean, f: OffsetDate => Long) extends Map1Column(c) with LongColumn {
+
+      override def isDefinedAt(row: Int) =
+        super.isDefinedAt(row) && defined(c(row))
+
+      def apply(row: Int) = f(c(row))
+    }
+
+    class LDTM(c: LocalDateTimeColumn, defined: LocalDateTime => Boolean, f: LocalDateTime => Long) extends Map1Column(c) with LongColumn {
+
+      override def isDefinedAt(row: Int) =
+        super.isDefinedAt(row) && defined(c(row))
+
+      def apply(row: Int) = f(c(row))
+    }
+
+    class LTM(c: LocalTimeColumn, defined: LocalTime => Boolean, f: LocalTime => Long) extends Map1Column(c) with LongColumn {
+
+      override def isDefinedAt(row: Int) =
+        super.isDefinedAt(row) && defined(c(row))
+
+      def apply(row: Int) = f(c(row))
+    }
+
+    class LDT(c: LocalDateColumn, defined: LocalDate => Boolean, f: LocalDate => Long) extends Map1Column(c) with LongColumn {
 
       override def isDefinedAt(row: Int) =
         super.isDefinedAt(row) && defined(c(row))
@@ -542,7 +628,34 @@ object StdLib {
   }
 
   object NumFrom {
+
+    // unsafe!  use only if you know what you're doing
+    class D(c: DoubleColumn, defined: BigDecimal => Boolean, f: BigDecimal => BigDecimal) extends Map1Column(c) with NumColumn {
+
+      override def isDefinedAt(row: Int) =
+        super.isDefinedAt(row) && defined(BigDecimal(c(row)))
+
+      def apply(row: Int) = f(BigDecimal(c(row)))
+    }
+
+    // unsafe!  use only if you know what you're doing
+    class L(c: LongColumn, defined: BigDecimal => Boolean, f: BigDecimal => BigDecimal) extends Map1Column(c) with NumColumn {
+
+      override def isDefinedAt(row: Int) =
+        super.isDefinedAt(row) && defined(BigDecimal(c(row)))
+
+      def apply(row: Int) = f(BigDecimal(c(row)))
+    }
+
     class N(c: NumColumn, defined: BigDecimal => Boolean, f: BigDecimal => BigDecimal) extends Map1Column(c) with NumColumn {
+
+      override def isDefinedAt(row: Int) =
+        super.isDefinedAt(row) && defined(c(row))
+
+      def apply(row: Int) = f(c(row))
+    }
+
+    class S(c: StrColumn, defined: String => Boolean, f: String => BigDecimal) extends Map1Column(c) with NumColumn {
 
       override def isDefinedAt(row: Int) =
         super.isDefinedAt(row) && defined(c(row))
@@ -752,7 +865,7 @@ object StdLib {
       def apply(row: Int) = f(c1(row), c2(row))
     }
 
-    class Dt(c: DateColumn, defined: LocalDateTime => Boolean, f: LocalDateTime => Boolean) extends Map1Column(c) with BoolColumn {
+    class Ldtm(c: LocalDateTimeColumn, defined: LocalDateTime => Boolean, f: LocalDateTime => Boolean) extends Map1Column(c) with BoolColumn {
 
       override def isDefinedAt(row: Int) =
         super.isDefinedAt(row) && defined(c(row))
@@ -760,8 +873,98 @@ object StdLib {
       def apply(row: Int) = f(c(row))
     }
 
-    class DtDt(c1: DateColumn, c2: DateColumn, defined: (LocalDateTime, LocalDateTime) => Boolean, f: (LocalDateTime, LocalDateTime) => Boolean)
+    class LdtmLdtm(c1: LocalDateTimeColumn, c2: LocalDateTimeColumn, defined: (LocalDateTime, LocalDateTime) => Boolean, f: (LocalDateTime, LocalDateTime) => Boolean)
         extends Map2Column(c1, c2)
+        with BoolColumn {
+
+      override def isDefinedAt(row: Int) =
+        super.isDefinedAt(row) && defined(c1(row), c2(row))
+
+      def apply(row: Int) = f(c1(row), c2(row))
+    }
+
+    class Ltm(c: LocalTimeColumn, defined: LocalTime => Boolean, f: LocalTime => Boolean) extends Map1Column(c) with BoolColumn {
+
+      override def isDefinedAt(row: Int) =
+        super.isDefinedAt(row) && defined(c(row))
+
+      def apply(row: Int) = f(c(row))
+    }
+
+    class LtmLtm(c1: LocalTimeColumn, c2: LocalTimeColumn, defined: (LocalTime, LocalTime) => Boolean, f: (LocalTime, LocalTime) => Boolean)
+        extends Map2Column(c1, c2)
+        with BoolColumn {
+
+      override def isDefinedAt(row: Int) =
+        super.isDefinedAt(row) && defined(c1(row), c2(row))
+
+      def apply(row: Int) = f(c1(row), c2(row))
+    }
+
+    class Ldt(c: LocalDateColumn, defined: LocalDate => Boolean, f: LocalDate => Boolean) extends Map1Column(c) with BoolColumn {
+
+      override def isDefinedAt(row: Int) =
+        super.isDefinedAt(row) && defined(c(row))
+
+      def apply(row: Int) = f(c(row))
+    }
+
+    class LdtLdt(c1: LocalDateColumn, c2: LocalDateColumn, defined: (LocalDate, LocalDate) => Boolean, f: (LocalDate, LocalDate) => Boolean)
+        extends Map2Column(c1, c2)
+        with BoolColumn {
+
+      override def isDefinedAt(row: Int) =
+        super.isDefinedAt(row) && defined(c1(row), c2(row))
+
+      def apply(row: Int) = f(c1(row), c2(row))
+    }
+
+    class Odtm(c: OffsetDateTimeColumn, defined: OffsetDateTime => Boolean, f: OffsetDateTime => Boolean) extends Map1Column(c) with BoolColumn {
+
+      override def isDefinedAt(row: Int) =
+        super.isDefinedAt(row) && defined(c(row))
+
+      def apply(row: Int) = f(c(row))
+    }
+
+    class OdtmOdtm(c1: OffsetDateTimeColumn, c2: OffsetDateTimeColumn, defined: (OffsetDateTime, OffsetDateTime) => Boolean, f: (OffsetDateTime, OffsetDateTime) => Boolean)
+      extends Map2Column(c1, c2)
+        with BoolColumn {
+
+      override def isDefinedAt(row: Int) =
+        super.isDefinedAt(row) && defined(c1(row), c2(row))
+
+      def apply(row: Int) = f(c1(row), c2(row))
+    }
+
+    class Otm(c: OffsetTimeColumn, defined: OffsetTime => Boolean, f: OffsetTime => Boolean) extends Map1Column(c) with BoolColumn {
+
+      override def isDefinedAt(row: Int) =
+        super.isDefinedAt(row) && defined(c(row))
+
+      def apply(row: Int) = f(c(row))
+    }
+
+    class OtmOtm(c1: OffsetTimeColumn, c2: OffsetTimeColumn, defined: (OffsetTime, OffsetTime) => Boolean, f: (OffsetTime, OffsetTime) => Boolean)
+      extends Map2Column(c1, c2)
+        with BoolColumn {
+
+      override def isDefinedAt(row: Int) =
+        super.isDefinedAt(row) && defined(c1(row), c2(row))
+
+      def apply(row: Int) = f(c1(row), c2(row))
+    }
+
+    class Odt(c: OffsetDateColumn, defined: OffsetDate => Boolean, f: OffsetDate => Boolean) extends Map1Column(c) with BoolColumn {
+
+      override def isDefinedAt(row: Int) =
+        super.isDefinedAt(row) && defined(c(row))
+
+      def apply(row: Int) = f(c(row))
+    }
+
+    class OdtOdt(c1: OffsetDateColumn, c2: OffsetDateColumn, defined: (OffsetDate, OffsetDate) => Boolean, f: (OffsetDate, OffsetDate) => Boolean)
+      extends Map2Column(c1, c2)
         with BoolColumn {
 
       override def isDefinedAt(row: Int) =
@@ -771,9 +974,36 @@ object StdLib {
     }
   }
 
-  val StrAndDateT = JUnionT(JTextT, JDateT)
+  val StrAndLocalDateTimeT = JUnionT(JTextT, JLocalDateTimeT)
+  val StrAndLocalTimeT = JUnionT(JTextT, JLocalTimeT)
+  val StrAndLocalDateT = JUnionT(JTextT, JLocalDateT)
 
-  def dateToStrCol(c: DateColumn): StrColumn = new StrColumn {
+  def offsetDateTimeToStrCol(c: OffsetDateTimeColumn): StrColumn = new StrColumn {
+    def isDefinedAt(row: Int): Boolean = c.isDefinedAt(row)
+    def apply(row: Int): String        = c(row).toString
+  }
+
+  def offsetTimeToStrCol(c: OffsetTimeColumn): StrColumn = new StrColumn {
+    def isDefinedAt(row: Int): Boolean = c.isDefinedAt(row)
+    def apply(row: Int): String        = c(row).toString
+  }
+
+  def offsetDateToStrCol(c: OffsetDateColumn): StrColumn = new StrColumn {
+    def isDefinedAt(row: Int): Boolean = c.isDefinedAt(row)
+    def apply(row: Int): String        = c(row).toString
+  }
+
+  def localDateTimeToStrCol(c: LocalDateTimeColumn): StrColumn = new StrColumn {
+    def isDefinedAt(row: Int): Boolean = c.isDefinedAt(row)
+    def apply(row: Int): String        = c(row).toString
+  }
+
+  def localTimeToStrCol(c: LocalTimeColumn): StrColumn = new StrColumn {
+    def isDefinedAt(row: Int): Boolean = c.isDefinedAt(row)
+    def apply(row: Int): String        = c(row).toString
+  }
+
+  def localDateToStrCol(c: LocalDateColumn): StrColumn = new StrColumn {
     def isDefinedAt(row: Int): Boolean = c.isDefinedAt(row)
     def apply(row: Int): String        = c(row).toString
   }

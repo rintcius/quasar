@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,28 +17,31 @@
 package quasar.yggdrasil
 package table
 
-import quasar.yggdrasil.bytecode.JType
-import quasar.blueeyes._
+import quasar.precog.BitSet
 import quasar.precog.common._
-import quasar.precog.util._
+import qdata.time.{DateTimeInterval, OffsetDate}
+import quasar.yggdrasil.bytecode.JType
 
-import java.time.LocalDateTime
+import java.time.{LocalDate, LocalDateTime, LocalTime, OffsetDateTime, OffsetTime}
+
+import cats.effect.IO
 
 sealed trait CFId
-case class LeafCFId(identity: String)            extends CFId
-case class ComposedCFId(l: CFId, r: CFId)        extends CFId
-case class PartialLeftCFId(cv: CValue, r: CFId)  extends CFId
+case object LeafCFId extends CFId
+case class ComposedCFId(l: CFId, r: CFId) extends CFId
+case class PartialLeftCFId(cv: CValue, r: CFId) extends CFId
 case class PartialRightCFId(l: CFId, cv: CValue) extends CFId
 
 object CFId {
-  def apply(identity: String) = LeafCFId(identity)
+  val apply = LeafCFId
 }
 
 trait CF {
   def identity: CFId
+
   override final def equals(other: Any): Boolean = other match {
     case cf: CF => identity == cf.identity
-    case _      => false
+    case _ => false
   }
 
   override final def hashCode: Int = identity.hashCode
@@ -64,16 +67,18 @@ trait CF1 extends CF { self =>
 }
 
 object CF1 {
-  def apply(name: String)(f: Column => Option[Column]): CF1 = apply(CFId(name))(f)
-  def apply(id: CFId)(f: Column => Option[Column]): CF1 = new CF1 {
+  def apply(f: Column => Option[Column]): CF1 = fromCF(CFId.apply)(f)
+
+  def fromCF(id: CFId)(f: Column => Option[Column]): CF1 = new CF1 {
     def apply(c: Column) = f(c)
     val identity = id
   }
 }
 
 object CF1P {
-  def apply(name: String)(f: PartialFunction[Column, Column]): CF1 = apply(CFId(name))(f)
-  def apply(id: CFId)(f: PartialFunction[Column, Column]): CF1 = new CF1 {
+  def apply(f: PartialFunction[Column, Column]): CF1 = fromCF(CFId.apply)(f)
+
+  def fromCF(id: CFId)(f: PartialFunction[Column, Column]): CF1 = new CF1 {
     def apply(c: Column) = f.lift(c)
     val identity = id
   }
@@ -100,31 +105,56 @@ trait CF2 extends CF { self =>
 }
 
 object CF2 {
-  def apply(id: String)(f: (Column, Column) => Option[Column]): CF2 = apply(CFId(id))(f)
-  def apply(id: CFId)(f: (Column, Column) => Option[Column]): CF2 = new CF2 {
+  def apply(f: (Column, Column) => Option[Column]): CF2 = fromCF(CFId.apply)(f)
+
+  def fromCF(id: CFId)(f: (Column, Column) => Option[Column]): CF2 = new CF2 {
     def apply(c1: Column, c2: Column) = f(c1, c2)
     val identity = id
   }
 }
 
 object CF2P {
-  def apply(id: String)(f: PartialFunction[(Column, Column), Column]): CF2 = apply(CFId(id))(f)
-  def apply(id: CFId)(f: PartialFunction[(Column, Column), Column]): CF2 = new CF2 {
+  def apply(f: PartialFunction[(Column, Column), Column]): CF2 = fromCF(CFId.apply)(f)
+
+  def fromCF(id: CFId)(f: PartialFunction[(Column, Column), Column]): CF2 = new CF2 {
     def apply(c1: Column, c2: Column) = f.lift((c1, c2))
     val identity = id
   }
 }
 
+trait CFN extends CF {
+  def apply(columns: List[Column]): Option[Column]
+}
+
+object CFN {
+  def apply(f: List[Column] => Option[Column]): CFN = fromCF(CFId.apply)(f)
+
+  def fromCF(id: CFId)(f: List[Column] => Option[Column]): CFN = new CFN {
+    def apply(columns: List[Column]): Option[Column] = f(columns)
+    val identity = id
+  }
+}
+
+object CFNP {
+  def apply(f: PartialFunction[List[Column], Column]): CFN = fromCF(CFId.apply)(f)
+
+  def fromCF(id: CFId)(f: PartialFunction[List[Column], Column]): CFN = new CFN {
+    private val lifted: List[Column] => Option[Column] = f.lift
+    def apply(columns: List[Column]): Option[Column] = lifted(columns)
+    val identity = id
+  }
+}
+
 object CF2Array {
-  def apply[A, M[+ _]](name: String)(pf: PartialFunction[(Column, Column, Range), (CType, Array[Array[A]], BitSet)]): CMapper[M] = new ArrayMapperS[M] {
+  def apply[A](pf: PartialFunction[(Column, Column, Range), (CType, Array[Array[A]], BitSet)]): CMapper = new ArrayMapperS {
     def apply(columns0: Map[ColumnRef, Column], range: Range) = {
       for {
         (ColumnRef(CPath(CPathIndex(0)), _), col1) <- columns0
         (ColumnRef(CPath(CPathIndex(1)), _), col2) <- columns0
-        if pf isDefinedAt (col1, col2, range)
+        if pf.isDefinedAt((col1, col2, range))
       } yield {
         val (tpe, cols, defined) = pf((col1, col2, range))
-        tpe -> (cols.asInstanceOf[Array[Array[_]]], defined)
+        tpe -> (cols.asInstanceOf[Array[Array[_]]] -> defined)
       }
     }
   }
@@ -136,51 +166,53 @@ trait CScanner {
   def scan(a: A, cols: Map[ColumnRef, Column], range: Range): (A, Map[ColumnRef, Column])
 }
 
-sealed trait CMapper[M[+ _]] {
-  def fold[A](f: CMapperS[M] => A, g: CMapperM[M] => A): A
+sealed trait CMapper {
+  def fold[A](f: CMapperS => A, g: CMapperM => A): A
 }
 
-trait CMapperS[M[+ _]] extends CMapper[M] {
-  final def fold[A](f: CMapperS[M] => A, g: CMapperM[M] => A): A = f(this)
+trait CMapperS extends CMapper {
+  final def fold[A](f: CMapperS => A, g: CMapperM => A): A = f(this)
 
   def map(cols: Map[ColumnRef, Column], range: Range): Map[ColumnRef, Column]
 }
 
-trait CMapperM[M[+ _]] extends CMapper[M] {
-  final def fold[A](f: CMapperS[M] => A, g: CMapperM[M] => A): A = g(this)
+trait CMapperM extends CMapper {
+  final def fold[A](f: CMapperS => A, g: CMapperM => A): A = g(this)
 
-  def map(cols: Map[ColumnRef, Column], range: Range): M[Map[ColumnRef, Column]]
+  def map(cols: Map[ColumnRef, Column], range: Range): IO[Map[ColumnRef, Column]]
 }
 
 trait CSchema {
   def columnRefs: Set[ColumnRef]
-  def columns(jtype: JType): Set[Column]
+  def columnMap(jtype: JType): Map[ColumnRef, Column]
+  final def columns(jtype: JType): Set[Column] = columnMap(jtype).values.toSet
 }
 
 trait CReducer[A] {
   def reduce(schema: CSchema, range: Range): A
 }
 
-trait ArrayMapperS[M[+ _]] extends CMapperS[M] {
+trait ArrayMapperS extends CMapperS {
   def map(columns0: Map[ColumnRef, Column], range: Range): Map[ColumnRef, Column] = {
     val results = this(columns0, range)
 
     val columns = results flatMap {
-      case (tpe @ CString, (cols0, defined)) => {
+      case (tpe, (cols0, defined)) if tpe eq CString => {
         val max  = maxIds(cols0, defined)
         val cols = cols0.asInstanceOf[Array[Array[String]]]
 
         val columns: Map[ColumnRef, Column] = (0 until max).map({ i =>
-          ColumnRef(CPath(CPathIndex(i)), tpe) -> new StrColumn {
-            def isDefinedAt(row: Int) = defined.get(row) && i < cols(row).length
-            def apply(row: Int)       = cols(row)(i)
-          }
+          ColumnRef(CPath(CPathIndex(i)), tpe) ->
+            new StrColumn {
+              def isDefinedAt(row: Int) = defined.get(row) && i < cols(row).length
+              def apply(row: Int)       = cols(row)(i)
+            }
         })(collection.breakOut)
 
         columns
       }
 
-      case (tpe @ CBoolean, (cols0, defined)) => {
+      case (tpe, (cols0, defined)) if tpe eq CBoolean => {
         val max  = maxIds(cols0, defined)
         val cols = cols0.asInstanceOf[Array[Array[Boolean]]]
 
@@ -194,7 +226,7 @@ trait ArrayMapperS[M[+ _]] extends CMapperS[M] {
         columns
       }
 
-      case (tpe @ CLong, (cols0, defined)) => {
+      case (tpe, (cols0, defined)) if tpe eq CLong => {
         val max  = maxIds(cols0, defined)
         val cols = cols0.asInstanceOf[Array[Array[Long]]]
 
@@ -208,7 +240,7 @@ trait ArrayMapperS[M[+ _]] extends CMapperS[M] {
         columns
       }
 
-      case (tpe @ CDouble, (cols0, defined)) => {
+      case (tpe, (cols0, defined)) if tpe eq CDouble => {
         val max  = maxIds(cols0, defined)
         val cols = cols0.asInstanceOf[Array[Array[Double]]]
 
@@ -222,7 +254,7 @@ trait ArrayMapperS[M[+ _]] extends CMapperS[M] {
         columns
       }
 
-      case (tpe @ CNum, (cols0, defined)) => {
+      case (tpe, (cols0, defined)) if tpe eq CNum => {
         val max  = maxIds(cols0, defined)
         val cols = cols0.asInstanceOf[Array[Array[BigDecimal]]]
 
@@ -236,7 +268,7 @@ trait ArrayMapperS[M[+ _]] extends CMapperS[M] {
         columns
       }
 
-      case (tpe @ CNull, (cols0, defined)) => {
+      case (tpe, (cols0, defined)) if tpe eq CNull => {
         val max  = maxIds(cols0, defined)
         val cols = cols0.asInstanceOf[Array[Array[Unit]]]
 
@@ -249,7 +281,7 @@ trait ArrayMapperS[M[+ _]] extends CMapperS[M] {
         columns
       }
 
-      case (tpe @ CEmptyObject, (cols0, defined)) => {
+      case (tpe, (cols0, defined)) if tpe eq CEmptyObject => {
         val max  = maxIds(cols0, defined)
         val cols = cols0.asInstanceOf[Array[Array[Unit]]]
 
@@ -262,7 +294,7 @@ trait ArrayMapperS[M[+ _]] extends CMapperS[M] {
         columns
       }
 
-      case (tpe @ CEmptyArray, (cols0, defined)) => {
+      case (tpe, (cols0, defined)) if tpe eq CEmptyArray => {
         val max  = maxIds(cols0, defined)
         val cols = cols0.asInstanceOf[Array[Array[Unit]]]
 
@@ -275,12 +307,12 @@ trait ArrayMapperS[M[+ _]] extends CMapperS[M] {
         columns
       }
 
-      case (tpe @ CDate, (cols0, defined)) => {
+      case (tpe, (cols0, defined)) if tpe eq COffsetDateTime => {
         val max  = maxIds(cols0, defined)
-        val cols = cols0.asInstanceOf[Array[Array[LocalDateTime]]]
+        val cols = cols0.asInstanceOf[Array[Array[OffsetDateTime]]]
 
         val columns: Map[ColumnRef, Column] = (0 until max).map({ i =>
-          ColumnRef(CPath(CPathIndex(i)), tpe) -> new DateColumn {
+          ColumnRef(CPath(CPathIndex(i)), tpe) -> new OffsetDateTimeColumn {
             def isDefinedAt(row: Int) = defined.get(row) && i < cols(row).length
             def apply(row: Int)       = cols(row)(i)
           }
@@ -289,12 +321,82 @@ trait ArrayMapperS[M[+ _]] extends CMapperS[M] {
         columns
       }
 
-      case (tpe @ CPeriod, (cols0, defined)) => {
+      case (tpe, (cols0, defined)) if tpe eq COffsetTime => {
         val max  = maxIds(cols0, defined)
-        val cols = cols0.asInstanceOf[Array[Array[Period]]]
+        val cols = cols0.asInstanceOf[Array[Array[OffsetTime]]]
 
         val columns: Map[ColumnRef, Column] = (0 until max).map({ i =>
-          ColumnRef(CPath(CPathIndex(i)), tpe) -> new PeriodColumn {
+          ColumnRef(CPath(CPathIndex(i)), tpe) -> new OffsetTimeColumn {
+            def isDefinedAt(row: Int) = defined.get(row) && i < cols(row).length
+            def apply(row: Int)       = cols(row)(i)
+          }
+        })(collection.breakOut)
+
+        columns
+      }
+
+      case (tpe, (cols0, defined)) if tpe eq COffsetDate => {
+        val max  = maxIds(cols0, defined)
+        val cols = cols0.asInstanceOf[Array[Array[OffsetDate]]]
+
+        val columns: Map[ColumnRef, Column] = (0 until max).map({ i =>
+          ColumnRef(CPath(CPathIndex(i)), tpe) -> new OffsetDateColumn {
+            def isDefinedAt(row: Int) = defined.get(row) && i < cols(row).length
+            def apply(row: Int)       = cols(row)(i)
+          }
+        })(collection.breakOut)
+
+        columns
+      }
+
+      case (tpe, (cols0, defined)) if tpe eq CLocalDateTime => {
+        val max  = maxIds(cols0, defined)
+        val cols = cols0.asInstanceOf[Array[Array[LocalDateTime]]]
+
+        val columns: Map[ColumnRef, Column] = (0 until max).map({ i =>
+          ColumnRef(CPath(CPathIndex(i)), tpe) -> new LocalDateTimeColumn {
+            def isDefinedAt(row: Int) = defined.get(row) && i < cols(row).length
+            def apply(row: Int)       = cols(row)(i)
+          }
+        })(collection.breakOut)
+
+        columns
+      }
+
+      case (tpe, (cols0, defined)) if tpe eq CLocalTime => {
+        val max  = maxIds(cols0, defined)
+        val cols = cols0.asInstanceOf[Array[Array[LocalTime]]]
+
+        val columns: Map[ColumnRef, Column] = (0 until max).map({ i =>
+          ColumnRef(CPath(CPathIndex(i)), tpe) -> new LocalTimeColumn {
+            def isDefinedAt(row: Int) = defined.get(row) && i < cols(row).length
+            def apply(row: Int)       = cols(row)(i)
+          }
+        })(collection.breakOut)
+
+        columns
+      }
+
+      case (tpe, (cols0, defined)) if tpe eq CLocalDate => {
+        val max  = maxIds(cols0, defined)
+        val cols = cols0.asInstanceOf[Array[Array[LocalDate]]]
+
+        val columns: Map[ColumnRef, Column] = (0 until max).map({ i =>
+          ColumnRef(CPath(CPathIndex(i)), tpe) -> new LocalDateColumn {
+            def isDefinedAt(row: Int) = defined.get(row) && i < cols(row).length
+            def apply(row: Int)       = cols(row)(i)
+          }
+        })(collection.breakOut)
+
+        columns
+      }
+
+      case (tpe, (cols0, defined)) if tpe eq CInterval => {
+        val max  = maxIds(cols0, defined)
+        val cols = cols0.asInstanceOf[Array[Array[DateTimeInterval]]]
+
+        val columns: Map[ColumnRef, Column] = (0 until max).map({ i =>
+          ColumnRef(CPath(CPathIndex(i)), tpe) -> new IntervalColumn {
             def isDefinedAt(row: Int) = defined.get(row) && i < cols(row).length
             def apply(row: Int)       = cols(row)(i)
           }

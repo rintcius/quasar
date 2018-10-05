@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import quasar.precog.common._
 
 import java.lang.ref.SoftReference
 
+import java.io.{File, FileInputStream, IOException}
 import java.nio.channels._
 
 import scalaz._

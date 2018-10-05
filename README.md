@@ -1,11 +1,6 @@
-[![Build status](https://travis-ci.org/quasar-analytics/quasar.svg?branch=master)](https://travis-ci.org/quasar-analytics/quasar)
-[![Coverage Status](https://coveralls.io/repos/quasar-analytics/quasar/badge.svg)](https://coveralls.io/r/quasar-analytics/quasar)
-[![Latest version](https://index.scala-lang.org/quasar-analytics/quasar/quasar-web/latest.svg)](https://index.scala-lang.org/quasar-analytics/quasar/quasar-web)
-[![Join the chat at https://gitter.im/quasar-analytics/quasar](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/quasar-analytics/quasar?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
-
-# Thanks to Sponsors
-
-YourKit supports open source projects with its full-featured Java Profiler. YourKit, LLC is the creator of <a href="https://www.yourkit.com/java/profiler/index.jsp">YourKit Java Profiler</a> and <a href="https://www.yourkit.com/.net/profiler/index.jsp">YourKit .NET Profiler</a>, innovative and intelligent tools for profiling Java and .NET applications.
+[![Travis](https://travis-ci.org/slamdata/quasar.svg?branch=master)](https://travis-ci.org/slamdata/quasar)
+[![AppVeyor](https://ci.appveyor.com/api/projects/status/pr5he90wye6ii8ml/branch/master?svg=true)](https://ci.appveyor.com/project/jdegoes/quasar/branch/master)
+[![Discord](https://img.shields.io/discord/373302030460125185.svg?logo=discord)](https://discord.gg/QNjwCg6)
 
 # Quasar
 
@@ -15,21 +10,13 @@ Quasar is an open source NoSQL analytics engine that can be used as a library or
 
 SQL² is the dialect of SQL that Quasar understands.
 
-SQL² is a superset of standard SQL. Therefore, in the following documentation SQL² will be used interchangeably with SQL.
-
-See the [SQL² tutorial](http://quasar-analytics.org/docs/sqltutorial/) for more info on SQL².
+In the following documentation SQL² will be used interchangeably with SQL.
 
 SQL² supports variables inside queries (`SELECT * WHERE pop < :cutoff`). Values for these variables, which can be any expression, should be specified as additional parameters in the url, using the variable name prefixed by `var.` (e.g. `var.cutoff=1000`). Failure to specify valid values for all variables used inside a query will result in an error. These values use the same syntax as the query itself; notably, strings should be surrounded by double quotes. Some acceptable values are `123`, `"CO"`, and `DATE("2015-07-06")`.
 
-## Using the Pre-Built JARs
-
-In [Github Releases](http://github.com/quasar-analytics/quasar/releases), you can find pre-built JARs for all the subprojects in this repository.
-
-See the instructions below for running and configuring these JARs.
-
 ## Building from Source
 
-**Note**: This requires Java 8 and Bash (Linux, Mac, or Cygwin on Windows).
+**Note**: This requires Java 8 and Bash (Linux, Mac).  Bash is not required on Windows, but the non-SBT infrastructure (e.g. the docker scripts) currently only works on Unix platforms.
 
 ### Build
 
@@ -37,14 +24,13 @@ The following sections explain how to build and run the various subprojects.
 
 #### Basic Compile & Test
 
-To compile the project and run tests, first clone the quasar repo and then execute the following command:
+To compile the project and run tests, first clone the quasar repo and then execute the following command (if on Windows, reverse the slashes):
 
 ```bash
 ./sbt test
 ```
 
-Note: please note that we are not using here a system wide sbt, but our own copy of it (under ./sbt). This is primarily
- done for determinism. In order to have a reproducible build, the helper script needs to be part of the repo.
+Note: please note that we are not using here a system wide sbt, but our own copy of it (under ./sbt). This is primarily done for determinism. In order to have a reproducible build, the helper script needs to be part of the repo.
 
 Running the full test suite can be done using docker containers for various backends:
 
@@ -61,23 +47,15 @@ Of particular interest are the following two scripts:
 Quasar supports the following datastores:
 
 ```
-quasar_mongodb_2_6
-quasar_mongodb_3_0
-quasar_mongodb_read_only
-quasar_mongodb_3_2
-quasar_mongodb_3_4
+quasar_mongodb_3_4_13
 quasar_metastore
-quasar_postgresql
-quasar_marklogic_xml
-quasar_marklogic_json
-quasar_couchbase
 ```
 
 Knowing which backend datastores are supported you can create and configure docker containers using `setupContainers`. For example
-if you wanted to run integration tests with mongo, postgresql, marklogic, and couchbase you would use:
+if you wanted to run integration tests with mongo you would use:
 
 ```
-./setupContainers -u quasar_metastore,quasar_mongodb_3_0,quasar_postgresql,quasar_marklogic_xml,quasar_couchbase
+./setupContainers -u quasar_metastore,quasar_mongodb_3_4_13
 ```
 
 Note: `quasar_metastore` is always needed to run integration tests.
@@ -97,10 +75,7 @@ After running this command your `testing.conf` file should look similar to this:
 ```
 > cat it/testing.conf
 postgresql_metastore="{\"host\":\"192.168.99.101\",\"port\":5432,\"database\":\"metastore\",\"userName\":\"postgres\",\"password\":\"\"}"
-couchbase="couchbase://192.168.99.101/beer-sample?password=&docTypeKey=type&socketConnectTimeoutSeconds=15"
-marklogic_xml="xcc://marklogic:marklogic@192.168.99.101:8000/Documents?format=xml"
-postgresql="jdbc:postgresql://192.168.99.101:5433/quasar-test?user=postgres&password=postgres"
-mongodb_3_0="mongodb://192.168.99.101:27019"
+mongodb_3_4_13="mongodb://192.168.99.101:27022"
 ```
 
 IP's will vary depending on your docker environment. In addition the scripts assume you have docker and docker-compose installed.
@@ -115,7 +90,7 @@ To build a JAR for the REPL, which allows entering commands at a command-line pr
 ./sbt 'repl/assembly'
 ```
 
-The path of the JAR will be `./repl/target/scala-2.11/quasar-repl-assembly-[version].jar`, where `[version]` is the Quasar version number.
+The path of the JAR will be `./.targets/repl/scala-2.11/quasar-repl-assembly-[version].jar`, where `[version]` is the Quasar version number.
 
 To run the JAR, execute the following command:
 
@@ -123,32 +98,62 @@ To run the JAR, execute the following command:
 java -jar [<path to jar>] [-c <config file>]
 ```
 
-As a command-line REPL user, to work with a fully functioning REPL you will need the metadata store and a mount point. See [here](#full-testing-prerequisite-docker-and-docker-compose) for instructions on creating the metadata store backend using docker. To add a mount you can start the web server mentioned [below](#web-jar) and issue a `curl` command like:
+As a command-line REPL user, to work with a fully functioning REPL you will need the metadata store and a mount point. See [here](#full-testing-prerequisite-docker-and-docker-compose) for instructions on creating the metadata store backend using docker.
+
+The `<mountPath>` specifies the path of your mount point and the remaining parameters are listed below:
+
+| mountKey            | protocol         | uri                                   |
+|---------------------|------------------|---------------------------------------|
+| `mimir`             |                  | "\<path-to-mimir-storage-directory\>" |
+| `lwc_local`         |                  | "\<path-to-mimir-storage-directory\>" |
+| `mongodb`           | `mongodb://`     | [MongoDB](#database-mounts)           |
+
+
+You will also need the metadata store. See [here](#full-testing-prerequisite-docker-and-docker-compose) for getting up and running with one using docker.
+
+### Backends
+
+By default, the REPL assembly contains only `mimir` and `lwc_local`. In order to use other mounts – such as mongodb – you will need to build the relevant backend and place the JAR in a directory where quasar can find it.  This can be done in one of two ways
+
+#### Plugins Directory
+
+Create a directory where you will place individual backend JARs:
 
 ```bash
-curl -v -X PUT http://localhost:8080/mount/fs/cb/ -d '{ "couchbase": { "connectionUri":"couchbase://192.168.99.100/beer-sample?password=&docTypeKey=type" } }'
+$ mkdir plugins/
 ```
 
-You can find examples of `connectionUri` values [here](#database-mounts).
-
-#### Web JAR
-
-To build a JAR containing a lightweight HTTP server that allows you to programmatically interact with Quasar, execute the following command:
+Now run the `assembly` task for the relevant backend:
 
 ```bash
-./sbt 'web/assembly'
+$ ./sbt mongodb/assembly
 ```
 
-The path of the JAR will be `./web/target/scala-2.11/quasar-web-assembly-[version].jar`, where `[version]` is the Quasar version number.
+The path to the JAR will be something like `./.targets/mongodb/scala-2.11/quasar-mongodb-internal-assembly-23.1.5.jar`, though the exact name of the JAR (and the directory path in question) will of course depend on the backend built (for example, `mongodb/assembly` will produce a very different JAR from `mongodb/assembly`).
 
-To run the JAR, execute the following command:
+For each backend that you wish to support, run that backend's `assembly`. See the [launcher](https://github.com/slamdata/launcher) for further instructions.
+
+#### Individual Backend Configuration
+
+This technique is designed for local development use, where the backend implementation is changing frequently.  Under certain circumstances though, it may be useful for the pre-built JAR case.
+
+As with the plugins directory approach, you will need to run the `assembly` task for each backend that you want to use.  But instead of copying the JAR files into a directory, you will be referencing each JAR file individually using the `--backend` switch on the REPL JAR invocation:
 
 ```bash
-java -jar [<path to jar>] [-c <config file>]
+java -jar [<path to jar>] [-c <config file>] --backend:quasar.physical.mongodb.MongoDb\$=.targets/mongodb/scala-2.11/quasar-mongodb-internal-assembly-23.1.5.jar
 ```
 
-Web jar users, will also need the metadata store. See [here](#full-testing-prerequisite-docker-and-docker-compose) for getting up and running with one using docker.
+Replace the JAR file in the above with the path to the backend whose `assembly` you ran.  The `--backend` switch may be repeated as many times as necessary: once for each backend you wish to add.  The value to the left of the `=` is the `BackendModule` object *class name* which defines the backend in question.  Note that we need to escape the `$` character which will be present in each class name, solely because of bash syntax. If you are invoking the `--backend` option within `sbt` (for example running `repl/run`) you do not need to escape the `$`.
 
+What follows is a list of class names for each supported backend:
+
+| mountKey          | class name                                               |
+|-------------------|----------------------------------------------------------|
+| `mongodb`         | `quasar.physical.mongodb.MongoDb$`                       |
+
+Mimir is not included in the above, since it is already built into the core of quasar.
+
+The value to the *right* of the `=` is a *comma*-separated list of paths which will be used as the classpath for the backend in question.  You can include as many JARs or directories (containing classes) as you need, just as with any classpath configuration.
 
 ### Configure
 
@@ -180,15 +185,17 @@ If no metastore configuration is specified, the default configuration will use a
 An example H2 configuration would look something like
 ```json
 "h2": {
-  "file": "<path/to/database/file>"
+  "location": "`database_url`"
 }
 ```
+
+Where `database_url` can be any h2 url as described [here](http://www.h2database.com/html/features.html#database_url).
 
 A PostgreSQL configuration looks something like
 ```json
 "postgresql": {
-  "host": "<hostname>",
-  "port": "<port>",
+  "host": "localhost",
+  "port": 8087,
   "database": "<database name>",
   "userName": "<database user>",
   "password": "<password for database user>",
@@ -206,7 +213,7 @@ The contents of the optional `parameters` object correspond to the various drive
 
 #### Initializing and updating Schema
 
-Before the server can be started, the metadata store schema must be initialized. To do so utilize the "initUpdateMetaStore" command with a web or repl quasar jar.
+Before the server can be started, the metadata store schema must be initialized. To do so utilize the "initUpdateMetaStore" command with a repl quasar jar.
 
 If mounts are already defined in the config file, initialization will migrate those to the metadata store.
 
@@ -228,64 +235,6 @@ To connect to MongoDB using TLS/SSL, specify `?ssl=true` in the connection strin
 - `javax.net.debug`: (optional) use `all` for very verbose but sometimes helpful output.
 - `invalidHostNameAllowed`: (optional) use `true` to disable host name checking, which is less secure but may be needed in test environments using self-signed certificates.
 
-#### Couchbase
-
-To connect to Couchbase use the following `connectionUri` format:
-
-`couchbase://<host>[:<port>]/<bucket-name>?password=<password>&docTypeKey=<type>[&queryTimeoutSeconds=<seconds>]`
-
-Prerequisites
-- Couchbase Server 4.5.1 or greater
-- A "default" bucket with anonymous access
-- Documents must have a `docTypeKey` field to be listed
-- Primary index on queried buckets
-- Secondary index on `docTypeKey` field for queried buckets
-- Additional indices and tuning as recommended by Couchbase for proper N1QL performance
-
-Known Limitations
-- Slow queries — query optimization hasn't been applied
-- Join unimplemented — future support planned
-- [Open issues](https://github.com/quasar-analytics/quasar/issues?q=is%3Aissue+is%3Aopen+label%3ACouchbase)
-
-#### HDFS using Apache Spark
-
-To connect to HDFS using Apache Spark use the following `connectionUri` format:
-
-`spark://<spark_host>:<spark_port>|hdfs://<hdfs_host>:<hdfs_port>|<root_path>`
-
-e.g "spark://spark_master:7077|hdfs://primary_node:9000|/hadoop/users/"
-
-#### MarkLogic
-
-To connect to MarkLogic, specify an [XCC URL](https://docs.marklogic.com/guide/xcc/concepts#id_55196) with a `format` query parameter and an optional root directory as the `connectionUri`:
-
-`xcc://<username>:<password>@<host>:<port>/<database>[/root/dir/path]?format=[json|xml]`
-
-the mount will query either JSON or XML documents based on the value of the `format` parameter. For backwards-compatibility, if the `format` parameter is omitted then XML is assumed.
-
-If a root directory path is specified, all operations and queries within the mount will be local to the MarkLogic directory at the specified path.
-
-Prerequisites
-- MarkLogic 8.0+
-- Documents must to be organized under directories to be found by Quasar.
-- Namespaces used in queries must be defined on the server.
-- Loading schema definitions into the server, while not required, will improve sorting and other operations on types other than `xs:string`. Otherwise, non-string fields may require casting in queries using [SQL² conversion functions](http://docs.slamdata.com/en/v4.0/sql-squared-reference.html#section-11-data-type-conversion).
-
-[Known Limitations](https://github.com/quasar-analytics/quasar/issues?utf8=%E2%9C%93&q=is%3Aissue%20is%3Aopen%20label%3AMarkLogic)
-- Field aliases when working with XML must currently be valid [XML QNames](https://www.w3.org/TR/xml-names/#NT-QName) ([#1642](https://github.com/quasar-analytics/quasar/issues/1642)).
-- "Default" numeric field names are prefixed with an underscore ("_") when working with XML in order to make them valid QNames. For example, `select count((1, 2, 3, 4))` will result in `{"_1": 4}` ([#1642](https://github.com/quasar-analytics/quasar/issues/1642)).
-- It is not possible to query both JSON and XML documents from a single mount, a separate mount with the appropriate `format` value must be created for each type of document.
-- Index usage is currently poor, so performance may degrade on large directories and/or complex queries and joins. This should improve as optimizations are applied both to the MarkLogic connector and the `QScript` compiler.
-
-Quasar's data model is JSON-ish and thus there is a bit of translation required when applying it to XML. The current mapping aims to be intuitive while still taking advantage of the XDM as much as possible. Take note of the following:
-- Projecting a field will result in the child element(s) having the given name. If more than one element matches, the result will be an array.
-- As the children of an element form a sequence, they may be treated both as a mapping from element names to values and as an array of values. That is to say, given a document like `<foo><bar>1</bar><baz>2</baz></foo>`, `foo.bar` and `foo[0]` both refer to `<bar>1</bar>`.
-- XML document results are currently serialized to JSON with an emphasis on producting idiomatic JSON:
-  - An element is serialized to a singleton object with the element name as the only key and an object representing the children as its value. The child object will contain an entry for each child element with repeated elements collected into an array.
-  - An element without attributes containing only text content will be serialized as a singleton object with the element name as the only key and the text content as its value.
-  - Element attributes are serialized to an object at the `_attributes` key.
-  - Text content of elements containing mixed text and element children or attributes will be available at the `_text` key.
-
 ### View mounts
 
 If the mount's key is "view" then the mount represents a "virtual" file, defined by a SQL² query. When the file's contents are read or referred to, the query is executed to generate the current result on-demand. A view can be used to create dynamic data that combines analysis and formatting of existing files without creating temporary results that need to be manually regenerated when sources are updated.
@@ -294,12 +243,29 @@ For example, given the above MongoDB mount, an additional view could be defined 
 
 A view can be mounted at any file path. If a view's path is nested inside the path of a database mount, it will appear alongside the other files in the database. A view will "shadow" any actual file that would otherwise be mapped to the same path. Any attempt to write data to a view will result in an error.
 
-#### Build Quasar for Apache Spark
+#### Caching
 
-In order for Quasar to work with Apache Spark based connectors (like `spark-hdfs` or `spark-local`) you need to build `sparkcore.jar` and move it to same location where your `quasar-web.jar` is placed.
-To build sparkcore.jar:
+View mounts can optionally be cached. When cached a view is refreshed periodically in the background with respect to its associated `max-age`.
 
-```./sbt 'set every sparkDependencyProvided := true' sparkcore/assembly```
+A cached view is created by adding the `Cache-Control: max-age=<seconds>`  header to a `/mount/fs/` request.
+
+Like ordinary views, cached views appear as a file in the filesystem.
+
+### Module mounts
+
+If the mount's key is "module" then the mount represents a "virtual" directory which contains a collection of SQL Statements. The Quasar Filesystem surfaces each SQL function definition as a file despite the fact that it is not possible to read from that file. Instead one needs to use the `invoke` endpoint in order to pass arguments to a particular function and get the result.
+
+A module function can be thought of as a parameterized view, i.e. a view with "holes" that can be filled dynamically.
+
+The value of a module mount is simply the SQL string which will be parsed into a list of SQL Statements.
+
+To create a new module one would send a json blob similar to this one to the mount endpoint:
+
+```json
+{ "module": "CREATE FUNCTION ARRAY_LENGTH(:foo) BEGIN COUNT(:foo[_]) END; CREATE FUNCTION USER_DATA(:user_id) BEGIN SELECT * FROM `/root/path/data/` WHERE user_id = :user_id END" }
+```
+
+Similar to views, modules can be mounted at any directory path. If a module's path is nested inside the path of a database mount, it will appear alongside the other directory and files in the database. A module will "shadow" any actual directory that would otherwise be mapped to the same path. Any attempt to write data to a module will result in an error.
 
 ## REPL Usage
 
@@ -313,6 +279,7 @@ the root, and it contains a database called `test`:
 ```
 
 The "tables" in SQL queries refer to collections in the database by name:
+
 ```
 💪 $ select * from zips where state="CO" limit 3
 Mongo
@@ -356,234 +323,9 @@ select * from `/test/zips`
 
 Type `help` for information on other commands.
 
+## Schema
 
-## API Usage
-
-The server provides a simple JSON API.
-
-### GET /query/fs/[path]?q=[query]&offset=[offset]&limit=[limit]&var.[foo]=[value]
-
-Executes a SQL² query, contained in the required `q` parameter, on the backend responsible for the request path.
-
-Optional `offset` and `limit` parameters can be specified to page through the results, and are interpreted the same way as for `GET /data` requests.
-
-The result is returned in the response body. The `Accept` header may be used in order to specify the desired [format](#data-formats) in which the client wishes to receive results.
-
-For compressed output use `Accept-Encoding: gzip`.
-
-
-### POST /query/fs/[path]?var.[foo]=[value]
-
-Executes a SQL² query, contained in the request body, on the backend responsible for the request path.
-
-The `Destination` header must specify the *output path*, where the results of the query will become available if this API successfully completes. If the output path already exists, it will be overwritten with the query results.
-
-All paths referenced in the query, as well as the output path, are interpreted as relative to the request path, unless they begin with `/`.
-
-This API method returns the name where the results are stored, as an absolute path, as well as logging information.
-
-```json
-{
-  "out": "/[path]/tmp231",
-  "phases": [
-    ...
-  ]
-}
-```
-
-If the query fails to compile, a 400 response is produced with a JSON body similar to the following:
-
-```json
-{
-  "status": "Bad Request",
-  "detail": {
-    "errors" [
-      <all errors produced during compilation, each an object with `status` and `detail` fields>
-    ],
-    "phases": [
-      <see the following sections>
-    ]
-  }
-}
-```
-
-If an error occurs while executing the query on a backend, a 500 response is produced, with this content:
-
-```json
-{
-  "status": <general error description>,
-  "detail": {
-    "message": <specific error description>,
-    "phases": [
-      <see the following sections>
-    ],
-    "logicalPlan": <tree of objects describing the logical plan the query compiled to>,
-    "cause": <optional, backend-specific error>
-  }
-}
-```
-
-the `cause` field is optional and the `detail` object may also contain additional, backend-specific fields.
-
-The `phases` array contains a sequence of objects containing the result from
-each phase of the query compilation process. A phase may result in a tree of
-objects with `type`, `label` and (optional) `children`:
-
-```json
-{
-  ...,
-  "phases": [
-    ...,
-    {
-      "name": "Logical Plan",
-      "tree": {
-        "type": "LogicalPlan/Let",
-        "label": "'tmp0",
-        "children": [
-          {
-            "type": "LogicalPlan/Read",
-            "label": "./zips"
-          },
-          ...
-        ]
-      }
-    },
-    ...
-  ]
-}
-```
-
-Or a blob of text:
-
-```json
-{
-  ...,
-  "phases": [
-    ...,
-    {
-      "name": "Mongo",
-      "detail": "db.zips.aggregate([\n  { \"$sort\" : { \"pop\" : 1}}\n])\n"
-    }
-  ]
-}
-```
-
-Or an error (typically no further phases appear, and the error repeats the
-error at the root of the response):
-
-```json
-{
-  ...,
-  "phases": [
-    ...,
-    {
-      "name": "Physical Plan",
-      "error": "Cannot compile ..."
-    }
-  ]
-}
-```
-
-### GET /compile/fs/[path]?q=[query]&var.[foo]=[value]
-
-Compiles (but does not execute) a SQL² query, contained in the single, required query parameter.
-Returns a Json object with the following shape:
-
-```json
-{
-  "inputs": [<filePath>, ...],
-  "physicalPlan": "Description of physical plan"
-}
-
-where `inputs` is a field containing a list of files that are referenced by the query.
-where `physicalPlan` is a string description of the physical plan that would be executed by this query. `null` if no physical plan is required in order to execute this query. A query may not need a physical plan in order to be executed if the query is "constant", that is that no data needs to be read from a backend.
-
-### GET /metadata/fs/[path]
-
-Retrieves metadata about the files, directories, and mounts which are children of the specified directory path. If the path names a file, the result is empty.
-
-```json
-{
-  "children": [
-    {"name": "foo", "type": "directory"},
-    {"name": "bar", "type": "file"},
-    {"name": "test", "type": "directory", "mount": "mongodb"},
-    {"name": "baz", "type": "file", "mount": "view"}
-  ]
-}
-```
-
-### GET /data/fs/[path]?offset=[offset]&limit=[limit]
-
-Retrieves data from the specified path in the [format](#data-formats) specified in the `Accept` header. The optional `offset` and `limit` parameters can be used in order to page through results.
-
-```json
-{"id":0,"guid":"03929dcb-80f6-44f3-a64c-09fc1d810c61","isActive":true,"balance":"$3,244.51","picture":"http://placehold.it/32x32","age":38,"eyeColor":"green","latitude":87.709281,"longitude":-20.549375}
-{"id":1,"guid":"09639710-7f99-4fe1-a890-b1b592cbe223","isActive":false,"balance":"$1,544.65","picture":"http://placehold.it/32x32","age":27,"eyeColor":"blue","latitude":52.394181,"longitude":-0.631589}
-{"id":2,"guid":"e71b7f01-ce0e-4824-ad1e-4e118872aec4","isActive":true,"balance":"$1,882.92","picture":"http://placehold.it/32x32","age":24,"eyeColor":"green","latitude":30.061766,"longitude":-106.813523}
-{"id":3,"guid":"79602676-6f63-41d0-9c0a-a4f5851a43db","isActive":false,"balance":"$1,281.00","picture":"http://placehold.it/32x32","age":25,"eyeColor":"blue","latitude":14.713939,"longitude":62.253264}
-{"id":4,"guid":"0024a8ad-373f-459a-8316-d50d7a8f7b10","isActive":true,"balance":"$1,908.50","picture":"http://placehold.it/32x32","age":26,"eyeColor":"brown","latitude":-21.874648,"longitude":67.270659}
-{"id":5,"guid":"f7e33b92-a885-450e-8ad5-92103b1f5ff3","isActive":true,"balance":"$2,231.90","picture":"http://placehold.it/32x32","age":31,"eyeColor":"blue","latitude":58.461107,"longitude":176.40584}
-{"id":6,"guid":"a2863ec1-9652-46d3-aa12-aa92308de055","isActive":false,"balance":"$1,621.67","picture":"http://placehold.it/32x32","age":34,"eyeColor":"blue","latitude":-83.908456,"longitude":67.190633}
-```
-
-If the supplied path represents a directory (ends with a slash), this request produces a `zip` archive containing the contents of the named directory, database, etc. Each file in the archive is formatted as specified in the request query and/or `Accept` header.
-
-### PUT /data/fs/[path]
-
-Replace data at the specified path. Uploaded data may be in any of the [supported formats](#data-formats) and the request must include the appropriate `Content-Type` header indicating the format used.
-
-A successful upload will replace any previous contents atomically, leaving them unchanged if an error occurs.
-
-If an error occurs when reading data from the request body, the response will contain a summary in the common `error` field and a separate array of error messages about specific values under `details`.
-
-Fails if the path identifies an existing view.
-
-#### Uploading multpile files
-
-If the supplied path represents a directory (ends with a slash), the request body must contain a `zip` archive containing the contents of the named directory, database, etc., and a special file, `/.quasar-metadata.json`, which specifies the format for each file, as it would be provided in a `Content-Type` header if the file was individually uploaded:
-
-```json
-{
-  "/foo": {
-    "Content-Type": "application/ldjson"
-  },
-  "/foo/bar": {
-    "Content-Type": "application/json; mode=precise"
-  }
-}
-```
-
-Note: if the zip archive was created by downloading a directory from Quasar, then it will already have this hidden file.
-
-Each file in the archive is written as if it was uploaded separately. The write is _not_ atomic; if an error occurs after some files are written, the file system is not restored to its previous state.
-
-### POST /data/fs/[path]
-
-Append data to the specified path. Uploaded data may be in any of the [supported formats](#data-formats) and the request must include the appropriate `Content-Type` header indicating the format used. This operation is _not_ atomic and some data may have been written even if an error occurs. The body of an error response will describe what was done.
-
-If an error occurs when reading data from the request body, the response contains a summary in the common `error` field, and a separate array of error messages about specific values under `details`.
-
-Fails if the path identifies an existing view.
-
-### DELETE /data/fs/[path]
-
-Removes all data and views at the specified path. Single files are deleted atomically.
-
-### MOVE /data/fs/[path]
-
-Moves data from one path to another within the same backend. The new path must
-be provided in the `Destination` request header. Single files are moved atomically.
-
-### GET /invoke/fs/[path]
-
-Where `path` is a file path. Invokes the function represented by the file path with the parameters supplied in the query string.
-
-### GET /schema/fs/[path]?arrayMaxLength=[size]&mapMaxSize=[size]&stringMaxLength=[size]&unionMaxSize=[size]
-
-Where `path` is a file path and `size` is a positive integer. Returns a schema document, summarizing the dataset at the specified path.
-
-For example, given a dataset having documents like:
+Given query results like:
 
 ```json
 {"_id":"01001","city":"AGAWAM","loc":[-72.622739,42.070206],"pop":15338,"state":"MA"}
@@ -603,6 +345,7 @@ a schema document might look like
 ```json
 {
   "measure" : {
+    "kind" : "collection",
     "count" : 1000.0,
     "minLength" : 5.0,
     "maxLength" : 5.0
@@ -612,17 +355,33 @@ a schema document might look like
     "of" : {
       "city" : {
         "measure" : {
+          "kind" : "collection",
           "count" : 1000.0,
-          "min" : "ABBEVILLE",
-          "max" : "YOUNGSVILLE",
           "minLength" : 3.0,
           "maxLength" : 16.0
         },
         "structure" : {
+          "tag" : "_structural.string",
           "type" : "array",
           "of" : {
             "measure" : {
-              "count" : 1000.0
+              "count" : 8693.0,
+              "distribution" : {
+                "state" : {
+                  "centralMoment4" : 893992600.3364398,
+                  "size" : 8693.0,
+                  "centralMoment3" : -18773123.74002289,
+                  "centralMoment2" : 876954.1582882765,
+                  "centralMoment1" : 74.29506499482345
+                },
+                "variance" : 100.89210288636407,
+                "kurtosis" : 10.111128909991152,
+                "mean" : 74.29506499482345,
+                "skewness" : -2.1317240928957726
+              },
+              "min" : " ",
+              "max" : "Z",
+              "kind" : "char"
             },
             "structure" : {
               "type" : "character"
@@ -632,17 +391,33 @@ a schema document might look like
       },
       "state" : {
         "measure" : {
+          "kind" : "collection",
           "count" : 1000.0,
-          "min" : "AK",
-          "max" : "WY",
           "minLength" : 2.0,
           "maxLength" : 2.0
         },
         "structure" : {
+          "tag" : "_structural.string",
           "type" : "array",
           "of" : {
             "measure" : {
-              "count" : 1000.0
+              "count" : 2000.0,
+              "distribution" : {
+                "state" : {
+                  "centralMoment4" : 11285757.38865178,
+                  "size" : 2000.0,
+                  "centralMoment3" : 11979.395483999382,
+                  "centralMoment2" : 103139.03800000004,
+                  "centralMoment1" : 76.19100000000014
+                },
+                "variance" : 51.59531665832919,
+                "kurtosis" : 2.1271635715970967,
+                "mean" : 76.19100000000014,
+                "skewness" : 0.01618606190840656
+              },
+              "min" : "A",
+              "max" : "Z",
+              "kind" : "char"
             },
             "structure" : {
               "type" : "character"
@@ -654,31 +429,55 @@ a schema document might look like
         "measure" : {
           "count" : 1000.0,
           "distribution" : {
-            "mean" : 8560.410999999996,
-            "variance" : 153498226.66073978,
-            "skewness" : 2.1932119902818976,
-            "kurtosis" : 8.145272163842572
+            "state" : {
+              "centralMoment4" : 2.323080620322664E+20,
+              "size" : 1000.0,
+              "centralMoment3" : 4322812032420233.5,
+              "centralMoment2" : 150795281801.8999,
+              "centralMoment1" : 8721.71000000001
+            },
+            "variance" : 150946228.02992985,
+            "kurtosis" : 10.267451061747597,
+            "mean" : 8721.71000000001,
+            "skewness" : 2.337959182172043
           },
           "min" : 0,
-          "max" : 83158
+          "max" : 94317,
+          "kind" : "decimal"
         },
         "structure" : {
-          "type" : "integer"
+          "type" : "decimal"
         }
       },
       "_id" : {
         "measure" : {
+          "kind" : "collection",
           "count" : 1000.0,
-          "min" : "01342",
-          "max" : "99744",
           "minLength" : 5.0,
           "maxLength" : 5.0
         },
         "structure" : {
+          "tag" : "_structural.string",
           "type" : "array",
           "of" : {
             "measure" : {
-              "count" : 1000.0
+              "count" : 5000.0,
+              "distribution" : {
+                "state" : {
+                  "centralMoment4" : 556673.1571508175,
+                  "size" : 5000.0,
+                  "centralMoment3" : 7962.505025040006,
+                  "centralMoment2" : 38822.78220000003,
+                  "centralMoment1" : 52.24340000000003
+                },
+                "variance" : 7.766109661932393,
+                "kurtosis" : 1.8485506875431554,
+                "mean" : 52.24340000000003,
+                "skewness" : 0.07362665279751003
+              },
+              "min" : "0",
+              "max" : "9",
+              "kind" : "char"
             },
             "structure" : {
               "type" : "character"
@@ -688,6 +487,7 @@ a schema document might look like
       },
       "loc" : {
         "measure" : {
+          "kind" : "collection",
           "count" : 1000.0,
           "minLength" : 2.0,
           "maxLength" : 2.0
@@ -699,13 +499,21 @@ a schema document might look like
               "measure" : {
                 "count" : 1000.0,
                 "distribution" : {
-                  "mean" : -90.75566306399999,
-                  "variance" : 215.8880504119835,
-                  "skewness" : -1.3085274289304345,
-                  "kurtosis" : 5.671392237003005
+                  "state" : {
+                    "centralMoment4" : 281712013.3937695,
+                    "size" : 1000.0,
+                    "centralMoment3" : -4328243.124174622,
+                    "centralMoment2" : 212160.04270665144,
+                    "centralMoment1" : -90.52571468599996
+                  },
+                  "variance" : 212.3724151217732,
+                  "kurtosis" : 6.290020275246902,
+                  "mean" : -90.52571468599996,
+                  "skewness" : -1.4027118290018674
                 },
                 "min" : -170.293408,
-                "max" : -68.031686
+                "max" : -67.396382,
+                "kind" : "decimal"
               },
               "structure" : {
                 "type" : "decimal"
@@ -715,13 +523,21 @@ a schema document might look like
               "measure" : {
                 "count" : 1000.0,
                 "distribution" : {
-                  "mean" : 39.02678901400003,
-                  "variance" : 26.66316872053294,
-                  "skewness" : -0.030243876777278023,
-                  "kurtosis" : 4.447095871155061
+                  "state" : {
+                    "centralMoment4" : 3748702.702983835,
+                    "size" : 1000.0,
+                    "centralMoment3" : 15799.696678343358,
+                    "centralMoment2" : 26853.295673558245,
+                    "centralMoment1" : 39.09175202499995
+                  },
+                  "variance" : 26.880175849407653,
+                  "kurtosis" : 5.224679782347093,
+                  "mean" : 39.09175202499995,
+                  "skewness" : 0.1137115453464455
                 },
-                "min" : 20.027748,
-                "max" : 64.840238
+                "min" : 20.907097,
+                "max" : 65.824542,
+                "kind" : "decimal"
               },
               "structure" : {
                 "type" : "decimal"
@@ -740,64 +556,6 @@ Schema documents represent an estimate of the structure of the given dataset and
 When two documents differ in structure, their differences are accumulated in a union. Basic frequency information is available for the union and more specific annotations are preserved as much as possible for the various members.
 
 The `arrayMaxLength`, `mapMaxSize`, `stringMaxLength` and `unionMaxSize` parameters allow for control over the amount of information contained in the returned schema by limiting the size of various structures in the result. Structures that exceed the various size thresholds are compressed using various heuristics depending on the structure involved.
-
-### GET /mount/fs/[path]
-
-Retrieves the configuration for the mount point at the provided path. In the case of MongoDB, the response will look like
-
-```
-{ "mongodb": { "connectionUri": "mongodb://localhost/test" } }
-```
-
-The outer key is the backend in use, and the value is a backend-specific configuration structure.
-
-### POST /mount/fs/[path]
-
-Adds a new mount point using the JSON contained in the body. The path is the containing directory, and an `X-File-Name` header should contain the name of the mount. This will return a 409 Conflict if the mount point already exists or if a database mount already exists above or below a new database mount.
-
-### PUT /mount/fs/[path]
-
-Creates a new mount point or replaces an existing mount point using the JSON contained in the body. This will return a 409 Conflict if a database mount already exists above or below a new database mount.
-
-### DELETE /mount/fs/[path]
-
-Deletes an existing mount point, if any exists at the given path. If no such mount exists, the request succeeds but the response has no content. Mounts that are nested within the mount being deleted (i.e. views) are also deleted.
-
-### MOVE /mount/fs/[path]
-
-Moves a mount from one path to another. The new path must be provided in the `Destination` request header. This will return a 409 Conflict if a database mount is being moved above or below the path of an existing database mount. Mounts that are nested within the mount being moved (i.e. views) are moved along with it.
-
-### PUT /server/port
-
-Takes a port number in the body, and attempts to restart the server on that port, shutting down the current instance which is running on the port used to make this http request.
-
-### DELETE /server/port
-
-Removes any configured port, reverting to the default (20223) and restarting, as with `PUT`.
-
-
-## Error Responses
-
-Error responses from the REST api have the following form
-
-```
-{
-  "error": {
-    "status": <succinct message>,
-    "detail": {
-      "field1": <JSON>,
-      "field2": <JSON>,
-      ...
-      "fieldN": <JSON>
-    }
-  }
-}
-```
-
-The `status` field will always be present and will contain a succinct description of the error in english, the same content will be used as the status message of the HTTP response itself. The `detail` field is optional and, if present, will contain a JSON object with additional information about the error.
-
-Examples of `detail` fields would be a backend-specific error message, detailed type information for type errors in queries, the actual invalid arguments presented to a function, etc. These fields are error-specific, however, if the error is going to include a more detailed error message, it will found under the `message` field in the `detail` object.
-
 
 ## Paths
 
@@ -834,16 +592,6 @@ For example, a file called `Plan 1/2 笑` in a directory `mydata` would appear i
 }
 ```
 
-## Request Headers
-
-Request headers may be supplied via a query parameter in case the client is unable to send arbitrary headers (e.g. browsers, in certain circumstances). The parameter name is `request-headers` and the value should be a JSON-formatted string containing an object whose fields are named for the corresponding header and whose values are strings or arrays of strings. If any header appears both in the `request-headers` query parameter and also as an ordinary header, the query parameter takes precedence.
-
-For example:
-```
-GET http://localhost:8080/data/fs/local/test/foo?request-headers=%7B%22Accept%22%3A+%22text%2Fcsv%22%7D
-```
-Note: that's the URL-encoded form of `{"Accept": "text/csv"}`.
-
 ## Data Formats
 
 Quasar produces and accepts data in two JSON-based formats or CSV (`text/csv`). Each JSON-based format can
@@ -878,18 +626,16 @@ Type      | Readable        | Precise  | Notes
 null      | `null`          | *same*   |
 boolean   | `true`, `false` | *same*   |
 string    | `"abc"`         | *same*   |
-int       | `1`             | *same*   |
-decimal   | `2.1`           | *same*   |
-object    | `{ "a": 1 }`    | *same*   |
-object    | `{ "$foo": 2 }` | `{ "$obj": { "$foo": 2 } }` | Requires a type-specifier if any key starts with `$`.
+number    | `1`, `2.1`      | *same*   |
+object    | `{ "a": 1 }`    | *same*   | Keys that coincidentally equal a precise temporal key (e.g. "$localtime") are not supported.
 array     | `[1, 2, 3]`     | *same*   |
-set       | `[1, 2, 3]`     | `{ "$set": [1, 2, 3] }` |
-timestamp | `"2015-01-31T10:30:00Z"` | `{ "$timestamp": "2015-01-31T10:30:00Z" }` |
-date      | `"2015-01-31"`  | `{ "$date": "2015-01-31" }` |
-time      | `"10:30:05"`    | `{ "$time": "10:30:05" }` | HH:MM[:SS[:.SSS]]
-interval  | `"PT12H34M"`    | `{ "$interval": "P7DT12H34M" }` | Note: year/month not currently supported.
-binary    | `"TE1OTw=="`    | `{ "$binary": "TE1OTw==" }` | BASE64-encoded.
-object id | `"abc"`         | `{ "$oid": "abc" }` |
+localdatetime  | `"2015-01-31T10:30:00"`  | `{ "$localdatetime": "2015-01-31T10:30" }`   |
+localdate      | `"2015-01-31"`           | `{ "$localdate": "2015-01-31" }`             |
+localtime      | `"10:30:00.000"`         | `{ "$localtime": "10:30" }`                  |
+offsetdatetime | `"2015-01-31T10:30:00Z"` | `{ "$offsetdatetime": "2015-01-31T10:30Z" }` |
+offsetdate     | `"2015-01-31Z"`          | `{ "$offsetdate": "2015-01-31Z" }`           |
+offsettime     | `"10:30:00.000Z"`        | `{ "$offsettime": "10:30Z" }`                |
+interval       | `"PT12H34M"`             | `{ "$interval": "P7DT12H34M" }`              |
 
 
 ### CSV
@@ -918,7 +664,7 @@ When data is uploaded in CSV format, the headers are interpreted as field names 
 
 ## Troubleshooting
 
-First, make sure that the `quasar-analytics/quasar` Github repo is building correctly (the status is displayed at the top of the README).
+First, make sure that the `slamdata/quasar` Github repo is building correctly (the status is displayed at the top of the README).
 
 Then, you can try the following command:
 
@@ -928,13 +674,15 @@ Then, you can try the following command:
 
 This will ensure that your local version is also passing the tests.
 
-Check to see if the problem you are having is mentioned in the [JIRA issues](https://slamdata.atlassian.net/) and, if it isn't, feel free to create a new issue.
+You can also discuss issues [on Discord](https://discord.gg/QNjwCg6).
 
-You can also discuss issues on Gitter: [quasar-analytics/quasar](https://gitter.im/quasar-analytics/quasar).
+## Thanks to Sponsors
+
+YourKit supports open source projects with its full-featured Java Profiler. YourKit, LLC is the creator of <a href="https://www.yourkit.com/java/profiler/index.jsp">YourKit Java Profiler</a> and <a href="https://www.yourkit.com/.net/profiler/index.jsp">YourKit .NET Profiler</a>, innovative and intelligent tools for profiling Java and .NET applications.
 
 ## Legal
 
-Copyright &copy; 2014 - 2017 SlamData Inc.
+Copyright &copy; 2014 - 2018 SlamData Inc.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.

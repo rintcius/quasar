@@ -1,14 +1,9 @@
 {
     "name": "propagate undefined and null in JS",
     "backends": {
-        "couchbase":         "pending",
-        "mongodb_read_only": "pending",
-        "mongodb_q_3_2":     "pending",
-        "postgresql":        "pending"
     },
     "data": "zips.data",
-    "query": "select distinct length(meh) as meh_len, meh.mep, length(meh.mep) as mep_len from zips",
-    "predicate": "containsExactly",
-    "FIXME": "There should be a `{ }`, but it is rewritten away",
+    "query": "select distinct length(meh) as meh_len, meh.mep, length(meh.mep) as mep_len from `zips.data`",
+    "predicate": "exactly",
     "expected": []
 }

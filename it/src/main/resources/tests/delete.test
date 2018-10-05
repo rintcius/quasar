@@ -1,13 +1,14 @@
 {
     "name": "delete",
     "backends": {
-        "postgresql": "pending"
+        "lwc_local": "ignoreFieldOrder",
+        "mimir":     "ignoreFieldOrder"
     },
     "data": "zips.data",
-    "query": "delete from zips where pop < 100000",
-    "predicate": "containsExactly",
+    "query": "delete from `zips.data` where pop < 100000",
+    "predicate": "exactly",
+    "ignoreResultOrder": true,
     "ignoredFields": ["_id"],
-    "ignoreFieldOrder": [ "couchbase", "marklogic_json" ],
     "expected": [
         { "city": "NEW YORK", "loc": [-73.958805, 40.768476], "pop": 106564, "state": "NY" },
         { "city": "NEW YORK", "loc": [-73.968312, 40.797466], "pop": 100027, "state": "NY" },

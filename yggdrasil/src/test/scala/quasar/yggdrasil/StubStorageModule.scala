@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,16 +16,14 @@
 
 package quasar.yggdrasil
 
-import quasar.blueeyes._
 import quasar.precog.common._
-import scalaz._
 
-trait StubProjectionModule[M[+_], Block] extends ProjectionModule[M, Block] { self =>
-  implicit def M: Monad[M]
+import cats.effect.IO
 
+trait StubProjectionModule[Block] extends ProjectionModule[Block] { self =>
   protected def projections: Map[Path, Projection]
 
-  class ProjectionCompanion extends ProjectionCompanionLike[M] {
-    def apply(path: Path) = M.point(projections.get(path))
+  class ProjectionCompanion extends ProjectionCompanionLike {
+    def apply(path: Path) = IO.pure(projections.get(path))
   }
 }

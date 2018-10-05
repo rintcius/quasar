@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,9 @@ import slamdata.Predef._
 
 import _root_.monocle.{Getter, Iso}
 import _root_.matryoshka._
-import _root_.matryoshka.patterns.EnvT
+import _root_.matryoshka.data.free._
+import _root_.matryoshka.implicits._
+import _root_.matryoshka.patterns._
 import _root_.scalaz._, Scalaz._
 
 package object matryoshka {
@@ -33,11 +35,32 @@ package object matryoshka {
       first)(
       (prev, next) => x => prev(x).fold(next(x))(orOriginal(next)(_).some))
 
+  def birecursiveIso[T, F[_]: Functor]
+      (implicit TC: Corecursive.Aux[T, F], TR: Recursive.Aux[T, F])
+      : Iso[T, F[T]] =
+    Iso[T, F[T]](TR.project(_))(TC.embed(_))
+
+  object convertToFree {
+    def apply[F[_], A] = new PartiallyApplied[F, A]
+    final class PartiallyApplied[F[_], A] {
+      def apply[T](t: T)(implicit T: Recursive.Aux[T, F], F: Functor[F]): Free[F, A] =
+        t.ana[Free[F, A]](x => CoEnv(x.project.right[A]))
+    }
+  }
+
   def envT[E, W[_], A](e: E, wa: W[A]): EnvT[E, W, A] =
     EnvT((e, wa))
 
   def envTIso[E, W[_], A]: Iso[EnvT[E, W, A], (E, W[A])] =
     Iso((_: EnvT[E, W, A]).runEnvT)(EnvT(_))
+
+  def ginterpret[W[_], F[_], A, B](f: A => B, φ: GAlgebra[W, F, B])
+      : GAlgebra[W, CoEnv[A, F, ?], B] =
+    ginterpretM[W, Id, F, A, B](f, φ)
+
+  def einterpret[W[_]: Traverse, F[_], A, B](f: A => B, φ: ElgotAlgebra[W, F, B])
+      : ElgotAlgebra[W, CoEnv[A, F, ?], B] =
+    _.traverse(_.run).fold(f, φ)
 
   def project[T, F[_]: Functor](implicit T: Recursive.Aux[T, F]): Getter[T, F[T]] =
     Getter(T.project(_))
@@ -64,6 +87,13 @@ package object matryoshka {
         T.embed(envT(∅[E], ft))
     }
 
+  def selfAndChildren[F[_]: Functor: Foldable, A](alg: Algebra[F, A])
+      : Algebra[F, (A, List[A])] =
+    faas => {
+      val fa = faas map (_._1)
+      (alg(fa), fa.toList)
+    }
+
   implicit def delayOrder[F[_], A](implicit F: Delay[Order, F], A: Order[A]): Order[F[A]] =
     F(A)
 
@@ -74,4 +104,30 @@ package object matryoshka {
         Order.orderBy((_: Coproduct[F, G, A]).run)
       }
     }
+
+  implicit def AlgebraMZip[M[_]: Applicative, F[_]: Functor]
+      : Zip[AlgebraM[M, F, ?]] =
+    new Zip[AlgebraM[M, F, ?]] {
+      def zip[A, B](a: ⇒ AlgebraM[M, F, A], b: ⇒ AlgebraM[M, F, B]) =
+        w => Bitraverse[(?, ?)].bisequence((a(w ∘ (_._1)), b(w ∘ (_._2))))
+    }
+
+  @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
+  def transHyloM[T, F[_], G[_]: Traverse, U, H[_]: Traverse, M[_]: Monad]
+    (t: T)
+    (φ: G[U] => M[H[U]], ψ: F[T] => M[G[T]])
+    (implicit T: Recursive.Aux[T, F], U: Corecursive.Aux[U, H], BF: Traverse[F])
+  : M[U] =
+    T.traverseR(t)(ψ(_) >>= (_.traverse(transHyloM(_)(φ, ψ))) >>= φ)
+
+  implicit def freeEqualT[A: Equal]: EqualT[Free[?[_], A]] = new EqualT[Free[?[_], A]] {
+    def equal[F[_]: Functor]
+    (tf1: Free[F, A], tf2: Free[F, A])
+    (implicit del: Delay[Equal, F]) =
+      (tf1.resume, tf2.resume) match {
+        case (-\/(l1), -\/(l2)) => del(equalT[F](del)).equal(l1, l2)
+        case (\/-(r1), \/-(r2)) => r1 ≟ r2
+        case _ => false
+      }
+  }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,15 +17,13 @@
 package quasar.yggdrasil
 package table
 
-import quasar.precog.TestSupport._
+import quasar.pkg.tests._
 
 class FNSpec extends Specification {
   "function implementations" should {
     "partials must work correctly" in {
-      val col5 = Column.const(5L)
       val col4 = Column.const(4L)
       val col2 = Column.const(2L)
-      val col1 = Column.const(1L)
       val col0 = Column.const(0L)
       val f2 = DivZeroLongP
 
@@ -104,14 +102,14 @@ class FNSpec extends Specification {
   }
 
 
-  val AddOneLongP = CF1P ("testing::ct::addOneLong") {
+  val AddOneLongP = CF1P  {
     case (c: LongColumn) => new LongColumn {
       def isDefinedAt(row: Int) = c.isDefinedAt(row)
       def apply(row: Int) = c(row) + 1
     }
   }
 
-  val DivZeroLongP = CF2P("testing::ct::divzerolong") {
+  val DivZeroLongP = CF2P {
     case (c1: LongColumn, c2: LongColumn) => new LongColumn {
       def isDefinedAt(row: Int) = c1.isDefinedAt(row) && c2.isDefinedAt(row) && c2(row) != 0
       def apply(row: Int) = c1(row) / c2(row)

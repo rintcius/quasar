@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,9 +17,10 @@
 package quasar.yggdrasil
 package table
 
-import quasar.precog.util._
 import quasar.blueeyes._
 import quasar.precog.common._
+
+import scala.annotation.tailrec
 import scala.collection.mutable
 
 /**
@@ -47,7 +48,7 @@ final class HashedSlice private (slice0: Slice, rowMap: scala.collection.Map[Int
 object HashedSlice {
   def apply(slice: Slice): HashedSlice = {
     val hasher = new SliceHasher(slice)
-    val rowMap = scmMap[Int, IntList]()
+    val rowMap = mutable.Map[Int, IntList]()
 
     Loop.range(0, slice.size) { row =>
       val hash = hasher.hash(row)
@@ -104,12 +105,37 @@ private final case class BoolColumnHasher(columnRef: ColumnRef, column: BoolColu
   protected final def hashImpl(row: Int): Int = 5 * pathHash + 457 * (if (column(row)) 42 else 21)
 }
 
-private final case class DateColumnHasher(columnRef: ColumnRef, column: DateColumn) extends ColumnHasher {
-  private val pathHash = columnRef.selector.hashCode
-  protected final def hashImpl(row: Int): Int = 7 * pathHash + 17 * column(row).toString().hashCode
+private final case class OffsetDateTimeColumnHasher(columnRef: ColumnRef, column: OffsetDateTimeColumn) extends ColumnHasher {
+  // TODO: come up with a good hash function
+  protected final def hashImpl(row: Int): Int = ???
 }
 
-private final case class PeriodColumnHasher(columnRef: ColumnRef, column: PeriodColumn) extends ColumnHasher {
+private final case class OffsetTimeColumnHasher(columnRef: ColumnRef, column: OffsetTimeColumn) extends ColumnHasher {
+  // TODO: come up with a good hash function
+  protected final def hashImpl(row: Int): Int = ???
+}
+
+private final case class OffsetDateColumnHasher(columnRef: ColumnRef, column: OffsetDateColumn) extends ColumnHasher {
+  // TODO: come up with a good hash function
+  protected final def hashImpl(row: Int): Int = ???
+}
+
+private final case class LocalDateTimeColumnHasher(columnRef: ColumnRef, column: LocalDateTimeColumn) extends ColumnHasher {
+  // TODO: come up with a good hash function
+  protected final def hashImpl(row: Int): Int = ???
+}
+
+private final case class LocalTimeColumnHasher(columnRef: ColumnRef, column: LocalTimeColumn) extends ColumnHasher {
+  // TODO: come up with a good hash function
+  protected final def hashImpl(row: Int): Int = ???
+}
+
+private final case class LocalDateColumnHasher(columnRef: ColumnRef, column: LocalDateColumn) extends ColumnHasher {
+  // TODO: come up with a good hash function
+  protected final def hashImpl(row: Int): Int = ???
+}
+
+private final case class PeriodColumnHasher(columnRef: ColumnRef, column: IntervalColumn) extends ColumnHasher {
   private val pathHash = columnRef.selector.hashCode
   protected final def hashImpl(row: Int): Int = 11 * pathHash + 503 * column(row).hashCode
 }
@@ -159,13 +185,18 @@ private final case class CValueColumnHasher(columnRef: ColumnRef, column: Column
 
 private object ColumnHasher {
   def apply(ref: ColumnRef, col0: Column): ColumnHasher = col0 match {
-    case (col: StrColumn)    => new StrColumnHasher(ref, col)
-    case (col: BoolColumn)   => new BoolColumnHasher(ref, col)
-    case (col: LongColumn)   => new LongColumnHasher(ref, col)
-    case (col: DoubleColumn) => new DoubleColumnHasher(ref, col)
-    case (col: NumColumn)    => new NumColumnHasher(ref, col)
-    case (col: DateColumn)   => new DateColumnHasher(ref, col)
-    case (col: PeriodColumn) => new PeriodColumnHasher(ref, col)
-    case _                   => new CValueColumnHasher(ref, col0)
+    case (col: StrColumn)            => new StrColumnHasher(ref, col)
+    case (col: BoolColumn)           => new BoolColumnHasher(ref, col)
+    case (col: LongColumn)           => new LongColumnHasher(ref, col)
+    case (col: DoubleColumn)         => new DoubleColumnHasher(ref, col)
+    case (col: NumColumn)            => new NumColumnHasher(ref, col)
+    case (col: OffsetDateTimeColumn) => new OffsetDateTimeColumnHasher(ref, col)
+    case (col: OffsetTimeColumn)     => new OffsetTimeColumnHasher(ref, col)
+    case (col: OffsetDateColumn)     => new OffsetDateColumnHasher(ref, col)
+    case (col: LocalDateTimeColumn)  => new LocalDateTimeColumnHasher(ref, col)
+    case (col: LocalTimeColumn)      => new LocalTimeColumnHasher(ref, col)
+    case (col: LocalDateColumn)      => new LocalDateColumnHasher(ref, col)
+    case (col: IntervalColumn)       => new PeriodColumnHasher(ref, col)
+    case _                           => new CValueColumnHasher(ref, col0)
   }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,9 @@ import quasar.blueeyes._
 import scala.math.max
 
 import java.nio.ByteBuffer
+
+import scala.annotation.switch
+import scala.collection.mutable
 
 case class AsyncParse(errors: Seq[ParseException], values: Seq[JValue])
 
@@ -174,8 +177,8 @@ final class AsyncParser protected[json] (
     }
 
     // accumulates errors and results
-    val errors  = ArrayBuffer.empty[ParseException]
-    val results = ArrayBuffer.empty[JValue]
+    val errors  = mutable.ArrayBuffer.empty[ParseException]
+    val results = mutable.ArrayBuffer.empty[JValue]
 
     // we rely on exceptions to tell us when we run out of data
     try {

@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,90 +16,95 @@
 
 package quasar.mimir
 
-import quasar.blueeyes.util.Clock
-import quasar.niflheim.{Chef, CookedBlockFormat, V1CookedBlockFormat, V1SegmentFormat, VersionedSegmentFormat, VersionedCookedBlockFormat}
-import quasar.precog.common.accounts.AccountFinder
-import quasar.precog.common.security.{APIKeyFinder, APIKeyManager, DirectAPIKeyFinder, InMemoryAPIKeyManager, PermissionsFinder}
-import quasar.yggdrasil.table.{Slice, VFSColumnarTableModule}
-import quasar.yggdrasil.vfs.{ActorVFSModule, SecureVFSModule}
+import quasar.Disposable
+import quasar.contrib.cats.effect._
+import quasar.niflheim.{Chef, V1CookedBlockFormat, V1SegmentFormat, VersionedSegmentFormat, VersionedCookedBlockFormat}
+
+import quasar.yggdrasil.table.VFSColumnarTableModule
+import quasar.yggdrasil.vfs.SerialVFS
 
 import akka.actor.{ActorRef, ActorSystem, Props}
-import akka.routing.{CustomRouterConfig, ActorRefRoutee, RouterConfig, RoundRobinGroup, RoundRobinRoutingLogic, Routee, Router}
+import akka.routing.{
+  ActorRefRoutee,
+  CustomRouterConfig,
+  RouterConfig,
+  RoundRobinRoutingLogic,
+  Routee,
+  Router
+}
 
-import scalaz.Monad
-import scalaz.std.scalaFuture.futureInstance
+import cats.effect.IO
+
+import fs2.Stream
+
+import shims._
+
+import org.slf4s.Logging
+
+import scalaz.syntax.apply._
 
 import java.io.File
-import java.time.Instant
 
-import scala.concurrent.duration.{FiniteDuration, SECONDS}
-import scala.concurrent.ExecutionContext.Implicits.global
-import scala.concurrent.Future
+import scala.concurrent.ExecutionContext
+import scala.concurrent.duration._
 import scala.collection.immutable.IndexedSeq
 
-object Precog
-    extends SecureVFSModule[Future, Slice]
-    with ActorVFSModule
-    with VFSColumnarTableModule {
+final class Precog private (
+    dataDir0: File,
+    val actorSystem: ActorSystem,
+    val vfs: SerialVFS[IO])(
+    implicit val ExecutionContext: ExecutionContext)
+    extends VFSColumnarTableModule
+    with StdLibModule {
 
-  object Config {
-    val howManyChefsInTheKitchen: Int = 4
-    val cookThreshold: Int = 20000
-    val storageTimeout: FiniteDuration = new FiniteDuration(300, SECONDS)
-    val quiescenceTimeout: FiniteDuration = new FiniteDuration(300, SECONDS)
-    val maxOpenPaths: Int = 500
-    val dataDir: File = new File("/tmp")
-  }
+  object Library extends StdLib
 
-  // Members declared in quasar.yggdrasil.vfs.ActorVFSModule
-  private val emptyAPIKeyManager: APIKeyManager[Future] =
-    new InMemoryAPIKeyManager[Future](Clock.System)
+  val HowManyChefsInTheKitchen: Int = 4
+  val CookThreshold: Int = 20000
+  val StorageTimeout: FiniteDuration = 300.seconds
 
-  private val apiKeyFinder: APIKeyFinder[Future] =
-    new DirectAPIKeyFinder[Future](emptyAPIKeyManager)
+  private val props: Props = Props(Chef(
+    VersionedCookedBlockFormat(Map(1 -> V1CookedBlockFormat)),
+    VersionedSegmentFormat(Map(1 -> V1SegmentFormat))))
 
-  private val accountFinder: AccountFinder[Future] = AccountFinder.Empty[Future]
-
-  def permissionsFinder: PermissionsFinder[Future] =
-    new PermissionsFinder(apiKeyFinder, accountFinder, Instant.EPOCH)
-
-  private val actorSystem: ActorSystem =
-    ActorSystem("nihdbExecutorActorSystem")
-
-  private def chefs(system: ActorSystem): IndexedSeq[Routee] = (1 to Config.howManyChefsInTheKitchen).map { _ =>
-    ActorRefRoutee(system.actorOf(
-      Props(Chef(
-        VersionedCookedBlockFormat(Map(1 -> V1CookedBlockFormat)),
-        VersionedSegmentFormat(Map(1 -> V1SegmentFormat))))))
-  }
+  private def chefs(system: ActorSystem): IndexedSeq[Routee] =
+    (1 to HowManyChefsInTheKitchen).map { _ =>
+      ActorRefRoutee(system.actorOf(props))
+    }
 
   private val routerConfig: RouterConfig = new CustomRouterConfig {
     def createRouter(system: ActorSystem): Router =
       Router(RoundRobinRoutingLogic(), chefs(system))
   }
 
-  private val masterChef: ActorRef =
-    actorSystem.actorOf(Props[Chef].withRouter(routerConfig))
-
-  private val clock: Clock = Clock.System
-
-  def resourceBuilder: ResourceBuilder =
-    new ResourceBuilder(actorSystem, clock, masterChef, Config.cookThreshold, Config.storageTimeout)
-
-  // Members declared in quasar.yggdrasil.table.ColumnarTableModule
-  implicit def M: Monad[Future] = futureInstance
+  // needed for nihdb
+  val masterChef: ActorRef =
+    actorSystem.actorOf(props.withRouter(routerConfig))
 
   // Members declared in quasar.yggdrasil.TableModule
-  sealed trait TableCompanion extends VFSColumnarTableCompanion 
+  sealed trait TableCompanion extends VFSColumnarTableCompanion
   object Table extends TableCompanion
+}
 
-  // Members declared in quasar.yggdrasil.table.VFSColumnarTableModule
-  private val projectionsActor: ActorRef =
-    actorSystem.actorOf(Props(
-      new PathRoutingActor(Config.dataDir, Config.storageTimeout, Config.quiescenceTimeout, Config.maxOpenPaths, clock)))
+object Precog extends Logging {
 
-  private val actorVFS: ActorVFS =
-    new ActorVFS(projectionsActor, Config.storageTimeout, Config.storageTimeout)
+  def apply(dataDir: File)(implicit ec: ExecutionContext): IO[Disposable[IO, Precog]] =
+    for {
+      vfsd <- SerialVFS[IO](dataDir, ec)
 
-  val vfs: SecureVFS = new SecureVFS(actorVFS, permissionsFinder, clock)
+      sysd <- IO {
+        val sys = ActorSystem(
+          "nihdbExecutorActorSystem",
+          classLoader = Some(getClass.getClassLoader))
+
+        Disposable(sys, IO.fromFutureShift(IO(sys.terminate.map(_ => ()))))
+      }
+
+      pcd <- IO((vfsd |@| sysd) {
+        case (vfs, sys) => new Precog(dataDir, sys, vfs)
+      })
+    } yield pcd
+
+  def stream(dataDir: File)(implicit ec: ExecutionContext): Stream[IO, Precog] =
+    Stream.bracket(apply(dataDir))(d => Stream.emit(d.unsafeValue), _.dispose)
 }

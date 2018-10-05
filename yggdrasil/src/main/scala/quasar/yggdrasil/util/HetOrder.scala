@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@
 package quasar.yggdrasil
 package util
 
-import quasar.blueeyes._
 import quasar.precog.util.NumericComparisons
 
 /**
@@ -36,13 +35,13 @@ trait HetOrderLow {
       }
     }
 
-  implicit def fromOrder[@specialized(Boolean, Long, Double, AnyRef) A](implicit o: SpireOrder[A]) = new HetOrder[A, A] {
+  implicit def fromOrder[@specialized(Boolean, Long, Double, AnyRef) A](implicit o: spire.algebra.Order[A]) = new HetOrder[A, A] {
     def compare(a: A, b: A) = o.compare(a, b)
   }
 }
 
 object HetOrder extends HetOrderLow {
-  implicit def fromScalazOrder[A](implicit z: ScalazOrder[A]) = new HetOrder[A, A] {
+  implicit def fromScalazOrder[A](implicit z: scalaz.Order[A]) = new HetOrder[A, A] {
     def compare(a: A, b: A): Int = z.order(a, b).toInt
   }
 

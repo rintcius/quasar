@@ -1,15 +1,12 @@
 {
     "name": "count distinct",
 
-    "backends": {
-        "postgresql": "pending"
-    },
+    "data": "demo/olympics.data",
 
-    "data": "olympics.data",
+    "query": "select count(distinct sport) as cnt from `demo/olympics.data`",
 
-    "query": "select count(distinct sport) as cnt from olympics",
-
-    "predicate": "containsExactly",
+    "predicate": "exactly",
+    "ignoreResultOrder": true,
 
     "expected": [{ "cnt": 7 }]
 }

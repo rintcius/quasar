@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,15 +17,18 @@
 package quasar.yggdrasil
 package table
 
-import quasar.yggdrasil.bytecode._
-import quasar.precog.common._
-
 import quasar.blueeyes._, json._
-import scalaz._, Scalaz._
-import quasar.precog.TestSupport._
+import quasar.pkg.tests._
+import quasar.precog.common._
+import quasar.yggdrasil.TestIdentities._
+import quasar.yggdrasil.bytecode._
 
-trait PartitionMergeSpec[M[+_]] extends ColumnarTableModuleTestSupport[M] with SpecificationLike with ScalaCheck {
-  import trans._
+import cats.effect.IO
+import scalaz._, Scalaz._
+import shims._
+
+trait PartitionMergeSpec extends ColumnarTableModuleTestSupport with SpecificationLike with ScalaCheck {
+  import trans.{Range => _, _}
 
   def testPartitionMerge = {
     val JArray(elements) = JParser.parseUnsafe("""[
@@ -49,7 +52,7 @@ trait PartitionMergeSpec[M[+_]] extends ColumnarTableModuleTestSupport[M] with S
       "4a"
     ]""")
 
-    val result: M[Table] = tbl.partitionMerge(DerefObjectStatic(Leaf(Source), CPathField("key"))) { table =>
+    val result: IO[Table] = tbl.partitionMerge(DerefObjectStatic(Leaf(Source), CPathField("key"))) { table =>
       val reducer = new Reducer[String] {
         def reduce(schema: CSchema, range: Range): String = {
           schema.columns(JTextT).head match {
@@ -64,9 +67,6 @@ trait PartitionMergeSpec[M[+_]] extends ColumnarTableModuleTestSupport[M] with S
       derefed.reduce(reducer).map(s => Table.constString(Set(s)))
     }
 
-    result.flatMap(_.toJson).copoint must_== expected.toStream
+    result.flatMap(_.toJson).getJValues must_== expected.toStream
   }
-
 }
-
-

@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,11 +17,12 @@
 package quasar.yggdrasil
 package table
 
-import quasar.blueeyes._
 import scalaz.Ordering._
 
+import scala.annotation.tailrec
+
 trait RowComparator { self =>
-  def compare(i1: Int, i2: Int): ScalazOrdering
+  def compare(i1: Int, i2: Int): scalaz.Ordering
 
   def swap: RowComparator = new RowComparator {
     def compare(i1: Int, i2: Int) = self.compare(i2, i1).complement

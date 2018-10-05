@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,23 +14,25 @@
  * limitations under the License.
  */
 
-package quasar.blueeyes
-package json
+package quasar.blueeyes.json
 
-import quasar.precog._, JsonTestSupport._
+import quasar.blueeyes._
+import quasar.pkg.tests._
+import quasar.precog.JsonTestSupport._
 
 import scalaz._
 
-import scala.util.control.Exception._
+import scala.collection.mutable
 import scala.math.min
+import scala.util.control.Exception._
 import scala.util.Random.nextInt
 
 import java.net.URLDecoder
 import java.nio.ByteBuffer
+import java.nio.file.{Files, Paths}
 
 class JsonParserSpec extends Specification with ScalaCheck {
   import JParser._
-  import AsyncParser._
 
   "Any valid json can be parsed" in {
     val parsing = (json: JValue) => { parseUnsafe(json.renderPretty); true }
@@ -94,7 +96,8 @@ object ParsingByteBufferSpec extends Specification {
 object AsyncParserSpec extends Specification {
   import AsyncParser._
 
-  private def loadBytes(path: String): Array[Byte] = jPath(path).slurpBytes
+  private def loadBytes(path: String): Array[Byte] =
+    Files.readAllBytes(Paths.get(path))
 
   private def chunk(data: Array[Byte], i: Int, j: Int) = {
     val len = min(j, data.length) - i
@@ -102,7 +105,7 @@ object AsyncParserSpec extends Specification {
   }
 
   private def chunkAll(async: AsyncParser, data: Array[Byte], f: () => Int) = {
-    var vs = ArrayBuffer.empty[JValue]
+    val vs = mutable.ArrayBuffer.empty[JValue]
     val n = data.length
     var i                   = 0
     var parser: AsyncParser = async
@@ -184,9 +187,9 @@ object AsyncParserSpec extends Specification {
   }
 
   def run1(chunks: Seq[Input], expected: Int) = {
-    var parser: AsyncParser = AsyncParser.stream()
-    var t0                  = System.nanoTime
-    var count               = 0
+    var parser = AsyncParser.stream()
+    val t0     = System.nanoTime
+    var count  = 0
     chunks.foreach { input =>
       val (AsyncParse(errors, results), p0) = parser(input)
       if (!errors.isEmpty) sys.error("errors: %s" format errors)
@@ -253,7 +256,7 @@ xyz
     val bs = json.getBytes(Utf8Charset)
     val c  = chunk(bs, 0, bs.length)
 
-    var p = AsyncParser.stream()
+    val p = AsyncParser.stream()
     val (AsyncParse(es, js), p2) = p(c)
 
     // we should only have parsed 1 valid record, and seen 1 error
@@ -272,8 +275,8 @@ xyz
 
     JParser.parseFromString("[1, 2,\t3,\n4,\r5]\r").toOption must_== Some(ja(1, 2, 3, 4, 5))
     JParser.parseManyFromString("[1,\r\n2]\r\n[3,\r\n4]\r\n").toOption must_== Some(Seq(ja(1, 2), ja(3, 4)))
-    JParser.parseFromString("[1, 2,\t3,\n4,\0 5]").toOption must_== None
-    JParser.parseManyFromString("[1,\r\n2]\0[3,\r\n4]\r\n").toOption must_== None
+    JParser.parseFromString("[1, 2,\t3,\n4,\u0000 5]").toOption must_== None
+    JParser.parseManyFromString("[1,\r\n2]\u0000[3,\r\n4]\r\n").toOption must_== None
   }
 
   "Handles whitespace correctly" in {
@@ -281,13 +284,12 @@ xyz
 
     JParser.parseFromString("[1, 2,\t3,\n4,\r5]\r").toOption must_== Some(ja(1, 2, 3, 4, 5))
     JParser.parseManyFromString("[1,\r\n2]\r\n[3,\r\n4]\r\n").toOption must_== Some(Seq(ja(1, 2), ja(3, 4)))
-    JParser.parseFromString("[1, 2,\t3,\n4,\0 5]").toOption must_== None
-    JParser.parseManyFromString("[1,\r\n2]\0[3,\r\n4]\r\n").toOption must_== None
+    JParser.parseFromString("[1, 2,\t3,\n4,\u0000 5]").toOption must_== None
+    JParser.parseManyFromString("[1,\r\n2]\u0000[3,\r\n4]\r\n").toOption must_== None
   }
 }
 
 object ArrayUnwrappingSpec extends Specification {
-  import JParser._
   import AsyncParser._
 
   def bb(s: String)        = More(ByteBufferWrap(s.getBytes("UTF-8")))
@@ -335,9 +337,6 @@ object ArrayUnwrappingSpec extends Specification {
   }
 
   "Unwrapping array parser performs adequately" in {
-    import scala.math.min
-    import java.nio._
-
     val num = 100 * 1000
     //val num = 1 * 1000 * 1000
     //val num = 2 * 1000 * 1000
@@ -388,7 +387,6 @@ object ArrayUnwrappingSpec extends Specification {
       }
 
       var i      = 0
-      var offset = 0
       var p      = parser
       var done   = false
       var seen   = 0

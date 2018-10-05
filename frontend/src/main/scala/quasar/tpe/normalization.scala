@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package quasar.tpe
 import slamdata.Predef._
 import quasar.contrib.matryoshka._
 import quasar.ejson.{Arr => JArr, CommonEJson, EJson, ExtEJson, Map => JMap}
+import quasar.contrib.iota.copkTraverse
 
 import matryoshka._
 import matryoshka.implicits._
@@ -90,8 +91,8 @@ object normalization {
     JC: Corecursive.Aux[J, EJson],
     JR: Recursive.Aux[J, EJson]
   ): TypeF[J, T] => TypeF[J, T] = totally {
-    case a @ Arr(-\/(ts)) =>
-      ts.traverse(t => const[J, T].getOption(t.project))
+    case a @ Arr(kn, None) =>
+      kn.traverse(t => const[J, T].getOption(t.project))
         .cata(js => const[J, T](fromCommon(JArr(js.toList))), a)
 
     case m @ Map(kn, None) =>
@@ -106,19 +107,18 @@ object normalization {
     TR: Recursive.Aux[T, TypeF[J, ?]],
     JC: Corecursive.Aux[J, EJson],
     JR: Recursive.Aux[J, EJson]
-  ): TypeF[J, T] => TypeF[J, T] = {
-    val expandContainers: Coalgebra[TypeF[J, ?], J] =
-      j => j.project match {
-        case CommonEJson(JArr(js)) => arr[J, J](js.toIList.left[J])
-        case ExtEJson(JMap(tts))   => map[J, J](IMap fromFoldable tts, none)
-        case _                     => const[J, J](j)
-      }
+  ): TypeF[J, T] => TypeF[J, T] = totally {
+    case Const(Embed(CommonEJson(JArr(js)))) =>
+      arr[J, T](
+        js.foldRight(IList[T]())((j, ts) => const[J, T](j).embed :: ts),
+        none)
 
-    totally { case Const(j) => j.ana[T](expandContainers).project }
+    case Const(Embed(ExtEJson((JMap(tts))))) =>
+      map[J, T](tts.foldLeft(IMap.empty[J, T])((m, kv) =>
+        m + kv.map(j => const[J, T](j).embed)), none)
   }
 
   /** Normalizes EJson literals by
-    *   - Converting constant strings to arrays of characters.
     *   - Replacing `Meta` nodes with their value component.
     */
   def normalizeEJson[J: Order, T](
@@ -128,7 +128,7 @@ object normalization {
     JR: Recursive.Aux[J, EJson]
   ): TypeF[J, T] => TypeF[J, T] = {
     val norm: J => J =
-      _.transCata[J](EJson.replaceString[J] <<< EJson.elideMetadata[J])
+      _.transCata[J](EJson.elideMetadata[J])
 
     totally {
       case Const(j)     => const[J, T](norm(j))
@@ -140,11 +140,11 @@ object normalization {
   def reduceToBottom[J, T](
     implicit TR: Recursive.Aux[T, TypeF[J, ?]]
   ): TypeF[J, T] => TypeF[J, T] = totally {
-    case Arr(-\/(ts)) if ts.any(isBottom[J](_)) => bottom[J, T]()
-    case Arr(\/-(Embed(Bottom())))              => bottom[J, T]()
-    case Map(kn, _)   if kn.any(isBottom[J](_)) => bottom[J, T]()
-    case Map(_, Some((Embed(Bottom()), _)))     => bottom[J, T]()
-    case Map(_, Some((_, Embed(Bottom()))))     => bottom[J, T]()
+    case Arr(kn, _) if kn.any(isBottom[J](_)) => bottom[J, T]()
+    case Arr(_, Some(Embed(Bottom()))) => bottom[J, T]()
+    case Map(kn, _) if kn.any(isBottom[J](_)) => bottom[J, T]()
+    case Map(_, Some((Embed(Bottom()), _))) => bottom[J, T]()
+    case Map(_, Some((_, Embed(Bottom())))) => bottom[J, T]()
   }
 
   /** Reduce unions containing `top` to `top`. */

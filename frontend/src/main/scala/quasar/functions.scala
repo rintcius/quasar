@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,7 +35,7 @@ final case object Reduction extends DimensionalEffect
   * an operation.
   */
 final case object Expansion extends DimensionalEffect
-/** Describes a function that each individual value. */
+/** Describes a function that maps each individual value. */
 final case object Mapping extends DimensionalEffect
 /** Describes a function that compresses the identity information. */
 final case object Squashing extends DimensionalEffect
@@ -52,17 +52,12 @@ object DimensionalEffect {
   implicit val equal: Equal[DimensionalEffect] = Equal.equalA[DimensionalEffect]
 }
 
-final case class NullaryFunc
-  (val effect: DimensionalEffect,
+final case class NullaryFunc(
+    val effect: DimensionalEffect,
     val help: String,
-    val codomain: Func.Codomain,
-    val simplify: Func.Simplifier)
-    extends GenericFunc[nat._0] {
-  val domain = Sized[List]()
-  val typer0: Func.Typer[nat._0] = _ => Validation.success(codomain)
-  val untyper0: Func.Untyper[nat._0] = {
-    case ((funcDomain, _), _) => Validation.success(funcDomain)
-  }
+    val simplify: Func.Simplifier) extends GenericFunc[nat._0] {
+
+  val arity: Int = 0
 
   def apply[A](): LP[A] =
     applyGeneric(Sized[List]())
@@ -71,11 +66,9 @@ final case class NullaryFunc
 final case class UnaryFunc(
     val effect: DimensionalEffect,
     val help: String,
-    val codomain: Func.Codomain,
-    val domain: Func.Domain[nat._1],
-    val simplify: Func.Simplifier,
-    val typer0: Func.Typer[nat._1],
-    val untyper0: Func.Untyper[nat._1]) extends GenericFunc[nat._1] {
+    val simplify: Func.Simplifier) extends GenericFunc[nat._1] {
+
+  val arity: Int = 1
 
   def apply[A](a1: A): LP[A] =
     applyGeneric(Func.Input1[A](a1))
@@ -84,11 +77,9 @@ final case class UnaryFunc(
 final case class BinaryFunc(
     val effect: DimensionalEffect,
     val help: String,
-    val codomain: Func.Codomain,
-    val domain: Func.Domain[nat._2],
-    val simplify: Func.Simplifier,
-    val typer0: Func.Typer[nat._2],
-    val untyper0: Func.Untyper[nat._2]) extends GenericFunc[nat._2] {
+    val simplify: Func.Simplifier) extends GenericFunc[nat._2] {
+
+  val arity: Int = 2
 
   def apply[A](a1: A, a2: A): LP[A] =
     applyGeneric(Func.Input2[A](a1, a2))
@@ -97,11 +88,9 @@ final case class BinaryFunc(
 final case class TernaryFunc(
     val effect: DimensionalEffect,
     val help: String,
-    val codomain: Func.Codomain,
-    val domain: Func.Domain[nat._3],
-    val simplify: Func.Simplifier,
-    val typer0: Func.Typer[nat._3],
-    val untyper0: Func.Untyper[nat._3]) extends GenericFunc[nat._3] {
+    val simplify: Func.Simplifier) extends GenericFunc[nat._3] {
+
+  val arity: Int = 3
 
   def apply[A](a1: A, a2: A, a3: A): LP[A] =
     applyGeneric(Func.Input3[A](a1, a2, a3))
@@ -110,25 +99,14 @@ final case class TernaryFunc(
 sealed abstract class GenericFunc[N <: Nat](implicit toInt: ToInt[N]) { self =>
   def effect: DimensionalEffect
   def help: String
-  def codomain: Func.Codomain
-  def domain: Func.Domain[N]
   def simplify: Func.Simplifier
-  def typer0: Func.Typer[N]
-  def untyper0: Func.Untyper[N]
+  def arity: Int
 
   def applyGeneric[A](args: Func.Input[A, N]): LP[A] =
     Invoke[N, A](this, args)
 
   def applyUnsized[A](args: List[A]): Option[LP[A]] =
     args.sized[N].map(applyGeneric)
-
-  final def tpe(args: Func.Domain[N]): Func.VCodomain =
-    typer0(args)
-
-  final def untpe(tpe: Func.Codomain): Func.VDomain[N] =
-    untyper0((domain, codomain), tpe)
-
-  final def arity: Int = domain.length
 
   def toFunction[A]: HomomorphicFunction[A, LP[A]] = new HomomorphicFunction[A, LP[A]] {
     def arity = self.arity
@@ -159,35 +137,47 @@ trait GenericFuncInstances {
       case date.ExtractHour               => "ExtractHour"
       case date.ExtractIsoDayOfWeek       => "ExtractIsoDayOfWeek"
       case date.ExtractIsoYear            => "ExtractIsoYear"
-      case date.ExtractMicroseconds       => "ExtractMicroseconds"
+      case date.ExtractMicrosecond       => "ExtractMicrosecond"
       case date.ExtractMillennium         => "ExtractMillennium"
-      case date.ExtractMilliseconds       => "ExtractMilliseconds"
+      case date.ExtractMillisecond       => "ExtractMillisecond"
       case date.ExtractMinute             => "ExtractMinute"
       case date.ExtractMonth              => "ExtractMonth"
       case date.ExtractQuarter            => "ExtractQuarter"
       case date.ExtractSecond             => "ExtractSecond"
-      case date.ExtractTimezone           => "ExtractTimezone"
-      case date.ExtractTimezoneHour       => "ExtractTimezoneHour"
-      case date.ExtractTimezoneMinute     => "ExtractTimezoneMinute"
+      case date.ExtractTimeZone           => "ExtractTimeZone"
+      case date.ExtractTimeZoneHour       => "ExtractTimeZoneHour"
+      case date.ExtractTimeZoneMinute     => "ExtractTimeZoneMinute"
       case date.ExtractWeek               => "ExtractWeek"
       case date.ExtractYear               => "ExtractYear"
-      case date.Date                      => "Date"
       case date.Now                       => "Now"
-      case date.Time                      => "Time"
-      case date.Timestamp                 => "Timestamp"
+      case date.OffsetDateTime            => "OffsetDateTime"
+      case date.OffsetTime                => "OffsetTime"
+      case date.OffsetDate                => "OffsetDate"
+      case date.LocalDateTime             => "LocalDateTime"
+      case date.LocalTime                 => "LocalTime"
+      case date.LocalDate                 => "LocalDate"
       case date.Interval                  => "Interval"
+      case date.SetTimeZone               => "SetTimeZone"
+      case date.SetTimeZoneHour           => "SetTimeZoneHour"
+      case date.SetTimeZoneMinute         => "SetTimeZoneMinute"
       case date.StartOfDay                => "StartOfDay"
       case date.TimeOfDay                 => "TimeOfDay"
       case date.ToTimestamp               => "ToTimestamp"
       case identity.Squash                => "Squash"
-      case identity.ToId                  => "ToId"
       case math.Add                       => "Add"
+      case math.Abs                       => "Abs"
       case math.Multiply                  => "Multiply"
       case math.Power                     => "Power"
       case math.Subtract                  => "Subtract"
       case math.Divide                    => "Divide"
       case math.Negate                    => "Negate"
       case math.Modulo                    => "Modulo"
+      case math.Ceil                      => "Ceil"
+      case math.Floor                     => "Floor"
+      case math.Trunc                     => "Trunc"
+      case math.FloorScale                => "FloorScale"
+      case math.CeilScale                 => "CeilScale"
+      case math.RoundScale                => "RoundScale"
       case relations.Eq                   => "Eq"
       case relations.Neq                  => "Neq"
       case relations.Lt                   => "Lt"
@@ -205,13 +195,7 @@ trait GenericFuncInstances {
       case set.Drop                       => "Drop"
       case set.Range                      => "Range"
       case set.Filter                     => "Filter"
-      case set.InnerJoin                  => "InnerJoin"
-      case set.LeftOuterJoin              => "LeftOuterJoin"
-      case set.RightOuterJoin             => "RightOuterJoin"
-      case set.FullOuterJoin              => "FullOuterJoin"
       case set.GroupBy                    => "GroupBy"
-      case set.Distinct                   => "Distinct"
-      case set.DistinctBy                 => "DistinctBy"
       case set.Union                      => "Union"
       case set.Intersect                  => "Intersect"
       case set.Except                     => "Except"
@@ -225,20 +209,22 @@ trait GenericFuncInstances {
       case string.Lower                   => "Lower"
       case string.Upper                   => "Upper"
       case string.Substring               => "Substring"
+      case string.Split                   => "Split"
       case string.Boolean                 => "Boolean"
       case string.Integer                 => "Integer"
       case string.Decimal                 => "Decimal"
+      case string.Number                  => "Number"
       case string.Null                    => "Null"
       case string.ToString                => "ToString"
-      case structural.MakeObject          => "MakeObject"
+      case structural.MakeMap             => "MakeMap"
       case structural.MakeArray           => "MakeArray"
       case structural.Meta                => "Meta"
-      case structural.ObjectConcat        => "ObjectConcat"
+      case structural.MapConcat           => "MapConcat"
       case structural.ArrayConcat         => "ArrayConcat"
       case structural.ConcatOp            => "ConcatOp"
-      case structural.ObjectProject       => "ObjectProject"
+      case structural.MapProject          => "MapProject"
       case structural.ArrayProject        => "ArrayProject"
-      case structural.DeleteField         => "DeleteField"
+      case structural.DeleteKey           => "DeleteKey"
       case structural.FlattenMap          => "FlattenMap"
       case structural.FlattenArray        => "FlattenArray"
       case structural.FlattenMapKeys      => "FlattenMapKeys"
@@ -274,15 +260,6 @@ object Func {
   }
 
   type Input[A, N <: Nat] = Sized[List[A], N]
-
-  type Domain[N <: Nat] = Input[Type, N]
-  type Codomain = Type
-
-  type VDomain[N <: Nat] = ValidationNel[SemanticError, Domain[N]]
-  type VCodomain = ValidationNel[SemanticError, Codomain]
-
-  type Typer[N <: Nat] = Domain[N] => VCodomain
-  type Untyper[N <: Nat] = ((Domain[N], Codomain), Codomain) => VDomain[N]
 
   def Input1[A](a1: A): Input[A, nat._1] = Sized[List](a1)
   def Input2[A](a1: A, a2: A): Input[A, nat._2] = Sized[List](a1, a2)

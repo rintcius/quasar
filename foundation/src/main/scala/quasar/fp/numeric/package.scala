@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,8 +21,7 @@ import slamdata.Predef._
 import eu.timepit.refined.numeric.{NonNegative, Positive => RPositive, Greater}
 import eu.timepit.refined.refineV
 import eu.timepit.refined.api.{RefType, Refined}
-import scalaz.{Equal, Show, Monoid}
-import scalaz.syntax.show._
+import scalaz.Monoid
 
 package object numeric {
 
@@ -50,8 +49,4 @@ package object numeric {
     Monoid.instance(
       (a,b) => rt.unsafeWrap(num.plus(rt.unwrap(a), rt.unwrap(b))),
       rt.unsafeWrap(num.zero))
-
-  implicit def refinedEqual[F[_,_],T:Equal,M](implicit rt: RefType[F]): Equal[F[T,M]] = Equal.equalBy(rt.unwrap)
-
-  implicit def refinedShow[F[_,_],T:Show,M](implicit rt: RefType[F]): Show[F[T,M]] = Show.shows(f => rt.unwrap(f).shows)
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package quasar.contrib.scalaz
 import slamdata.Predef._
 
 import scalaz._, Scalaz._
+import scalaz.concurrent.Task
 
 trait StateTInstances {
   implicit def stateTCatchable[F[_]: Catchable: Monad, S]: Catchable[StateT[F, S, ?]] =
@@ -35,4 +36,27 @@ trait StateTInstances {
     }
 }
 
-object stateT extends StateTInstances
+object stateT extends StateTInstances {
+
+  object StateTContrib {
+
+    // how is this not a member of StateT???
+    def put[F[_]: Monad, S](s: S): StateT[F, S, Unit] =
+      StateT[F, S, Unit](_ => (s, ()).point[F])
+
+    // ditto
+    def get[F[_]: Monad, S]: StateT[F, S, S] =
+      StateT[F, S, S](s => (s, s).point[F])
+  }
+
+   object StateTask {
+     def modify[S](f: S => S): StateT[Task, S, Unit] =
+       StateT(s => Task.delay((f(s), ())))
+
+     def gets[S, A](f: S => A): StateT[Task, S, A] =
+       StateT(s => Task.delay((s, f(s))))
+
+     def modifyAndGets[S, A](f: S => (S, A)): StateT[Task, S, A] =
+       StateT(s => Task.delay(f(s)))
+   }
+}

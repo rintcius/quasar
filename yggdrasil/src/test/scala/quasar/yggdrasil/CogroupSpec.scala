@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,20 +16,21 @@
 
 package quasar.yggdrasil
 
-import quasar.blueeyes._
-import quasar.precog.common._
 import quasar.blueeyes.json._
+import quasar.precog.common._
+import quasar.yggdrasil.TestIdentities._
 
 import scalaz._
 import scalaz.Ordering._
 import scalaz.Either3._
 import scalaz.std.tuple._
-import scalaz.syntax.comonad._
 
 import org.specs2._
 import org.scalacheck._, Gen._
 
-trait CogroupSpec[M[+_]] extends TableModuleTestSupport[M] with SpecificationLike with ScalaCheck {
+import scala.annotation.tailrec
+
+trait CogroupSpec extends TableModuleTestSupport with SpecificationLike with ScalaCheck {
   import SampleData._
   import trans._
   import trans.constants._
@@ -53,7 +54,7 @@ trait CogroupSpec[M[+_]] extends TableModuleTestSupport[M] with SpecificationLik
 
   type CogroupResult[A] = Stream[Either3[A, (A, A), A]]
 
-  @tailrec protected final def computeCogroup[A](l: Stream[A], r: Stream[A], acc: CogroupResult[A])(implicit ord: ScalazOrder[A]): CogroupResult[A] = {
+  @tailrec protected final def computeCogroup[A](l: Stream[A], r: Stream[A], acc: CogroupResult[A])(implicit ord: Order[A]): CogroupResult[A] = {
     (l, r) match {
       case (lh #:: lt, rh #:: rt) => ord.order(lh, rh) match {
         case EQ => {
@@ -84,9 +85,9 @@ trait CogroupSpec[M[+_]] extends TableModuleTestSupport[M] with SpecificationLik
     val ltable = fromSample(l)
     val rtable = fromSample(r)
 
-    val keyOrder = ScalazOrder[JValue].contramap((_: JValue) \ "key")
+    val keyOrder = Order[JValue].contramap((_: JValue) \ "key")
 
-    val expected = computeCogroup(l.data, r.data, Stream())(keyOrder) map {
+    val expected = computeCogroup(l.data.map(_.toJValueRaw), r.data.map(_.toJValueRaw), Stream())(keyOrder) map {
       case Left3(jv) => jv
       case Middle3((jv1, jv2)) =>
         JObject(
@@ -103,7 +104,7 @@ trait CogroupSpec[M[+_]] extends TableModuleTestSupport[M] with SpecificationLik
 
     val jsonResult = toJson(result)
 
-    jsonResult.copoint must_== expected
+    jsonResult.getJValues must_== expected
   }
 
   def testTrivialCogroup(f: Table => Table = identity[Table]) = {
@@ -113,7 +114,7 @@ trait CogroupSpec[M[+_]] extends TableModuleTestSupport[M] with SpecificationLik
     val ltable = fromSample(SampleData(Stream(recl)))
     val rtable = fromSample(SampleData(Stream(recr)))
 
-    val expected = Vector(toRecord(Array(0), JArray(JNum(12) :: JUndefined :: JNum(13) :: Nil)))
+    val expected = Stream(toRecord(Array(0), JArray(JNum(12) :: JUndefined :: JNum(13) :: Nil)))
 
     val result: Table = ltable.cogroup(SourceKey.Single, SourceKey.Single, rtable)(
       Leaf(Source),
@@ -122,7 +123,25 @@ trait CogroupSpec[M[+_]] extends TableModuleTestSupport[M] with SpecificationLik
     )
 
     val jsonResult = toJson(f(result))
-    jsonResult.copoint must_== expected
+    jsonResult.unsafeRunSync must_== expected.map(RValue.fromJValueRaw)
+  }
+
+  def testTrivialNoRecordCogroup(f: Table => Table = identity[Table]) = {
+    def recl = JNum(12)
+    def recr = JNum(13)
+
+    val ltable = fromSample(SampleData(Stream(recl)))
+    val rtable = fromSample(SampleData(Stream(recr)))
+
+    val expected = Stream(JNum(12), JNum(13))
+
+    val result: Table = ltable.cogroup(Leaf(Source), Leaf(Source), rtable)(
+      Leaf(Source),
+      Leaf(Source),
+      OuterArrayConcat(SourceValue.Left, SourceValue.Right))
+
+    val jsonResult = toJson(f(result))
+    jsonResult.getJValues must_== expected
   }
 
   def testSimpleCogroup(f: Table => Table = identity[Table]) = {
@@ -157,7 +176,7 @@ trait CogroupSpec[M[+_]] extends TableModuleTestSupport[M] with SpecificationLik
     )
 
     val jsonResult = toJson(f(result))
-    jsonResult.copoint must_== expected
+    jsonResult.getJValues must_== expected
   }
 
   def testUnionCogroup = {
@@ -179,7 +198,7 @@ trait CogroupSpec[M[+_]] extends TableModuleTestSupport[M] with SpecificationLik
     )
 
     val jsonResult = toJson(result)
-    jsonResult.copoint must_== expected
+    jsonResult.getJValues must_== expected
   }
 
   def testAnotherSimpleCogroup = {
@@ -208,7 +227,7 @@ trait CogroupSpec[M[+_]] extends TableModuleTestSupport[M] with SpecificationLik
     )
 
     val jsonResult = toJson(result)
-    jsonResult.copoint must_== expected
+    jsonResult.getJValues must_== expected
   }
 
   def testAnotherSimpleCogroupSwitched = {
@@ -237,7 +256,7 @@ trait CogroupSpec[M[+_]] extends TableModuleTestSupport[M] with SpecificationLik
     )
 
     val jsonResult = toJson(result)
-    jsonResult.copoint must_== expected
+    jsonResult.getJValues must_== expected
   }
 
   def testUnsortedInputs = {
@@ -251,7 +270,7 @@ trait CogroupSpec[M[+_]] extends TableModuleTestSupport[M] with SpecificationLik
       Leaf(Source),
       Leaf(Source),
       OuterObjectConcat(WrapObject(SourceKey.Left, "key"), WrapObject(OuterObjectConcat(SourceValue.Left, SourceValue.Right), "value"))
-    )).copoint must throwAn[Exception]
+    )).unsafeRunSync must throwAn[Exception]
   }
 
   def testCogroupPathology1 = {
@@ -387,14 +406,21 @@ trait CogroupSpec[M[+_]] extends TableModuleTestSupport[M] with SpecificationLik
     import JParser.parseUnsafe
 
     val ltable = fromSample(SampleData(Stream(
+      parseUnsafe("""{ "val" : 0 }"""),
+      parseUnsafe("""{ "val" : 2 }"""),
       parseUnsafe("""{ "id" : "foo", "val" : 4 }"""))))
 
     val rtable = fromSample(SampleData(Stream(
-      parseUnsafe("""{ "id" : "foo", "val" : 2 }"""),
+      parseUnsafe("""{ "val" : 1 }"""),
       parseUnsafe("""{ "val" : 3 }"""),
+      parseUnsafe("""{ "id" : "foo", "val" : 2 }"""),
       parseUnsafe("""{ "id" : "foo", "val" : 4 }"""))))
 
     val expected = Stream(
+      parseUnsafe("""{ "val": 0 }"""),
+      parseUnsafe("""{ "val": 2 }"""),
+      parseUnsafe("""{ "val" : 1 }"""),
+      parseUnsafe("""{ "val" : 3 }"""),
       parseUnsafe("""{ "id": "foo", "left": 4, "right": 2 }"""),
       parseUnsafe("""{ "id": "foo", "left": 4, "right": 4 }""")
     )
@@ -404,8 +430,7 @@ trait CogroupSpec[M[+_]] extends TableModuleTestSupport[M] with SpecificationLik
       OuterObjectConcat(WrapObject(DerefObjectStatic(Leaf(SourceLeft), CPathField("id")), "id"),
                         WrapObject(DerefObjectStatic(Leaf(SourceLeft), CPathField("val")), "left"),
                         WrapObject(DerefObjectStatic(Leaf(SourceRight), CPathField("val")), "right")))
-
-    toJson(result).copoint must_== expected
+    toJson(result).getJValues must_== expected
   }
 
   def testLongEqualSpansOnRight = {
@@ -424,7 +449,7 @@ trait CogroupSpec[M[+_]] extends TableModuleTestSupport[M] with SpecificationLik
       DerefObjectStatic(Leaf(SourceRight), CPathField("value"))
     )
 
-    val jsonResult = toJson(result).copoint
+    val jsonResult = toJson(result).getJValues
     jsonResult must_== expected
   }
 
@@ -444,7 +469,7 @@ trait CogroupSpec[M[+_]] extends TableModuleTestSupport[M] with SpecificationLik
       DerefObjectStatic(Leaf(SourceLeft), CPathField("value"))
     )
 
-    val jsonResult = toJson(result).copoint
+    val jsonResult = toJson(result).getJValues
     jsonResult must_== expected
   }
 
@@ -470,7 +495,7 @@ trait CogroupSpec[M[+_]] extends TableModuleTestSupport[M] with SpecificationLik
       )
     )
 
-    val jsonResult = toJson(result).copoint
+    val jsonResult = toJson(result).getJValues
     jsonResult must_== expected
   }
 
@@ -498,7 +523,7 @@ trait CogroupSpec[M[+_]] extends TableModuleTestSupport[M] with SpecificationLik
       )
     )
 
-    val jsonResult = toJson(result).copoint
+    val jsonResult = toJson(result).getJValues
     jsonResult must_== expected
   }
 }

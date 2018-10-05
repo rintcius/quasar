@@ -1,24 +1,19 @@
 {
-    "name": "join with reversed condition and complex condition expression",
+    "name": "[qa_s07] join with reversed condition and complex condition expression",
 
     "backends": {
-        "couchbase":         "skip",
-        "mongodb_read_only": "pending",
-        "mongodb_q_3_2":     "pending",
-        "postgresql":        "pending"
+        "lwc_local": "ignoreFieldOrder",
+        "mimir": "ignoreFieldOrder"
     },
-
-    "NB": "#1587: Disabled in couchbase due to lack of general join.",
 
     "data": ["../slamengine_commits.data", "../slamengine_commits_dup.data"],
 
     "query": "select l.sha as child, l.author.login as c_auth, r.sha as parent, r.author.login as p_auth
-              from `../slamengine_commits` as l join `../slamengine_commits_dup` as r
+              from `../slamengine_commits.data` as l join `../slamengine_commits_dup.data` as r
               on r.sha = l.parents[0].sha",
 
-    "predicate": "containsAtLeast",
-
-    "ignoreFieldOrder": ["marklogic_json"],
+    "predicate": "atLeast",
+    "ignoreResultOrder": true,
 
     "expected": [
         { "child": "b29d8f254e5df2c4d1792f077625924cd1fde2db", "c_auth": "mossprescott",

@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,24 +14,29 @@
  * limitations under the License.
  */
 
-package quasar.yggdrasil
-package table
+package quasar.yggdrasil.table
 
-import quasar.blueeyes._
 import quasar.precog.common._
-import scala.collection.mutable
+import quasar.yggdrasil._
+
+import cats.effect.IO
+
 import scalaz._, Scalaz._
 
-trait SamplableTableModule[M[+ _]] extends TableModule[M] {
+import shims._
+
+import scala.annotation.tailrec
+import scala.collection.mutable
+
+trait SamplableTableModule extends TableModule {
   type Table <: SamplableTable
 
   trait SamplableTable extends TableLike { self: Table =>
-    import trans._
-    def sample(sampleSize: Int, specs: Seq[TransSpec1]): M[Seq[Table]]
+    def sample(sampleSize: Int, specs: Seq[trans.TransSpec1]): IO[Seq[Table]]
   }
 }
 
-trait SamplableColumnarTableModule[M[+ _]] extends SamplableTableModule[M] { self: ColumnarTableModule[M] with SliceTransforms[M] =>
+trait SamplableColumnarTableModule extends SamplableTableModule { self: ColumnarTableModule with SliceTransforms =>
 
   import trans._
 
@@ -51,10 +56,10 @@ trait SamplableColumnarTableModule[M[+ _]] extends SamplableTableModule[M] { sel
       * Of course, the hope is that this will not be used once we get efficient
       * sampling in that runs in O(m lg n) time.
       */
-    def sample(sampleSize: Int, specs: Seq[TransSpec1]): M[Seq[Table]] = {
+    def sample(sampleSize: Int, specs: Seq[TransSpec1]): IO[Seq[Table]] = {
       case class SampleState(rowInserters: Option[RowInserter], length: Int, transform: SliceTransform1[_])
 
-      def build(states: List[SampleState], slices: StreamT[M, Slice]): M[List[Table]] = {
+      def build(states: List[SampleState], slices: StreamT[IO, Slice]): IO[Seq[Table]] = {
         slices.uncons flatMap {
           case Some((origSlice, tail)) =>
             val nextStates = states map {
@@ -93,14 +98,14 @@ trait SamplableColumnarTableModule[M[+ _]] extends SamplableTableModule[M] { sel
             Traverse[List].sequence(nextStates) flatMap { build(_, tail) }
 
           case None =>
-            M.point {
+            IO {
               states map {
                 case SampleState(inserter, length, _) =>
                   val len = length min sampleSize
                   inserter map { _.toSlice(len) } map { slice =>
-                    Table(slice :: StreamT.empty[M, Slice], ExactSize(len)).paged(yggConfig.maxSliceSize)
+                    Table(slice :: StreamT.empty[IO, Slice], ExactSize(len)).paged(Config.maxSliceRows)
                   } getOrElse {
-                    Table(StreamT.empty[M, Slice], ExactSize(0))
+                    Table(StreamT.empty[IO, Slice], ExactSize(0))
                   }
               }
             }
@@ -115,10 +120,10 @@ trait SamplableColumnarTableModule[M[+ _]] extends SamplableTableModule[M] { sel
     }
   }
 
-  private case class RowInserter(size: Int, slice: Slice, cols: scmMap[ColumnRef, ArrayColumn[_]] = scmMap.empty) {
+  private case class RowInserter(size: Int, slice: Slice, cols: mutable.Map[ColumnRef, ArrayColumn[_]] = mutable.Map.empty) {
     import RowInserter._
 
-    def toSlice(maxSize: Int): Slice = Slice(cols.toMap, size min maxSize)
+    def toSlice(maxSize: Int): Slice = Slice(size min maxSize, cols.toMap)
 
     val ops: Array[ColumnOps] = slice.columns.map(colOpsFor)(collection.breakOut)
 
@@ -136,13 +141,18 @@ trait SamplableColumnarTableModule[M[+ _]] extends SamplableTableModule[M] { sel
     // Creates array columns on demand.
     private def getOrCreateCol(ref: ColumnRef): ArrayColumn[_] = {
       cols.getOrElseUpdate(ref, ref.ctype match {
-        case CBoolean             => ArrayBoolColumn.empty()
+        case CBoolean             => ArrayBoolColumn.empty(size)
         case CLong                => ArrayLongColumn.empty(size)
         case CDouble              => ArrayDoubleColumn.empty(size)
         case CNum                 => ArrayNumColumn.empty(size)
         case CString              => ArrayStrColumn.empty(size)
-        case CDate                => ArrayDateColumn.empty(size)
-        case CPeriod              => ArrayPeriodColumn.empty(size)
+        case COffsetDateTime      => ArrayOffsetDateTimeColumn.empty(size)
+        case COffsetTime          => ArrayOffsetTimeColumn.empty(size)
+        case COffsetDate          => ArrayOffsetDateColumn.empty(size)
+        case CLocalDateTime       => ArrayLocalDateTimeColumn.empty(size)
+        case CLocalTime           => ArrayLocalTimeColumn.empty(size)
+        case CLocalDate           => ArrayLocalDateColumn.empty(size)
+        case CInterval            => ArrayIntervalColumn.empty(size)
         case CArrayType(elemType) => ArrayHomogeneousArrayColumn.empty(size)(elemType)
         case CNull                => MutableNullColumn.empty()
         case CEmptyObject         => MutableEmptyObjectColumn.empty()
@@ -179,7 +189,32 @@ trait SamplableColumnarTableModule[M[+ _]] extends SamplableTableModule[M] { sel
               def unsafeInsert(srcRow: Int, destRow: Int) = dest.update(destRow, src(srcRow))
               def unsafeMove(from: Int, to: Int)          = dest.update(to, dest(from))
             }
-          case (src: DateColumn, dest: ArrayDateColumn) =>
+          case (src: OffsetDateTimeColumn, dest: ArrayOffsetDateTimeColumn) =>
+            new ColumnOps(src, dest) {
+              def unsafeInsert(srcRow: Int, destRow: Int) = dest.update(destRow, src(srcRow))
+              def unsafeMove(from: Int, to: Int)          = dest.update(to, dest(from))
+            }
+          case (src: OffsetTimeColumn, dest: ArrayOffsetTimeColumn) =>
+            new ColumnOps(src, dest) {
+              def unsafeInsert(srcRow: Int, destRow: Int) = dest.update(destRow, src(srcRow))
+              def unsafeMove(from: Int, to: Int)          = dest.update(to, dest(from))
+            }
+          case (src: OffsetDateColumn, dest: ArrayOffsetDateColumn) =>
+            new ColumnOps(src, dest) {
+              def unsafeInsert(srcRow: Int, destRow: Int) = dest.update(destRow, src(srcRow))
+              def unsafeMove(from: Int, to: Int)          = dest.update(to, dest(from))
+            }
+          case (src: LocalDateTimeColumn, dest: ArrayLocalDateTimeColumn) =>
+            new ColumnOps(src, dest) {
+              def unsafeInsert(srcRow: Int, destRow: Int) = dest.update(destRow, src(srcRow))
+              def unsafeMove(from: Int, to: Int)          = dest.update(to, dest(from))
+            }
+          case (src: LocalTimeColumn, dest: ArrayLocalTimeColumn) =>
+            new ColumnOps(src, dest) {
+              def unsafeInsert(srcRow: Int, destRow: Int) = dest.update(destRow, src(srcRow))
+              def unsafeMove(from: Int, to: Int)          = dest.update(to, dest(from))
+            }
+          case (src: LocalDateColumn, dest: ArrayLocalDateColumn) =>
             new ColumnOps(src, dest) {
               def unsafeInsert(srcRow: Int, destRow: Int) = dest.update(destRow, src(srcRow))
               def unsafeMove(from: Int, to: Int)          = dest.update(to, dest(from))
@@ -220,7 +255,7 @@ trait SamplableColumnarTableModule[M[+ _]] extends SamplableTableModule[M] { sel
         if (src.isDefinedAt(srcRow)) {
           unsafeInsert(srcRow, destRow)
         } else {
-          dest.defined.clear(destRow)
+          dest.definedAt.clear(destRow)
         }
       }
 
@@ -228,7 +263,7 @@ trait SamplableColumnarTableModule[M[+ _]] extends SamplableTableModule[M] { sel
         if (dest.isDefinedAt(from)) {
           unsafeMove(from, to)
         } else {
-          dest.defined.clear(to)
+          dest.definedAt.clear(to)
         }
       }
     }

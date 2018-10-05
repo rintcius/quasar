@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,8 @@ import quasar.Qspec
 import quasar.contrib.matryoshka._
 import quasar.contrib.matryoshka.arbitrary._
 import quasar.ejson.implicits._
-import quasar.fp._
+import quasar.fp._, Helpers._
+import quasar.contrib.iota._
 
 import matryoshka.{equalTEqual => _, _}
 import matryoshka.data.Fix
@@ -31,6 +32,7 @@ import scalaz._, Scalaz._
 
 final class JsonCodecSpec extends Qspec with EJsonArbitrary {
   import JsonCodec.DecodingFailed
+  import Common.Optics.{nul, str}
 
   implicit val params = Parameters(maxSize = 10)
 

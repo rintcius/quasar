@@ -2,18 +2,18 @@
     "name": "constant and a grouped value",
 
     "backends": {
-        "postgresql": "pending"
+        "lwc_local": "ignoreFieldOrder",
+        "mimir": "ignoreFieldOrder"
     },
-
     "data": "zips.data",
 
     "variables": {
         "state": "\"CO\""
     },
 
-    "query": "select :state as state, count(*) as `count` from zips where state = :state",
+    "query": "select :state as state, count(*) as `count` from `zips.data` where state = :state",
 
-    "predicate": "containsExactly",
-    "ignoreFieldOrder": ["couchbase", "marklogic_json"],
+    "predicate": "exactly",
+    "ignoreResultOrder": true,
     "expected": [{ "state": "CO", "count": 414 }]
 }

@@ -1,13 +1,12 @@
 {
     "name": "largest zips",
     "backends": {
-        "postgresql": "pending",
-        "spark_local": "pending",
-        "spark_hdfs": "pending"
+        "lwc_local":"ignoreFieldOrder",
+        "mimir":"ignoreFieldOrder"
     },
     "data": "zips.data",
-    "query": "select city, pop from zips where pop > 90000 order by city, pop desc",
-    "predicate": "equalsExactly",
+    "query": "select city, pop from `zips.data` where pop > 90000 order by city, pop desc",
+    "predicate": "exactly",
     "expected": [{ "city": "BELL GARDENS", "pop":  99568 },
                  { "city": "BROOKLYN",     "pop": 111396 },
                  { "city": "CHICAGO",      "pop": 112047 },

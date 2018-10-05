@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,12 +14,10 @@
  * limitations under the License.
  */
 
-package quasar.yggdrasil
-package util
+package quasar.yggdrasil.util
 
-import quasar.blueeyes._
-import quasar.precog.common._
 import quasar.blueeyes.json._
+import quasar.precog.common._
 
 object CPathUtils {
   def cPathToJPaths(cpath: CPath, value: CValue): List[(JPath, CValue)] = (cpath.nodes, value) match {

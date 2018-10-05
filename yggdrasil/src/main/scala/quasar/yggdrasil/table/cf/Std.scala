@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,11 +18,10 @@ package quasar.yggdrasil
 package table
 package cf
 
-import quasar.blueeyes._
 import quasar.precog.util.NumericComparisons
 
 object std {
-  val Eq = CF2P("builtin::ct::eq") {
+  val Eq = CF2P {
     case (c1: BoolColumn, c2: BoolColumn) =>
       new Map2Column(c1, c2) with BoolColumn {
         def apply(row: Int) = c1(row) == c2(row)
@@ -67,7 +66,47 @@ object std {
       new Map2Column(c1, c2) with BoolColumn {
         def apply(row: Int) = c1(row) == c2(row)
       }
-    case (c1: DateColumn, c2: DateColumn) =>
+    case (c1: OffsetDateTimeColumn, c2: OffsetDateTimeColumn) =>
+      new Map2Column(c1, c2) with BoolColumn {
+        def apply(row: Int) = {
+          val res = NumericComparisons.compare(c1(row), c2(row))
+          if (res == 0) true
+          else false
+        }
+      }
+    case (c1: OffsetTimeColumn, c2: OffsetTimeColumn) =>
+      new Map2Column(c1, c2) with BoolColumn {
+        def apply(row: Int) = {
+          val res = NumericComparisons.compare(c1(row), c2(row))
+          if (res == 0) true
+          else false
+        }
+      }
+    case (c1: OffsetDateColumn, c2: OffsetDateColumn) =>
+      new Map2Column(c1, c2) with BoolColumn {
+        def apply(row: Int) = {
+          val res = NumericComparisons.compare(c1(row), c2(row))
+          if (res == 0) true
+          else false
+        }
+      }
+    case (c1: LocalDateTimeColumn, c2: LocalDateTimeColumn) =>
+      new Map2Column(c1, c2) with BoolColumn {
+        def apply(row: Int) = {
+          val res = NumericComparisons.compare(c1(row), c2(row))
+          if (res == 0) true
+          else false
+        }
+      }
+    case (c1: LocalTimeColumn, c2: LocalTimeColumn) =>
+      new Map2Column(c1, c2) with BoolColumn {
+        def apply(row: Int) = {
+          val res = NumericComparisons.compare(c1(row), c2(row))
+          if (res == 0) true
+          else false
+        }
+      }
+    case (c1: LocalDateColumn, c2: LocalDateColumn) =>
       new Map2Column(c1, c2) with BoolColumn {
         def apply(row: Int) = {
           val res = NumericComparisons.compare(c1(row), c2(row))
@@ -93,18 +132,17 @@ object std {
       }
   }
 
-  val And = CF2P("builtin::ct::and") {
+  val And = CF2P {
     case (c1: BoolColumn, c2: BoolColumn) =>
       new Map2Column(c1, c2) with BoolColumn {
         def apply(row: Int) = c1(row) && c2(row)
       }
   }
 
-  val Or = CF2P("builtin::ct::or") {
+  val Or = CF2P {
     case (c1: BoolColumn, c2: BoolColumn) =>
       new Map2Column(c1, c2) with BoolColumn {
         def apply(row: Int) = c1(row) || c2(row)
       }
   }
 }
-// type Std

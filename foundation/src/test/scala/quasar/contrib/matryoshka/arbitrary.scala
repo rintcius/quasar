@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,9 +17,13 @@
 package quasar.contrib.matryoshka
 
 import _root_.matryoshka.Delay
+import _root_.matryoshka.patterns._
 import org.scalacheck.{Arbitrary, Gen}
-import scalaz.Coproduct
+import scalaz.{\/, Coproduct}
+import scalaz.scalacheck.ScalazArbitrary._
+import scalaz.scalacheck.ScalaCheckBinding._
 import scalaz.syntax.either._
+import scalaz.syntax.functor._
 
 object arbitrary extends CorecursiveArbitrary {
   implicit def delayArbitrary[F[_], A](
@@ -29,12 +33,38 @@ object arbitrary extends CorecursiveArbitrary {
   ): Arbitrary[F[A]] =
     F(A)
 
-  implicit def coproductDelayArbitrary[F[_], G[_]](implicit F: Delay[Arbitrary, F], G: Delay[Arbitrary, G]): Delay[Arbitrary, Coproduct[F, G, ?]] =
+  implicit def coproductDelayArbitrary[F[_], G[_]](
+    implicit
+    FA: Delay[Arbitrary, F],
+    FW: UnionWidth[F],
+    GA: Delay[Arbitrary, G],
+    GW: UnionWidth[G]
+  ): Delay[Arbitrary, Coproduct[F, G, ?]] =
     new Delay[Arbitrary, Coproduct[F, G, ?]] {
       def apply[A](arb: Arbitrary[A]): Arbitrary[Coproduct[F, G, A]] =
-        Arbitrary(Gen.oneOf(
-          F(arb).arbitrary map (_.left),
-          G(arb).arbitrary map (_.right)
+        Arbitrary(Gen.frequency(
+          (FW.width, FA(arb).arbitrary map (_.left)),
+          (GW.width, GA(arb).arbitrary map (_.right))
         ) map (Coproduct(_)))
+    }
+
+  implicit def coEnvArbitrary[E: Arbitrary, F[_]](
+    implicit F: Delay[Arbitrary, F]
+  ): Delay[Arbitrary, CoEnv[E, F, ?]] =
+    new Delay[Arbitrary, CoEnv[E, F, ?]] {
+      def apply[A](arb: Arbitrary[A]) = {
+        implicit val arbA = arb
+        Arbitrary(Arbitrary.arbitrary[E \/ F[A]] ∘ (CoEnv(_)))
+      }
+    }
+
+  implicit def envTArbitrary[E: Arbitrary, F[_]](
+    implicit F: Delay[Arbitrary, F]
+  ): Delay[Arbitrary, EnvT[E, F, ?]] =
+    new Delay[Arbitrary, EnvT[E, F, ?]] {
+      def apply[A](arb: Arbitrary[A]) = {
+        implicit val arbA = arb
+        Arbitrary(Arbitrary.arbitrary[(E, F[A])] ∘ (EnvT(_)))
+      }
     }
 }

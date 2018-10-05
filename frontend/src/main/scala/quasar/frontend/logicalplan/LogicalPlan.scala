@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,11 +19,12 @@ package quasar.frontend.logicalplan
 import slamdata.Predef._
 import quasar._, RenderTree.ops._
 import quasar.common.{JoinType, SortDir}
+import quasar.common.data.Data
 import quasar.contrib.pathy.{FPath, refineTypeAbs}
 import quasar.contrib.shapeless._
 import quasar.fp._
 import quasar.fp.binder._
-import quasar.std.TemporalPart
+import quasar.time.TemporalPart
 
 import scala.Symbol
 import scala.Predef.$conforms
@@ -69,22 +70,8 @@ final case class Sort[A](src: A, order: NonEmptyList[(A, SortDir)])
 
 final case class TemporalTrunc[A](part: TemporalPart, src: A) extends LogicalPlan[A]
 
-// NB: This should only be inserted by the type checker. In future, this
-//     should only exist in BlackShield – the checker will annotate nodes
-//     where runtime checks are necessary, then they will be added during
-//     compilation to BlackShield.
-final case class Typecheck[A](expr: A, typ: Type, cont: A, fallback: A)
-    extends LogicalPlan[A]
-
 object LogicalPlan {
   import quasar.std.StdLib._
-
-  def funcFromJoinType(tpe: JoinType) = tpe match {
-    case JoinType.Inner => set.InnerJoin
-    case JoinType.LeftOuter => set.LeftOuterJoin
-    case JoinType.RightOuter => set.RightOuterJoin
-    case JoinType.FullOuter => set.FullOuterJoin
-  }
 
   implicit val traverse: Traverse[LogicalPlan] =
     new Traverse[LogicalPlan] {
@@ -105,8 +92,6 @@ object LogicalPlan {
           case Sort(src, ords)          =>
             (f(src) ⊛ ords.traverse { case (a, d) => f(a) strengthR d })(Sort(_, _))
           case TemporalTrunc(part, src) => f(src) ∘ (TemporalTrunc(part, _))
-          case Typecheck(expr, typ, cont, fallback) =>
-            (f(expr) ⊛ f(cont) ⊛ f(fallback))(Typecheck(_, typ, _, _))
         }
 
       override def map[A, B](v: LogicalPlan[A])(f: A => B): LogicalPlan[B] =
@@ -121,8 +106,6 @@ object LogicalPlan {
           case Let(ident, form, in)     => Let(ident, f(form), f(in))
           case Sort(src, ords)          => Sort(f(src), ords map (f.first))
           case TemporalTrunc(part, src) => TemporalTrunc(part, f(src))
-          case Typecheck(expr, typ, cont, fallback) =>
-            Typecheck(f(expr), typ, f(cont), f(fallback))
         }
 
       override def foldMap[A, B](fa: LogicalPlan[A])(f: A => B)(implicit B: Monoid[B]): B =
@@ -137,8 +120,6 @@ object LogicalPlan {
           case Let(_, form, in)      => f(form) ⊹ f(in)
           case Sort(src, ords)       => f(src) ⊹ ords.foldMap { case (a, _) => f(a) }
           case TemporalTrunc(_, src) => f(src)
-          case Typecheck(expr, _, cont, fallback) =>
-            f(expr) ⊹ f(cont) ⊹ f(fallback)
         }
 
       override def foldRight[A, B](fa: LogicalPlan[A], z: => B)(f: (A, => B) => B): B =
@@ -153,8 +134,6 @@ object LogicalPlan {
           case Let(ident, form, in)  => f(form, f(in, z))
           case Sort(src, ords)       => f(src, ords.foldRight(z) { case ((a, _), b) => f(a, b) })
           case TemporalTrunc(_, src) => f(src, z)
-          case Typecheck(expr, _, cont, fallback) =>
-            f(expr, f(cont, f(fallback, z)))
         }
     }
 
@@ -190,9 +169,6 @@ object LogicalPlan {
             Cord("Sort(") ++ sa.show(src) ++ Cord(", ") ++ ords.show ++ Cord(")")
           case TemporalTrunc(part, src) =>
             Cord("TemporalTrunc(") ++ part.show ++ Cord(",") ++ sa.show(src) ++ Cord(")")
-          case Typecheck(e, t, c, f) =>
-            Cord("Typecheck(") ++ sa.show(e) ++ Cord(",") ++ t.show ++ Cord(",") ++
-            sa.show(c) ++ Cord(",") ++ sa.show(f) ++ Cord(")")
         }
       }
     }
@@ -206,10 +182,10 @@ object LogicalPlan {
           def render(v: LogicalPlan[A]) = v match {
             // NB: a couple of special cases for readability
             case Constant(Data.Str(str)) => Terminal("Str" :: "Constant" :: nodeType, Some(str.shows))
-            case InvokeUnapply(func @ structural.ObjectProject, Sized(expr, name)) =>
+            case InvokeUnapply(func @ structural.MapProject, Sized(expr, name)) =>
               (ra.render(expr), ra.render(name)) match {
                 case (exprR @ RenderedTree(_, Some(_), Nil), RenderedTree(_, Some(n), Nil)) =>
-                  Terminal("ObjectProject" :: nodeType, Some(exprR.shows + "{" + n + "}"))
+                  Terminal("MapProject" :: nodeType, Some(exprR.shows + "{" + n + "}"))
                 case (x, n) => NonTerminal("Invoke" :: nodeType, Some(func.shows), x :: n :: Nil)
             }
 
@@ -234,9 +210,6 @@ object LogicalPlan {
                 }).toList)
             case TemporalTrunc(part, src) =>
               NonTerminal("TemporalTrunc" :: nodeType, Some(part.shows), List(ra.render(src)))
-            case Typecheck(expr, typ, cont, fallback) =>
-              NonTerminal("Typecheck" :: nodeType, Some(typ.shows),
-                List(ra.render(expr), ra.render(cont), ra.render(fallback)))
           }
         }
     }
@@ -259,8 +232,6 @@ object LogicalPlan {
           case (Sort(s1, o1), Sort(s2, o2)) => s1 ≟ s2 && o1 ≟ o2
           case (TemporalTrunc(part1, src1), TemporalTrunc(part2, src2)) =>
             part1 ≟ part2 && src1 ≟ src2
-          case (Typecheck(expr1, typ1, cont1, fb1), Typecheck(expr2, typ2, cont2, fb2)) =>
-            expr1 ≟ expr2 && typ1 ≟ typ2 && cont1 ≟ cont2 && fb1 ≟ fb2
           case _ => false
         }
       }

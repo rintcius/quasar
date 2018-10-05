@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,7 +29,7 @@ object JoinType {
   final case object LeftOuter extends JoinType
   final case object RightOuter extends JoinType
 
-  implicit val equal: Equal[JoinType] = Equal.equalRef
+  implicit val equal: Equal[JoinType] = Equal.equalA
   implicit val show: Show[JoinType] = Show.showFromToString
   implicit val renderTree: RenderTree[JoinType] =
     RenderTree.make(t => Terminal(List(t.shows, "JoinType"), None))

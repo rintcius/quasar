@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,9 +20,11 @@ import slamdata.Predef._
 import quasar.contrib.algebra._
 import quasar.contrib.matryoshka._
 import quasar.contrib.matryoshka.arbitrary._
-import quasar.ejson, ejson.{CommonEJson, EJson, EJsonArbitrary}
+import quasar.contrib.specs2.Spec
+import quasar.ejson.{Decoded, DecodeEJson, EncodeEJson, EJson, EJsonArbitrary, Fixed}
 import quasar.ejson.implicits._
 import quasar.fp._, Helpers._
+import quasar.contrib.iota._
 
 import scala.Predef.$conforms
 
@@ -30,27 +32,26 @@ import algebra.laws._
 import matryoshka.data.Fix
 import matryoshka.implicits._
 import org.specs2.scalacheck._
-import org.specs2.scalaz._
 import scalaz._, Scalaz._
-import scalaz.scalacheck.ScalazProperties._
+import scalaz.scalacheck.ScalazProperties.{equal => eql, _}
 import scalaz.scalacheck.ScalazArbitrary._
 
 final class TypeFSpec extends Spec with TypeFArbitrary with EJsonArbitrary {
-  // TODO: Anything above 5 seems to explode (even '6'), quick thread dump
-  //       landed in scalacheck.Gen, so probably need to tune the Arbitrary
-  //       instance for TypeF (and maybe EJson).
-  implicit val params = Parameters(maxSize = 5)
+  // NB: Limit type depth to something reasonable.
+  implicit val params = Parameters(maxSize = 10)
 
   type J = Fix[EJson]
   type T = Fix[TypeF[J, ?]]
 
+  val J = Fixed[J]
+
   implicit def typeFIntEqual[A: Equal]: Equal[TypeF[Int, A]] =
     TypeF.structuralEqual(Equal[Int])(Equal[A])
 
-  checkAll("structural", equal.laws[TypeF[Int, String]])
+  checkAll("structural", eql.laws[TypeF[Int, String]])
   checkAll(traverse.laws[TypeF[Int, ?]])
   // TODO: Want to check cats.kernel.OrderLaws, but need Cogen
-  checkAll("subtyping", equal.laws[T])
+  checkAll("subtyping", eql.laws[T])
   checkAll(LatticeLaws[T].boundedDistributiveLattice.all)
   checkAll(LatticePartialOrderLaws[T].boundedLatticePartialOrder.all)
 
@@ -96,9 +97,8 @@ final class TypeFSpec extends Spec with TypeFArbitrary with EJsonArbitrary {
     }
 
     "{m} ∪ {k:v} <: {m}" >> prop { kn: IMap[J, T] =>
-      val normM = kn.mapKeys(_.transCata[J](
-        EJson.replaceString[J] <<< EJson.elideMetadata[J]
-      ))
+      val normM =
+        kn.mapKeys(_.transCata[J](EJson.elideMetadata[J]))
 
       normM.maxViewWithKey forall { case ((k, v), m) =>
         isSubtypeOf[J](
@@ -114,32 +114,38 @@ final class TypeFSpec extends Spec with TypeFArbitrary with EJsonArbitrary {
       isSubtypeOf[J](m, n) ≟ (isSubtypeOf[J](t, v) && isSubtypeOf[J](u, w))
     }
 
-    "<array> <: []" >> prop { a: IList[T] \/ T =>
-      isSubtypeOf[J](
-        arr[J, T](a           ).embed,
-        arr[J, T](IList().left).embed)
+    "<array> <: []" >> prop { (k: IList[T], u: Option[T]) =>
+      isSubtypeOf[J](arr[J, T](k, u).embed, arr[J, T](IList[T](), None).embed)
     }
 
     "[x, y] <: z[] iff (x <: z) && (y <: z)" >> prop { (a: T, b: T, c: T) =>
       val (x, y, z) = (orT(a), orT(b), orT(c))
       isSubtypeOf[J](
-        arr[J, T](IList(x, y).left).embed,
-        arr[J, T](         z.right).embed
+        arr[J, T](IList(x, y), None).embed,
+        arr[J, T](IList[T](), Some(z)).embed
       ) ≟ (isSubtypeOf[J](x, z) && isSubtypeOf[J](y, z))
     }
 
     "[t, u] <: [v, w] iff (t <: v) && (u <: w)" >> prop { (a: T, b: T, c: T, d: T) =>
       val (t, u, v, w) = (orT(a), orT(b), orT(c), orT(d))
       isSubtypeOf[J](
-        arr[J, T](IList(t, u).left).embed,
-        arr[J, T](IList(v, w).left).embed
+        arr[J, T](IList(t, u), None).embed,
+        arr[J, T](IList(v, w), None).embed
       ) ≟ (isSubtypeOf[J](t, v) && isSubtypeOf[J](u, w))
     }
 
     "[a, b] <: [a]" >> prop { (as: IList[T], b: T) =>
       isSubtypeOf[J](
-        arr[J, T]((as ::: IList(b)).left).embed,
-        arr[J, T]( as.left              ).embed)
+        arr[J, T](as ::: IList(b), None).embed,
+        arr[J, T](as, None).embed)
+    }
+
+    "[a, b, x, y] <: [a, b ? c] iff (x <: c) && (y <: c)" >> prop { (a: T, b: T, c: T, d: T, e: T) =>
+      val (v, w, x, y, z) = (orT(a), orT(b), orT(c), orT(d), orT(e))
+      isSubtypeOf[J](
+        arr[J, T](IList(v, w, x, y), None).embed,
+        arr[J, T](IList(v, w), Some(z)).embed
+      ) ≟ (isSubtypeOf[J](x, z) && isSubtypeOf[J](y, z))
     }
 
     "(x ∧ y) <: x && (x ∧ y) <: y" >> prop { (x: T, y: T) =>
@@ -151,17 +157,9 @@ final class TypeFSpec extends Spec with TypeFArbitrary with EJsonArbitrary {
       val z = lub[J](x, y)
       (isSubtypeOf[J](x, z) && isSubtypeOf[J](y, z))
     }
+  }
 
-    "str <: char[]" >> prop { (s: String) =>
-      isSubtypeOf[J](
-        const[J, T](CommonEJson(ejson.str[J]("s" + s)).embed).embed,
-        arr[J, T](simple[J, T](SimpleType.Char).embed.right).embed)
-    }
-
-    "[] = ''" >> {
-      val emptyArr = arr[J, T](IList().left).embed
-      val emptyStr = const[J, T](CommonEJson(ejson.str[J]("")).embed).embed
-      emptyArr ≟ emptyStr
-    }
+  "EJson codec" >> prop { t: T =>
+    DecodeEJson[T].decode(EncodeEJson[T].encode[J](t)) ≟ t.point[Decoded]
   }
 }

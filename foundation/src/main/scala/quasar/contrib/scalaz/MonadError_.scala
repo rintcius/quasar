@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,9 @@ package quasar.contrib.scalaz
 
 import slamdata.Predef._
 
+import monocle.Prism
 import scalaz._, Scalaz._
+import scalaz.Liskov._
 
 /** A version of MonadError that doesn't extend Monad to avoid ambiguous implicits
   * in the presence of multiple "mtl" constraints.
@@ -48,11 +50,34 @@ trait MonadError_[F[_], E] {
     handleError(fa)(e => pf.lift(e) getOrElse raiseError(e))
 
   def unattempt[A](fa: F[E \/ A])(implicit F: Monad[F]): F[A] =
-    fa >>= (_.fold(raiseError[A] _, _.point[F]))
+    fa >>= unattempt_
+
+  def unattempt_[A](ea: E \/ A)(implicit F: Applicative[F]): F[A] =
+    ea.fold(raiseError[A] _, _.point[F])
 }
 
 object MonadError_ extends MonadError_Instances {
   def apply[F[_], E](implicit F: MonadError_[F, E]): MonadError_[F, E] = F
+
+  object facet {
+    def apply[F[_]]: PartiallyApplied[F] =
+      new PartiallyApplied[F]
+
+    final class PartiallyApplied[F[_]] {
+      def apply[E1, E2](P: Prism[E1, E2])(implicit ME: MonadError_[F, E1])
+          : MonadError_[F, E2] =
+        new MonadError_[F, E2] {
+          def raiseError[A](e: E2): F[A] =
+            ME.raiseError(P(e))
+
+          def handleError[A](fa: F[A])(f: E2 => F[A]): F[A] =
+            ME.handleWith(fa) {
+              case P(e2) => f(e2)
+              case e1    => ME.raiseError(e1)
+            }
+        }
+    }
+  }
 }
 
 sealed abstract class MonadError_Instances extends MonadError_Instances0 {
@@ -91,6 +116,11 @@ sealed abstract class MonadError_Instances extends MonadError_Instances0 {
       def raiseError[A](e: E) =
         StateT(_ => F.raiseError[(S, A)](e))
     }
+
+  implicit def exceptionFacetMonadError_[F[_]: MonadError_[?[_], Throwable]]: MonadError_[F, Exception] =
+    MonadError_.facet[F](Prism.partial[Throwable, Exception] {
+      case ex: Exception => ex
+    } (e => e))
 }
 
 sealed abstract class MonadError_Instances0 {
@@ -116,4 +146,7 @@ final class MonadError_Ops[F[_], E, A] private[scalaz] (self: F[A])(implicit F0:
 
   def handleWith(pf: PartialFunction[E, F[A]]): F[A] =
     F0.handleWith(self)(pf)
+
+  def unattempt[B](implicit ev: A <~< (E \/ B), M: Monad[F]): F[B] =
+    F0.unattempt(self.map(ev(_)))
 }

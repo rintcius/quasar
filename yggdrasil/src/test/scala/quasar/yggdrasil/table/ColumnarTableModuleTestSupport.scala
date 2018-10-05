@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,15 +18,18 @@ package quasar.yggdrasil
 package table
 
 import quasar.blueeyes._
+import quasar.blueeyes.json._
 import quasar.precog.common._
 import quasar.precog.util._
 
-import quasar.blueeyes.json._
+import cats.effect.IO
 import scalaz._
 import scalaz.syntax.std.boolean._
+import shims._
 
-trait ColumnarTableModuleTestSupport[M[+_]] extends ColumnarTableModule[M] with TableModuleTestSupport[M] {
-  def newGroupId: GroupId
+import scala.annotation.tailrec
+
+trait ColumnarTableModuleTestSupport extends ColumnarTableModule with TableModuleTestSupport {
 
   def defaultSliceSize = 10
 
@@ -42,8 +45,9 @@ trait ColumnarTableModuleTestSupport[M[+_]] extends ColumnarTableModule[M] with 
     }
 
     val (prefix, suffix) = sampleData.splitAt(sliceSize)
-    val slice = new Slice {
+    val slice = {
       val (columns, size) = buildColArrays(prefix.toStream, Map.empty[ColumnRef, ArrayColumn[_]], 0)
+      Slice(size, columns)
     }
 
     (slice, suffix)
@@ -51,12 +55,12 @@ trait ColumnarTableModuleTestSupport[M[+_]] extends ColumnarTableModule[M] with 
 
   // production-path code uses fromRValues, but all the tests use fromJson
   // this will need to be changed when our tests support non-json such as CDate and CPeriod
-  def fromJson0(values: Stream[JValue], maxSliceSize: Option[Int] = None): Table = {
-    val sliceSize = maxSliceSize.getOrElse(yggConfig.maxSliceSize)
+  def fromJson0(values: Stream[JValue], maxSliceRows: Option[Int] = None): Table = {
+    val sliceSize = maxSliceRows.getOrElse(Config.maxSliceRows)
 
     Table(
       StreamT.unfoldM(values) { events =>
-        M.point {
+        IO {
           (!events.isEmpty) option {
             makeSlice(events.toStream, sliceSize)
           }
@@ -66,27 +70,8 @@ trait ColumnarTableModuleTestSupport[M[+_]] extends ColumnarTableModule[M] with 
     )
   }
 
-  def fromJson(values: Stream[JValue], maxSliceSize: Option[Int] = None): Table =
-    fromJson0(values, maxSliceSize orElse Some(defaultSliceSize))
-
-  def lookupF1(namespace: List[String], name: String): F1 = {
-    val lib = Map[String, CF1](
-      "negate" -> cf.math.Negate,
-      "coerceToDouble" -> cf.util.CoerceToDouble,
-      "true" -> CF1("testing::true") { _ => Some(Column.const(true)) }
-    )
-
-    lib(name)
-  }
-
-  def lookupF2(namespace: List[String], name: String): F2 = {
-    val lib  = Map[String, CF2](
-      "add" -> cf.math.Add,
-      "mod" -> cf.math.Mod,
-      "eq"  -> cf.std.Eq
-    )
-    lib(name)
-  }
+  def fromJson(values: Stream[JValue], maxSliceRows: Option[Int] = None): Table =
+    fromJson0(values, maxSliceRows orElse Some(defaultSliceSize))
 
   def lookupScanner(namespace: List[String], name: String): CScanner = {
     val lib = Map[String, CScanner](
@@ -123,8 +108,7 @@ trait ColumnarTableModuleTestSupport[M[+_]] extends ColumnarTableModule[M] with 
 
           (a2, Map(ColumnRef(CPath.Identity, CNum) -> ArrayNumColumn(mask, arr)))
         }
-      }
-    )
+      })
 
     lib(name)
   }

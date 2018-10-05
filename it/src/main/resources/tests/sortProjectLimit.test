@@ -2,14 +2,14 @@
     "name": "sort, project, and limit",
 
     "backends": {
-        "postgresql": "pending"
+        "lwc_local": "ignoreFieldOrder",
+        "mimir": "ignoreFieldOrder"
     },
-
     "data": "zips.data",
 
-    "query": "select city, state from zips order by city, state limit 10",
+    "query": "select city, state from `zips.data` order by city, state limit 10",
 
-    "predicate": "equalsExactly",
+    "predicate": "exactly",
     "expected": [
         { "city": "AARON",         "state": "KY" },
         { "city": "AARONSBURG",    "state": "PA" },

@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,9 +20,9 @@ import quasar.precog.common._
 
 import org.specs2.mutable.Specification
 import org.specs2._
-import org.scalacheck._, Prop._
+import org.scalacheck._
 
-import scalaz._
+import java.io.File
 
 class V1CookedBlockFormatSpecs extends CookedBlockFormatSpecs {
   val format = V1CookedBlockFormat

@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,12 +16,16 @@
 
 package quasar.fp.free
 
+import quasar.contrib.iota.{:<<:, ACopK}
 import scalaz._
 
 object lift {
   final class LifterAux[F[_], A](fa: F[A]) {
 
     def into[G[_]](implicit I: F :<: G): Free[G, A] =
+      Free.liftF(I.inj(fa))
+
+    def intoCopK[G[a] <: ACopK[a]](implicit I: F :<<: G): Free[G, A] =
       Free.liftF(I.inj(fa))
   }
 

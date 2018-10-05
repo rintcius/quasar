@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,46 +17,39 @@
 package quasar.yggdrasil
 package table
 
-import quasar.precog.common._
-import quasar.precog.common.security.APIKey
-
 import quasar.blueeyes._, json._
-import scalaz._, Scalaz._
+import quasar.precog.common._
 
-trait BlockStoreTestModule[M[+_]] extends BaseBlockStoreTestModule[M] {
-  implicit def M: Monad[M] with Comonad[M]
+import cats.effect.IO
+import shims._
 
-  type GroupId = String
-  private val groupId = new java.util.concurrent.atomic.AtomicInteger
-  def newGroupId = "groupId(" + groupId.getAndIncrement + ")"
+import scala.annotation.tailrec
 
+trait BlockStoreTestModule extends BaseBlockStoreTestModule { self =>
   trait TableCompanion extends BaseBlockStoreTestTableCompanion
-
   object Table extends TableCompanion
 }
 
-trait BaseBlockStoreTestModule[M[+_]] extends ColumnarTableModuleTestSupport[M]
-    with SliceColumnarTableModule[M]
-    with StubProjectionModule[M, Slice] {
+trait BaseBlockStoreTestModule extends ColumnarTableModuleTestSupport
+    with SliceColumnarTableModule
+    with StubProjectionModule[Slice] {
 
   import trans._
 
-  implicit def M: Monad[M] with Comonad[M]
-
   object Projection extends ProjectionCompanion
 
-  case class Projection(data: Stream[JValue]) extends ProjectionLike[M, Slice] {
+  case class Projection(data: Stream[JValue]) extends ProjectionLike[Slice] {
     type Key = JArray
 
-    private val slices = fromJson(data).slices.toStream.copoint
+    private val slices = fromJson(data).slices.toStream.unsafeRunSync
 
     val length: Long = data.length
     val xyz = slices.foldLeft(Set.empty[ColumnRef]) {
       case (acc, slice) => acc ++ slice.columns.keySet
     }
-    def structure(implicit M: Monad[M]) = M.point(xyz)
+    def structure = xyz
 
-    def getBlockAfter(id: Option[JArray], colSelection: Option[Set[ColumnRef]])(implicit M: Monad[M]) = M.point {
+    def getBlockAfter(id: Option[JArray], colSelection: Option[Set[ColumnRef]]) = IO {
       @tailrec def findBlockAfter(id: JArray, blocks: Stream[Slice]): Option[Slice] = {
         blocks.filterNot(_.isEmpty) match {
           case x #:: xs =>
@@ -69,9 +62,9 @@ trait BaseBlockStoreTestModule[M[+_]] extends ColumnarTableModuleTestSupport[M]
       val slice = id map (findBlockAfter(_, slices)) getOrElse slices.headOption
 
       slice map { s =>
-        val s0 = new Slice {
-          val size = s.size
-          val columns = colSelection.map { reqCols =>
+        val s0 = Slice(
+          s.size,
+          colSelection.map { reqCols =>
             s.columns.filter {
               case (ref @ ColumnRef(jpath, ctype), _) =>
                 jpath.nodes.head == CPathField("key") || reqCols.exists { ref =>
@@ -79,7 +72,7 @@ trait BaseBlockStoreTestModule[M[+_]] extends ColumnarTableModuleTestSupport[M]
                 }
             }
           }.getOrElse(s.columns)
-        }
+        )
 
         BlockProjectionData[JArray, Slice](s0.toJson(0).getOrElse(JUndefined) \ "key" --> classOf[JArray], s0.toJson(s0.size - 1).getOrElse(JUndefined) \ "key" --> classOf[JArray], s0)
       }
@@ -88,7 +81,7 @@ trait BaseBlockStoreTestModule[M[+_]] extends ColumnarTableModuleTestSupport[M]
 
   trait BaseBlockStoreTestTableCompanion extends SliceColumnarTableCompanion
 
-  def userMetadataView(apiKey: APIKey) = sys.error("TODO")
+  def userMetadataView = sys.error("TODO")
 
   def compliesWithSchema(jv: JValue, ctype: CType): Boolean = (jv, ctype) match {
     case (_: JNum, CNum | CLong | CDouble) => true
@@ -114,8 +107,7 @@ trait BaseBlockStoreTestModule[M[+_]] extends ColumnarTableModuleTestSupport[M]
 }
 
 object BlockStoreTestModule {
-  def empty[M[+_]](implicit M0: Monad[M] with Comonad[M]) = new BlockStoreTestModule[M] {
-    val M = M0
+  val empty = new BlockStoreTestModule {
     val projections = Map.empty[Path, Projection]
   }
 }

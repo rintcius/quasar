@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,29 +16,13 @@
 
 package quasar.std
 
-import quasar.{Data, Type, Func, BinaryFunc, Mapping, SemanticError}, SemanticError._
-
-import scalaz._, NonEmptyList.nels, Validation.{success, failure}
-import shapeless._
+import quasar.{UnaryFunc, Mapping}
 
 trait ArrayLib extends Library {
-  val ArrayLength = BinaryFunc(
+  val ArrayLength = UnaryFunc(
     Mapping,
-    "Gets the length of a given dimension of an array.",
-    Type.Int,
-    Func.Input2(Type.AnyArray, Type.Int),
-    noSimplification,
-    partialTyperV[nat._2] {
-      case Sized(_, Type.Const(Data.Int(dim))) if (dim < 1) =>
-        failure(nels(GenericError("array dimension out of range")))
-      case Sized(Type.Const(Data.Arr(arr)), Type.Const(Data.Int(i)))
-          if (i == 1) =>
-        // TODO: we should support dims other than 1, but it's work
-        success(Type.Const(Data.Int(arr.length)))
-      case Sized(Type.AnyArray, Type.Const(Data.Int(_))) =>
-        success(Type.Int)
-    },
-    basicUntyper)
+    "Gets the length an array.",
+    noSimplification)
 }
 
 object ArrayLib extends ArrayLib

@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,8 +18,10 @@ package quasar.blueeyes
 package json
 package serialization
 
-import quasar.precog._, TestSupport._
+import quasar.pkg.tests._
 import DefaultSerialization._
+
+import scala.reflect.ClassTag
 
 class DefaultSerializationExamplesSpec extends Specification {
   "Primitives can be extracted from strings" in {
@@ -64,6 +66,6 @@ class DefaultSerializationExamplesSpec extends Specification {
 
     val s = ArrayDecomposer(IntDecomposer).decompose(l)
 
-    ArrayExtractor(ctag[Int], IntExtractor).extract(s).toList mustEqual l.toList
+    ArrayExtractor(implicitly[ClassTag[Int]], IntExtractor).extract(s).toList mustEqual l.toList
   }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,164 +14,69 @@
  * limitations under the License.
  */
 
-package quasar.repl
+package quasar
+package repl
 
 import slamdata.Predef._
-import quasar.cli.Cmd, Cmd._
-import quasar.config._
-import quasar.console._
-import quasar.db.StatefulTransactor
-import quasar.effect._
-import quasar.fp._
-import quasar.fp.free._
-import quasar.fs._
-import quasar.fs.mount._
-import quasar.main._, config._, metastore._
-import quasar.metastore.{MetaStoreAccess, Schema}
+import quasar.impl.external.ExternalConfig
+import quasar.common.{PhaseResultCatsT, PhaseResultListen, PhaseResultTell}
+import quasar.contrib.cats.writerT.{catsWriterTMonadListen_, catsWriterTMonadTell_}
+import quasar.contrib.scalaz.MonadError_
+import quasar.impl.schema.SstEvalConfig
+import quasar.mimir.Precog
+import quasar.run.{MonadQuasarErr, Quasar, QuasarError}
 
-import doobie.syntax.connectionio._
-import org.jboss.aesh.console.{AeshConsoleCallback, Console, ConsoleOperation, Prompt}
-import org.jboss.aesh.console.helper.InterruptHook
-import org.jboss.aesh.console.settings.SettingsBuilder
-import org.jboss.aesh.edit.actions.Action
-import pathy.Path, Path._
-import scalaz.{Failure => _, _}, Scalaz._
-import scalaz.concurrent.Task
+import java.nio.file.Path
+import scala.concurrent.ExecutionContext.Implicits.global
 
-object Main {
-  private def consoleIO(console: Console): ConsoleIO ~> Task =
-    new (ConsoleIO ~> Task) {
-      import ConsoleIO._
+import cats.arrow.FunctionK
+import cats.effect.{ConcurrentEffect, IO, Timer}
+import eu.timepit.refined.auto._
+import fs2.{Stream, StreamApp}, StreamApp.ExitCode
+import fs2.async.Ref
+import scalaz._, Scalaz._
+import shims._
 
-      def apply[A](c: ConsoleIO[A]): Task[A] = c match {
-        case PrintLn(message) => Task.delay { console.getShell.out.println(message) }
-      }
-    }
+object Main extends StreamApp[PhaseResultCatsT[IO, ?]] {
 
-  type DriverEff0[A] = Coproduct[ConsoleIO, Task, A]
-  type DriverEff[A]  = Coproduct[ReplFail, DriverEff0, A]
-  type DriverEffM[A] = Free[DriverEff, A]
+  type IOT[A] = PhaseResultCatsT[IO, A]
 
-  private def driver(f: Command => Free[DriverEff, Unit], e: Task[Unit]): Task[Unit] = Task.delay {
-    val console =
-      new Console(new SettingsBuilder()
-        .parseOperators(false)
-        .enableExport(false)
-        .interruptHook(new InterruptHook {
-          def handleInterrupt(console: Console, action: Action) = {
-            console.getShell.out.println("exit")
-            e.unsafePerformSync
-            console.stop
-          }
-        })
-        .create())
-    console.setPrompt(new Prompt("💪 $ "))
+  implicit val iotQuasarError: MonadError_[IOT, QuasarError] =
+    MonadError_.facet[IOT](QuasarError.throwableP)
 
-    val i: DriverEff ~> MainTask =
-      Failure.toError[MainTask, String]                  :+:
-      liftMT[Task, MainErrT].compose(consoleIO(console)) :+:
-      liftMT[Task, MainErrT]
+  implicit val iotTimer: Timer[IOT] = Timer.derive
 
-    console.setConsoleCallback(new AeshConsoleCallback() {
-      override def execute(input: ConsoleOperation): Int = {
-        Command.parse(input.getBuffer.trim) match {
-          case Command.Exit =>
-            console.stop()
-          case command      =>
-            f(command).foldMap(i).run.unsafePerformSync.valueOr(
-              err => console.getShell.out.println("Quasar error: " + err))
-        }
-        0
-      }
-    })
+  def paths[F[_]](implicit F: cats.Applicative[F]): Stream[F, (Path, Path)] =
+    for {
+      basePath <- Paths.getBasePath[Stream[F, ?]]
+      dataDir = basePath.resolve(Paths.QuasarDataDirName)
+      _ <- Paths.mkdirs[Stream[F, ?]](dataDir)
+      pluginDir = basePath.resolve(Paths.QuasarPluginsDirName)
+      _ <- Paths.mkdirs[Stream[F, ?]](pluginDir)
+    } yield (dataDir, pluginDir)
 
-    console.start()
+  def quasarStream[F[_]: ConcurrentEffect: MonadQuasarErr: PhaseResultTell: Timer]
+      : Stream[F, Quasar[F]] =
+    for {
+      (dataPath, pluginPath) <- paths[F]
+      precog <- Precog.stream(dataPath.toFile).translate(λ[FunctionK[IO, F]](_.to[F]))
+      evalCfg = SstEvalConfig(1000L, 2L, 250L)
+      q <- Quasar[F](precog, ExternalConfig.PluginDirectory(pluginPath), evalCfg)
+    } yield q
 
-    ()
-  }
+  def repl[F[_]: ConcurrentEffect: MonadQuasarErr: PhaseResultListen: PhaseResultTell: Timer](
+      q: Quasar[F])
+      : F[ExitCode] =
+    for {
+      ref <- Ref[F, ReplState](ReplState.mk)
+      repl <- Repl.mk[F](ref, q)
+      l <- repl.loop
+    } yield l
 
-  type ReplEff[S[_], A] = (
-        Repl.RunStateT
-    :\: ConsoleIO
-    :\: ReplFail
-    :\: Timing
-    :\: Task
-    :/: S
-  )#M[A]
-
-  def repl[S[_]](
-    fs: S ~> DriverEffM
-  )(implicit
-    S0: Mounting :<: S,
-    S1: QueryFile :<: S,
-    S2: ReadFile :<: S,
-    S3: WriteFile :<: S,
-    S4: ManageFile :<: S
-  ): Task[Command => Free[DriverEff, Unit]] = {
-    TaskRef(Repl.RunState(rootDir, DebugLevel.Normal, 10, OutputFormat.Table, Map())).map { ref =>
-      val i: ReplEff[S, ?] ~> DriverEffM =
-        injectFT[Task, DriverEff].compose(AtomicRef.fromTaskRef(ref)) :+:
-        injectFT[ConsoleIO, DriverEff]                                :+:
-        injectFT[ReplFail, DriverEff]                                 :+:
-        injectFT[Task, DriverEff].compose(Timing.toTask)              :+:
-        injectFT[Task, DriverEff]                                     :+:
-        fs
-
-      (cmd => Repl.command[ReplEff[S, ?]](cmd).foldMap(i))
+  override def stream(args: List[String], requestShutdown: IOT[Unit])
+      : Stream[IOT, ExitCode] = {
+    quasarStream[IOT] >>= { q: Quasar[IOT] =>
+      Stream.eval(repl(q))
     }
   }
-
-  private val DF = Failure.Ops[String, DriverEff]
-
-  private val mt: MainTask ~> DriverEffM =
-    new (MainTask ~> DriverEffM) {
-      def apply[A](mt: MainTask[A]): DriverEffM[A] =
-        free.lift(mt.run).into[DriverEff].flatMap(_.fold(
-          err => DF.fail(err),
-          _.point[DriverEffM]))
-    }
-
-  def main(args: Array[String]): Unit = {
-    val cfgOpsCore = ConfigOps[CoreConfig]
-
-    def start(tx: StatefulTransactor) =
-      for {
-        _       <- verifySchema(Schema.schema, tx.transactor)
-        ctx     <- metastoreCtx(tx)
-        // NB: for now, there's no way to add mounts through the REPL, so no point
-        // in starting if you can't do anything and can't correct the situation.
-        _       <- MetaStoreAccess.fsMounts
-                     .map(_.isEmpty)
-                     .transact(ctx.metastore.transactor)
-                     .liftM[MainErrT]
-                     .ifM(
-                       MainTask.raiseError("No mounts configured."),
-                       ().point[MainTask])
-
-        coreApi =  QErrsTCnxIO.toMainTask(ctx.metastore.transactor) compose ctx.interp
-        runCmd  <- repl[CoreEff](mt compose coreApi).liftM[MainErrT]
-        _       <- driver(runCmd, ctx.closeMnts).liftM[MainErrT]
-      } yield ()
-
-    val main0: MainTask[Unit] = for {
-      opts    <- CliOptions.parser.parse(args.toSeq, CliOptions.default)
-                      .cata(_.point[MainTask], MainTask.raiseError("Couldn't parse options."))
-      cfgPath <- opts.config.fold(none[FsFile].point[MainTask])(cfg =>
-                   FsPath.parseSystemFile(cfg)
-                     .toRight(s"Invalid path to config file: $cfg.")
-                     .map(some))
-      cfg     <- loadConfigFile[CoreConfig](cfgPath).liftM[MainErrT]
-      msCfg   <- cfg.metastore.cata(
-                   Task.now, MetaStoreConfig.configOps.default
-                 ).liftM[MainErrT]
-      tx      <- metastoreTransactor(msCfg)
-      _       <- opts.cmd match {
-                   case Start               => start(tx)
-                   case InitUpdateMetaStore => initUpdateMigrate(Schema.schema, tx.transactor, cfgPath)
-                 }
-    } yield ()
-
-    logErrors(main0).unsafePerformSync
-  }
-
 }

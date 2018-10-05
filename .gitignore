@@ -12,5 +12,7 @@ tmp
 .settings
 *.sw*
 tags
-scripts/marklogic/docker/
-.ml-dev-cookies
+docker/Dockerfiles/Marklogic/MarkLogic.rpm
+docker/Dockerfiles/Spark/scala*.tgz
+docker/Dockerfiles/Spark/spark*.tgz
+docker/Dockerfiles/Hadoop/hadoop*.tar.gz

@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,18 +17,16 @@
 package quasar.yggdrasil
 package table
 
-import quasar.precog.common._
 import quasar.blueeyes._, json._
-import scalaz._, Scalaz._
-import quasar.precog.TestSupport._
+import quasar.precog.common._
+import quasar.pkg.tests._
+
+import shims._
 import org.scalacheck.Gen._
-// import org.specs2.ScalaCheck
-// import org.scalacheck._, Gen._, Arbitrary._
 import SampleData._
 
 trait BlockAlignSpec extends SpecificationLike with ScalaCheck {
-  implicit def M = Need.need
-  private def emptyTestModule = BlockStoreTestModule.empty[Need]
+  private def emptyTestModule = BlockStoreTestModule.empty
 
   def testAlign(sample: SampleData) = {
     val module = emptyTestModule
@@ -42,7 +40,7 @@ trait BlockAlignSpec extends SpecificationLike with ScalaCheck {
     val expected = sample.data.zipWithIndex collect { case (v, i) if i % 2 == 0 && i % 3 == 0 => v }
 
     val finalResults = for {
-      results <- Table.align(fromJson(lstream), SourceKey.Single, fromJson(rstream), SourceKey.Single)
+      results <- Table.align(fromJson(lstream.map(_.toJValueRaw)), SourceKey.Single, fromJson(rstream.map(_.toJValueRaw)), SourceKey.Single)
       leftResult  <- results._1.toJson
       rightResult <- results._2.toJson
       leftResult2 <- results._1.toJson
@@ -50,7 +48,7 @@ trait BlockAlignSpec extends SpecificationLike with ScalaCheck {
       (leftResult, rightResult, leftResult2)
     }
 
-    val (leftResult, rightResult, leftResult2) = finalResults.copoint
+    val (leftResult, rightResult, leftResult2) = finalResults.unsafeRunSync
 
     leftResult must_== expected
     rightResult must_== expected
@@ -90,7 +88,7 @@ trait BlockAlignSpec extends SpecificationLike with ScalaCheck {
         }]
     """)
 
-    val sample = SampleData(elements.toStream, Some((2,List((JPath(".q"),CNum), (JPath(".hw"),CEmptyArray), (JPath(".fr8y"),CNum)))))
+    val sample = SampleData(elements.toStream.flatMap(RValue.fromJValue), Some((2,List((JPath(".q"),CNum), (JPath(".hw"),CEmptyArray), (JPath(".fr8y"),CNum)))))
 
     testAlign(sample.sortBy(_ \ "key"))
   }
@@ -279,7 +277,7 @@ trait BlockAlignSpec extends SpecificationLike with ScalaCheck {
       }]
     """)
 
-    val sample = SampleData(elements.toStream, Some((3,List((JPath(".xb5hs2ckjajs0k44x"),CDouble), (JPath(".zzTqxfzwzacakwjqeGFcnhpkzd5akfobsg2nxump"),CEmptyArray), (JPath(".sp7hpv"),CEmptyObject)))))
+    val sample = SampleData(elements.toStream.map(RValue.fromJValueRaw), Some((3,List((JPath(".xb5hs2ckjajs0k44x"),CDouble), (JPath(".zzTqxfzwzacakwjqeGFcnhpkzd5akfobsg2nxump"),CEmptyArray), (JPath(".sp7hpv"),CEmptyObject)))))
     testAlign(sample.sortBy(_ \ "key"))
   }
 
@@ -297,7 +295,7 @@ trait BlockAlignSpec extends SpecificationLike with ScalaCheck {
         rjson <- aligned._2.toJson
       } yield {
         (ljson, rjson)
-      }).copoint
+      }).unsafeRunSync
 
       val (ljsonreversed, rjsonreversed) = (for {
         aligned <- Table.align(rtable, alignOnR, ltable, alignOnL)
@@ -305,7 +303,7 @@ trait BlockAlignSpec extends SpecificationLike with ScalaCheck {
         rjson <- aligned._2.toJson
       } yield {
         (ljson, rjson)
-      }).copoint
+      }).unsafeRunSync
 
       (ljsonreversed.toList must_== rjsondirect.toList) and
       (rjsonreversed.toList must_== ljsondirect.toList)
@@ -429,7 +427,7 @@ trait BlockAlignSpec extends SpecificationLike with ScalaCheck {
   }
 }
 
-object BlockAlignSpec extends TableModuleSpec[Need] with BlockAlignSpec {
+object BlockAlignSpec extends TableModuleSpec with BlockAlignSpec {
   "align" should {
     "a simple example" in alignSimple
     "across slice boundaries" in alignAcrossBoundaries

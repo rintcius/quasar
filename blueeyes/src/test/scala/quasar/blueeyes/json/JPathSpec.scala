@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,8 +17,7 @@
 package quasar.blueeyes
 package json
 
-import org.scalacheck.Prop
-import org.scalacheck.Arbitrary, Arbitrary.arbitrary
+import quasar.pkg.tests._
 import quasar.precog.JsonTestSupport._
 
 object JPathSpec extends Specification with ScalaCheck {
@@ -85,11 +84,11 @@ object JPathSpec extends Specification with ScalaCheck {
 
   "dropPrefix" should {
     "return just the remainder" in {
-      JPath(".foo.bar[1].baz").dropPrefix(".foo.bar") must beSome(JPath("[1].baz"))
+      JPath(".foo.bar[1].baz").dropPrefix(JPath(".foo.bar")) must beSome(JPath("[1].baz"))
     }
 
     "return none on path mismatch" in {
-      JPath(".foo.bar[1].baz").dropPrefix(".foo.bar[2]") must beNone
+      JPath(".foo.bar[1].baz").dropPrefix(JPath(".foo.bar[2]")) must beNone
     }
   }
 

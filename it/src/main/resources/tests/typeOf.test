@@ -1,23 +1,33 @@
 {
     "name": "use type_of function",
     "backends": {
-        "couchbase":      "pending",
-        "marklogic_json": "pending",
-        "marklogic_xml":  "pending",
-        "postgresql":     "pending",
-        "spark_hdfs":     "pending",
-        "spark_local":    "pending"
+        "lwc_local": "ignoreFieldOrder",
+        "mimir":     "pendingIgnoreFieldOrder"
     },
-    "data": "nested_foo.data",
-    "query": "select foo, type_of(foo) as type from nested_foo",
-    "predicate": "containsExactly",
-    "FIXME": "There should be three `{ }`, but they are rewritten away",
-    "expected": [{ "foo": "zap",                            "type": "array" },
-                 { "foo": [15, [{ "baz": ["quux"] }]],      "type": "array" },
-                 { "foo": ["15z", [{ "baz": ["qx"] }]],     "type": "array" },
-                 { "foo": [18, ["meh", { "baz": ["qx"] }]], "type": "array" },
-                 { "foo": [16, [{ "baz": "mooooo" }]],      "type": "array" },
-                 { "foo": { "bar": 15, "baz": ["qx"] },     "type": "map"   },
-                 { "foo": { "bar": "a15", "baz": ["qx"] },  "type": "map"   },
-                 { "foo": [17, [{ "baz": ["qx"] }]],        "type": "array" }]
+    "data": "types.data",
+    "query": "select foo ?? \"nope\" as foo, type_of(foo ?? 42) as type from `types.data`",
+    "predicate": "exactly",
+    "ignoreResultOrder": true,
+    "expected": [
+      { "foo": 11, "type": "number" },
+      { "foo": 1.12345, "type": "number" },
+      { "foo": "13", "type": "string" },
+      { "foo": "zap", "type": "string" },
+      { "foo": true, "type": "boolean" },
+      { "foo": false, "type": "boolean" },
+      { "foo": null, "type": "null" },
+      { "foo": { "$offsetdatetime": "2009-02-13T23:31:30.011000000+12:15:18" }, "type": "offsetdatetime" },
+      { "foo": { "$offsetdate": "2009-02-13+12:15:18" }, "type": "offsetdate" },
+      { "foo": { "$offsettime": "23:31:30.011000000+12:15:18" }, "type": "offsettime" },
+      { "foo": { "$localdatetime" : "2009-02-13T23:31:30.011000000" }, "type": "localdatetime" },
+      { "foo": { "$localdate" : "2009-02-13" }, "type": "localdate" },
+      { "foo": { "$localtime" : "23:31:30.011000000" }, "type": "localtime" },
+      { "foo": { "$interval" : "P7DT12H34M" }, "type": "interval" },
+      { "foo": [], "type": "emptyarray" },
+      { "foo": {}, "type": "emptyobject" },
+      { "foo": [15, [{ "baz": ["quux"] }]] },
+      { "foo": { "bar": 15, "baz": ["qx"] } },
+      { "foo": "nope", "type": "number" },
+      { "foo": "nope", "type": "number" }
+    ]
 }

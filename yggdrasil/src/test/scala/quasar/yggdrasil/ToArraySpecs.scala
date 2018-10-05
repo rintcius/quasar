@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,10 +18,10 @@ package quasar.yggdrasil
 package table
 
 import quasar.blueeyes.json._
-import scalaz.syntax.comonad._
-import quasar.precog.TestSupport._
+import quasar.pkg.tests._
+import quasar.yggdrasil.TestIdentities._
 
-trait ToArraySpec[M[+_]] extends ColumnarTableModuleTestSupport[M] with SpecificationLike {
+trait ToArraySpec extends ColumnarTableModuleTestSupport with SpecificationLike {
   def testToArrayHomogeneous = {
     val data: Stream[JValue] =
       Stream(
@@ -39,7 +39,7 @@ trait ToArraySpec[M[+_]] extends ColumnarTableModuleTestSupport[M] with Specific
       JArray(JNum(12.4) :: Nil),
       JArray(JNum(-12.4) :: Nil))
 
-    results.copoint must_== expected
+    results.getJValues must_== expected
   }
 
   def testToArrayHeterogeneous = {
@@ -56,8 +56,6 @@ trait ToArraySpec[M[+_]] extends ColumnarTableModuleTestSupport[M] with Specific
 
     val expected = Stream(JArray(JNum(18.8) :: JNum(23.4) :: Nil))
 
-    results.copoint must_== expected
+    results.getJValues must_== expected
   }
 }
-
-

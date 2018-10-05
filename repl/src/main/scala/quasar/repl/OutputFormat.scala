@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,20 +18,29 @@ package quasar.repl
 
 import slamdata.Predef._
 
-import scalaz._, Scalaz._
-
 sealed abstract class OutputFormat
 object OutputFormat {
   case object Table extends OutputFormat
   case object Precise extends OutputFormat
   case object Readable extends OutputFormat
   case object Csv extends OutputFormat
+  case object HomogeneousCsv extends OutputFormat
 
-  def fromString(str: String): Option[OutputFormat] = str.toLowerCase match {
-    case "table"    => Table.some
-    case "precise"  => Precise.some
-    case "readable" => Readable.some
-    case "csv"      => Csv.some
-    case _          => none
-  }
+  def fromString(str: String): Option[OutputFormat] =
+    Some(str.toLowerCase) collect {
+      case "table" => Table
+      case "precise" => Precise
+      case "readable" => Readable
+      case "csv" => Csv
+      case "homogeneouscsv" => HomogeneousCsv
+    }
+
+  def headerLines(format: OutputFormat): Int =
+    format match {
+      case Table => 2
+      case Precise => 0
+      case Readable => 0
+      case Csv => 1
+      case HomogeneousCsv => 1
+    }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import slamdata.Predef._
 import quasar.contrib.matryoshka._
 import quasar.{ejson => ejs}
 import quasar.ejson.{CommonEJson => C, EJson, ExtEJson => E}
+import quasar.contrib.iota.copkTraverse
 
 import algebra.PartialOrder
 import algebra.lattice._
@@ -57,16 +58,15 @@ package object tpe {
   val primaryTypeOfƒ: Algebra[EJson, PrimaryType] = {
     case E(ejs.Meta(v, _)) => v
     // Simple
-    case C(ejs.Null() )    => SimpleType.Null.left
-    case C(ejs.Bool(_))    => SimpleType.Bool.left
-    case E(ejs.Byte(_))    => SimpleType.Byte.left
-    case E(ejs.Char(_))    => SimpleType.Char.left
-    case E( ejs.Int(_))    => SimpleType.Int.left
-    case C( ejs.Dec(_))    => SimpleType.Dec.left
+    case C(ejs.Null() ) => SimpleType.Null.left
+    case C(ejs.Bool(_)) => SimpleType.Bool.left
+    case E(ejs.Char(_)) => SimpleType.Char.left
+    case C(ejs.Str(_)) => SimpleType.Str.left
+    case E(ejs.Int(_)) => SimpleType.Int.left
+    case C(ejs.Dec(_)) => SimpleType.Dec.left
     // Composite
-    case C(ejs.Arr(_))     => CompositeType.Arr.right
-    case E(ejs.Map(_))     => CompositeType.Map.right
-    case C(ejs.Str(_))     => CompositeType.Arr.right
+    case C(ejs.Arr(_)) => CompositeType.Arr.right
+    case E(ejs.Map(_)) => CompositeType.Map.right
   }
 
   /** Returns the primary type of the given EJson value, if it is simple. */

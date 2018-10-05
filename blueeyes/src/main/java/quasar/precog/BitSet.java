@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -218,6 +218,51 @@ public class BitSet {
     }
 
     /**
+     * Inflates the bitset by a factor of `mod` such that
+     * bs.contains(i) == bs.sparsenByMod(o, m).contains(i * m + o)
+     * for all values of bs, i, o, m.
+     */
+    public BitSet sparsenByMod(final int offset, final int mod) {
+        if (mod <= 1) {
+            return copy();
+        }
+
+        long[] _bits = new long[_length * mod];
+
+        int preI = 0;
+        int fullI = 0;
+
+        long preC = 1L;
+        long postC = 1L << offset;
+
+
+        // iterate over our words
+        while (preI < _length) {
+            // in the current word, check if each bit is set
+            if ((bits[preI] & preC) != 0) {
+                // if the bit is set, flip the current sparsened image
+                _bits[(fullI * mod + offset) >> 6] |= postC;
+            }
+
+            // move the post-image forward
+            postC = Long.rotateLeft(postC, mod);
+
+            // move the pre-image forward
+            preC = Long.rotateLeft(preC, 1);
+            if (preC == 1L) {
+                // we've wrapped around, increment the pre-index
+                preI++;
+            }
+
+            fullI++;
+        }
+
+
+        // it's just as easy to return a new one as mutate the old
+        return new BitSet(_bits, _bits.length);
+    }
+
+    /**
      * Sets the bit at the index to the opposite value.
      *
      * @param bitIndex the index of the bit.
@@ -240,6 +285,8 @@ public class BitSet {
     public void flip(int fromIndex, int toIndex) {
         if ((fromIndex < 0) || (toIndex < fromIndex))
             throw new IndexOutOfBoundsException();
+        if (toIndex == 0)
+            return;
         int i = fromIndex >>> 6;
         int j = toIndex >>> 6;
         setLength(j + 1);
@@ -251,6 +298,108 @@ public class BitSet {
         bits[j] ^= (1L << toIndex) - 1;
         for (int k = i + 1; k < j; k++) {
             bits[k] ^= -1;
+        }
+    }
+
+    /**
+     * Ensures that all disjoint index mod rings contain at least one
+     * set bit. If a disjoint index mod ring *already* contains a set
+     * bit, then its contents are guaranteed to be left unmodified.
+     * More rigorously, the first invariant is captured by:
+     *
+     * ∀ i . ∃ j >= 0 && j < mod . bits(i + j) == 1
+     */
+    public void setByMod(int mod) {
+        if (mod <= 0) {
+            return;
+        }
+
+        if (mod >= 64) {
+            setByModSlow(mod);
+            return;
+        }
+
+        // we special-case this because it has a much faster implementation (and also our main impl assumes mod > 1)
+        if (mod == 1) {
+            final long replacement = 0xFFFFFFFFFFFFFFFFL;
+            for (int i = 0; i < _length; i++) {
+                bits[i] = replacement;
+            }
+            return;
+        }
+
+        final long initMask = (1L << mod) - 1L;
+
+        long flipper = 1L;
+        long mask = initMask;
+
+        /*
+         * We need a mask which covers the mod - 1 *highest* order bits.
+         * The goal is to use this to find when flipper has landed within
+         * that range, since that would mean that mask would roll over into
+         * the low order. We flip the lowest of these high bits back to 0
+         * since we don't want to catch the case where flipper << mod == 1L.
+         *
+         * When that situation arises, it means mask is split across a long
+         * boundary. We resolve this by splitting the mask and doing two
+         * checks.
+         */
+        final long highOrderCheck = Long.rotateRight(initMask ^ 1L, mod);
+
+        for (int i = 0; i < _length; i++) {
+            do {
+                if ((flipper & highOrderCheck) == 0L) {
+                    if ((bits[i] & mask) == 0L) {
+                        bits[i] |= flipper;
+                    }
+                } else {
+                    int leadingBits = Long.numberOfLeadingZeros(flipper);
+
+                    long highOrderMask = ((1L << (leadingBits + 1)) - 1L) << (64 - leadingBits - 1);         // mask that exactly covers flipper
+                    long lowOrderMask = (1L << (mod - leadingBits)) - 1;  // ...and the rest of the mod bits
+
+                    // NB: make sure we run in production with assertions OFF
+                    assert((Long.toBinaryString(highOrderMask) + Long.toBinaryString(lowOrderMask)).length() == mod);
+
+                    // we've wrapped around and the mask is splitting high/low-order
+
+                    long highBits = mask & highOrderMask;
+
+                    if (i < _length - 1) {
+                        long lowBits = mask & lowOrderMask;
+
+                        // check both current high and next low
+                        if (((bits[i] & highBits) | (bits[i + 1] & lowBits)) == 0L) {
+                            bits[i] |= flipper;
+                        }
+                    } else {
+                        // there is no next. just check current high
+                        if ((bits[i] & highBits) == 0L) {
+                            bits[i] |= flipper;
+                        }
+                    }
+                }
+
+                mask = Long.rotateLeft(mask, mod);
+                flipper = Long.rotateLeft(flipper, mod);
+            } while ((flipper & initMask) == 0L);
+        }
+    }
+
+    private void setByModSlow(int mod) {
+        int bound = _length << 6;
+        for (int i = 0; i < bound / mod; i++) {
+            boolean set = false;
+            for (int j = 0; j < mod && i * mod + j < bound; j++) {
+                if (get(i * mod + j)) {
+                    set = true;
+                    break;
+                }
+            }
+
+            if (!set) {
+                set(i * mod);
+            }
         }
     }
 
@@ -488,6 +637,21 @@ public class BitSet {
         return true;
     }
 
+    public String toString() {
+        int bitLen = _length << 6;
+        StringBuilder str = new StringBuilder(bitLen);
+        int c = 0;
+        while (c < bitLen) {
+            if (contains(c)) {
+                str.append("1");
+            } else {
+                str.append("0");
+            }
+            c += 1;
+        }
+        return str.toString();
+    }
+
     // Optimization.
     public int hashCode() {
         int h = 0;
@@ -503,19 +667,26 @@ public class BitSet {
      * @param newLength the new length of the table.
      */
     private final void setLength(final int newLength) {
-        if (bits.length < newLength) { // Resizes array.
-            int arrayLength = bits.length;
-            while (arrayLength < newLength) {
-                arrayLength <<= 1;
-            }
+        int arrayLength = 1 << (32 - Integer.numberOfLeadingZeros(newLength));
+        if (arrayLength < 0 || arrayLength > (1 << 27)) {
+            throw new RuntimeException(newLength + " is too large for a BitSet length");
+        }
+        if (bits.length < arrayLength) { // Resizes array.
             long[] tmp = new long[arrayLength];
             System.arraycopy(bits, 0, tmp, 0, _length);
             bits = tmp;
         }
-        for (int i = _length; i < newLength; i++) {
+        for (int i = _length; i < arrayLength; i++) {
             bits[i] = 0;
         }
-        _length = newLength;
+        _length = arrayLength;
+    }
+
+    public final BitSet resizeBits(final int newBits) {
+        int howManyLongs = ((newBits - 1) >> 6) + 1;
+        long[] arr = new long[howManyLongs];
+        System.arraycopy(this.getBits(), 0, arr, 0, Math.min(howManyLongs, this._length));
+        return new BitSet(arr, howManyLongs);
     }
 
     private static final long serialVersionUID = 1L;

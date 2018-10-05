@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,8 @@
 
 package quasar.precog.common
 
-import quasar.blueeyes._, json._, serialization._
-import DefaultSerialization._
+import quasar.blueeyes._, json._
+
 import scalaz.Ordering._
 import scalaz.syntax.std.boolean._
 
@@ -53,6 +53,9 @@ sealed trait CPath { self =>
   def \:(that: CPath): CPath  = CPath(that.nodes ++ self.nodes)
   def \:(that: String): CPath = CPath(CPathField(that) +: self.nodes)
   def \:(that: Int): CPath    = CPath(CPathIndex(that) +: self.nodes)
+
+  def hasPrefixComponent(p: CPathNode): Boolean = nodes.startsWith(p :: Nil)
+  def hasSuffixComponent(p: CPathNode): Boolean = nodes.endsWith(p :: Nil)
 
   def hasPrefix(p: CPath): Boolean = nodes.startsWith(p.nodes)
   def hasSuffix(p: CPath): Boolean = nodes.endsWith(p.nodes)
@@ -137,9 +140,9 @@ object CPathNode {
   implicit def s2PathNode(name: String): CPathNode = CPathField(name)
   implicit def i2PathNode(index: Int): CPathNode   = CPathIndex(index)
 
-  implicit object CPathNodeOrder extends ScalazOrder[CPathNode] {
-    def order(n1: CPathNode, n2: CPathNode): ScalazOrdering = (n1, n2) match {
-      case (CPathField(s1), CPathField(s2)) => ScalazOrdering.fromInt(s1.compare(s2))
+  implicit object CPathNodeOrder extends scalaz.Order[CPathNode] {
+    def order(n1: CPathNode, n2: CPathNode): scalaz.Ordering = (n1, n2) match {
+      case (CPathField(s1), CPathField(s2)) => scalaz.Ordering.fromInt(s1.compare(s2))
       case (CPathField(_), _)               => GT
       case (_, CPathField(_))               => LT
 
@@ -151,7 +154,7 @@ object CPathNode {
       case (CPathIndex(_), _)               => GT
       case (_, CPathIndex(_))               => LT
 
-      case (CPathMeta(m1), CPathMeta(m2)) => ScalazOrdering.fromInt(m1.compare(m2))
+      case (CPathMeta(m1), CPathMeta(m2)) => scalaz.Ordering.fromInt(m1.compare(m2))
     }
   }
 
@@ -176,14 +179,6 @@ case object CPathArray extends CPathNode {
 
 object CPath {
   import quasar.blueeyes.json._
-  implicit val CPathDecomposer: Decomposer[CPath] = new Decomposer[CPath] {
-    def decompose(cpath: CPath): JValue = JString(cpath.toString)
-  }
-
-  implicit val CPathExtractor: Extractor[CPath] = new Extractor[CPath] {
-    override def validated(obj: JValue): scalaz.Validation[Extractor.Error, CPath] =
-      obj.validated[String].map(CPath(_))
-  }
 
   private[this] case class CompositeCPath(nodes: List[CPathNode]) extends CPath
 
@@ -237,24 +232,22 @@ object CPath {
 
   case class PathWithLeaf[A](path: Seq[CPathNode], value: A) {
     val size: Int = path.length
+    def tail: PathWithLeaf[A] = PathWithLeaf(path.tail, value)
   }
 
   def makeStructuredTree[A](pathsAndValues: Seq[(CPath, A)]) = {
-    def inner[A](paths: Seq[PathWithLeaf[A]]): Seq[CPathTree[A]] = {
+    def inner[X](paths: Seq[PathWithLeaf[X]]): Seq[CPathTree[X]] = {
       if (paths.size == 1 && paths.head.size == 0) {
         List(LeafNode(paths.head.value))
       } else {
         val filtered = paths filterNot { case PathWithLeaf(path, _)  => path.isEmpty }
         val grouped  = filtered groupBy { case PathWithLeaf(path, _) => path.head }
 
-        def recurse[A](paths: Seq[PathWithLeaf[A]]) =
-          inner(paths map { case PathWithLeaf(path, v) => PathWithLeaf(path.tail, v) })
-
         val result = grouped.toSeq.sortBy(_._1) map {
           case (node, paths) =>
             node match {
-              case (field: CPathField) => FieldNode(field, recurse(paths))
-              case (index: CPathIndex) => IndexNode(index, recurse(paths))
+              case (field: CPathField) => FieldNode(field, inner(paths.map(_.tail)))
+              case (index: CPathIndex) => IndexNode(index, inner(paths.map(_.tail)))
               case _                   => sys.error("CPathArray and CPathMeta not supported")
             }
         }
@@ -281,14 +274,14 @@ object CPath {
 
   implicit def singleNodePath(node: CPathNode) = CPath(node)
 
-  implicit object CPathOrder extends ScalazOrder[CPath] {
-    def order(v1: CPath, v2: CPath): ScalazOrdering = {
-      def compare0(n1: List[CPathNode], n2: List[CPathNode]): ScalazOrdering = (n1, n2) match {
+  implicit object CPathOrder extends scalaz.Order[CPath] {
+    def order(v1: CPath, v2: CPath): scalaz.Ordering = {
+      def compare0(n1: List[CPathNode], n2: List[CPathNode]): scalaz.Ordering = (n1, n2) match {
         case (Nil, Nil) => EQ
         case (Nil, _)   => LT
         case (_, Nil)   => GT
         case (n1 :: ns1, n2 :: ns2) =>
-          val ncomp = ScalazOrder[CPathNode].order(n1, n2)
+          val ncomp = scalaz.Order[CPathNode].order(n1, n2)
           if (ncomp != EQ) ncomp else compare0(ns1, ns2)
       }
 
@@ -296,5 +289,5 @@ object CPath {
     }
   }
 
-  implicit val CPathOrdering = CPathOrder.toScalaOrdering
+  implicit val CPathOrdering: Ordering[CPath] = CPathOrder.toScalaOrdering
 }

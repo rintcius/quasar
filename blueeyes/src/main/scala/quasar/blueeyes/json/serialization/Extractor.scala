@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,8 @@ import quasar.blueeyes._, json._
 import quasar.precog._
 import scalaz._, Scalaz._, Validation._
 
+import scala.reflect.ClassTag
+
 /** Extracts the value from a JSON object. You must implement either validated or extract.
   */
 trait Extractor[A] { self =>
@@ -33,22 +35,6 @@ trait Extractor[A] { self =>
   def validated(jvalue: JValue): Validation[Error, A]
   def validated(jvalue: JValue, jpath: JPath): Validation[Error, A] =
     ((cause: Extractor.Error) => Extractor.Invalid("Unable to deserialize property or child " + jpath, Some(cause))) <-: validated(jvalue.get(jpath))
-
-  def project(jpath: JPath): Extractor[A] = new Extractor[A] {
-    override def extract(jvalue: JValue) = self.extract(jvalue(jpath))
-    def validated(jvalue: JValue)        = self.validated(jvalue(jpath))
-  }
-
-  def map[B](f: A => B): Extractor[B] = new Extractor[B] {
-    override def extract(jvalue: JValue): B = f(self.extract(jvalue))
-    def validated(jvalue: JValue)           = self.validated(jvalue) map f
-  }
-
-  def mapv[B](f: A => Validation[Error, B]): Extractor[B] = new Extractor[B] {
-    def validated(jvalue: JValue) = self.validated(jvalue) flatMap f
-  }
-
-  def kleisli = Kleisli[Validation[Error, ?], JValue, A](validated _)
 
   def apply(jvalue: JValue): A = extract(jvalue)
 }
@@ -94,18 +80,10 @@ object Extractor {
     def message = "Multiple extraction errors occurred: " + errors.map(_.message).list.toList.mkString(": ")
   }
 
-  implicit val typeclass: Plus[Extractor] with Functor[Extractor] = new Plus[Extractor] with Functor[Extractor] {
-    def plus[A](f1: Extractor[A], f2: => Extractor[A]) = new Extractor[A] {
-      def validated(jvalue: JValue) = f1.validated(jvalue) findSuccess f2.validated(jvalue)
-    }
-
-    def map[A, B](e: Extractor[A])(f: A => B): Extractor[B] = e map f
-  }
-
-  def apply[A: CTag](f: PartialFunction[JValue, A]): Extractor[A] = new Extractor[A] {
+  def apply[A: ClassTag](f: PartialFunction[JValue, A]): Extractor[A] = new Extractor[A] {
     def validated(jvalue: JValue) = {
       if (f.isDefinedAt(jvalue)) Success(f(jvalue))
-      else Failure(Invalid("Extraction not defined from value " + jvalue + " to type " + implicitly[CTag[A]].erasure.getName))
+      else Failure(Invalid("Extraction not defined from value " + jvalue + " to type " + implicitly[ClassTag[A]].runtimeClass.getName))
     }
   }
 }

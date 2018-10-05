@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,33 +17,16 @@
 package quasar.blueeyes
 
 import scalaz._, Scalaz._
-import quasar.blueeyes.json.serialization.Decomposer
 
 package object json {
   import JValue._
 
-  type JFieldTuple = String -> JValue
-
-  def jarray(elements: JValue*): JValue                                    = JArray(elements.toList)
-  def jobject(fields: JField*): JValue                                     = JObject(fields.toList)
-  def jfield[A](name: String, value: A)(implicit d: Decomposer[A]): JField = JField(name, d(value))
-
-  private def ppath(p: String) = if (p startsWith ".") p else "." + p
-
-  implicit def liftJPathField(name: String): JPathNode = JPathField(name)
-  implicit def liftJPathIndex(index: Int): JPathNode   = JPathIndex(index)
-  implicit def liftJPath(path: String): JPath          = JPath(path)
+  type JFieldTuple = (String, JValue)
 
   implicit val JPathNodeOrder: Order[JPathNode] = Order orderBy (x => x.optName -> x.optIndex)
   implicit val JPathNodeOrdering                = JPathNodeOrder.toScalaOrdering
   implicit val JPathOrder: Order[JPath]         = Order orderBy (_.nodes)
   implicit val JPathOrdering                    = JPathOrder.toScalaOrdering
-
-  implicit val JObjectMergeMonoid = new Monoid[JObject] {
-    val zero = JObject(Nil)
-
-    def append(v1: JObject, v2: => JObject): JObject = v1.merge(v2).asInstanceOf[JObject]
-  }
 
   val NoJPath     = JPath()
   type JPath      = quasar.precog.JPath
@@ -66,7 +49,7 @@ package object json {
     def apply(index: Int): JPathNode = nodes(index)
     def head: Option[JPathNode]      = nodes.headOption
     def tail: JPath                  = JPath(nodes.tail)
-    def path: String                 = x.to_s
+    def path: String                 = x.toString
 
     def ancestors: List[JPath] = {
       def loop(path: JPath, acc: List[JPath]): List[JPath] = path.parent.fold(acc)(p => loop(p, p :: acc))
@@ -117,7 +100,6 @@ package object json {
   }
 
   implicit class JPathNodeOps(private val x: JPathNode) {
-    import x._
     def optName: Option[String] = x match {
       case JPathField(x) => Some(x)
       case _             => None
@@ -222,9 +204,6 @@ package object json {
 
   implicit class JValueOps(private val self: JValue) {
     import Validation._
-
-    def diff(other: JValue)          = Diff.diff(self, other)
-    def merge(other: JValue): JValue = Merge.merge(self, other)
 
     def typeIndex: Int = self match {
       case JUndefined => -1
@@ -647,6 +626,8 @@ package object json {
       */
     def filter(p: JValue => Boolean): List[JValue] =
       foldDown(List.empty[JValue])((acc, e) => if (p(e)) e :: acc else acc).reverse
+
+    def withFilter(p: JValue => Boolean): List[JValue] = filter(p)
 
     def flatten: List[JValue] =
       foldDown(List.empty[JValue])((acc, e) => e :: acc).reverse

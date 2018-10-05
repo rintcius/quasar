@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@ import matryoshka.data._
 import matryoshka.implicits._
 import scalaz._, Scalaz._
 import simulacrum.typeclass
+import iotaz.{CopK, TListK}
 
 @typeclass trait RenderTree[A] {
   def render(a: A): RenderedTree
@@ -33,6 +34,9 @@ import simulacrum.typeclass
 
 @SuppressWarnings(Array("org.wartremover.warts.ImplicitConversion"))
 object RenderTree extends RenderTreeInstances {
+  def contramap[A, B: RenderTree](f: A => B): RenderTree[A] =
+    new RenderTree[A] { def render(v: A) = RenderTree[B].render(f(v)) }
+
   def make[A](f: A => RenderedTree): RenderTree[A] =
     new RenderTree[A] { def render(v: A) = f(v) }
 
@@ -77,13 +81,22 @@ sealed abstract class RenderTreeInstances extends RenderTreeInstances0 {
   implicit def delay[F[_], A: RenderTree](implicit F: Delay[RenderTree, F]): RenderTree[F[A]] =
     F(RenderTree[A])
 
+  @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
   implicit def free[F[_]: Functor](implicit F: Delay[RenderTree, F]): Delay[RenderTree, Free[F, ?]] =
     Delay.fromNT(λ[RenderTree ~> (RenderTree ∘ Free[F, ?])#λ](rt =>
       make(_.resume.fold(F(free[F].apply(rt)).render, rt.render))))
 
+  @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
   implicit def cofree[F[_]](implicit F: Delay[RenderTree, F]): Delay[RenderTree, Cofree[F, ?]] =
     Delay.fromNT(λ[RenderTree ~> (RenderTree ∘ Cofree[F, ?])#λ](rt =>
       make(t => NonTerminal(List("Cofree"), None, List(rt.render(t.head), F(cofree(F)(rt)).render(t.tail))))))
+
+  implicit def these[A: RenderTree, B: RenderTree]: RenderTree[A \&/ B] =
+    make {
+      case \&/.Both(a, b) => NonTerminal(List("\\&/"), "Both".some, List(a.render, b.render))
+      case \&/.This(a)    => NonTerminal(List("\\&/"), "This".some, List(a.render))
+      case \&/.That(b)    => NonTerminal(List("\\&/"), "That".some, List(b.render))
+    }
 
   implicit def coproduct[F[_], G[_], A](implicit RF: RenderTree[F[A]], RG: RenderTree[G[A]]): RenderTree[Coproduct[F, G, A]] =
     make(_.run.fold(RF.render, RG.render))
@@ -93,6 +106,8 @@ sealed abstract class RenderTreeInstances extends RenderTreeInstances0 {
 
   implicit def renderTreeT[T[_[_]], F[_]: Functor](implicit T: RenderTreeT[T], F: Delay[RenderTree, F]): RenderTree[T[F]] =
     T.renderTree(F)
+
+  implicit def copKRenderTree[LL <: TListK](implicit M: RenderTreeKMaterializer[LL]): Delay[RenderTree, CopK[LL, ?]] = M.materialize(offset = 0)
 
   implicit def coproductDelay[F[_], G[_]](implicit RF: Delay[RenderTree, F], RG: Delay[RenderTree, G]): Delay[RenderTree, Coproduct[F, G, ?]] =
     Delay.fromNT(λ[RenderTree ~> DelayedFG[F, G]#RenderTree](ra =>

@@ -2,13 +2,8 @@
     "name": "combine case (3-arg expr) with group by",
 
     "backends": {
-        "postgresql": "pending",
-        "marklogic_json":  "skip",
-        "marklogic_xml":   "skip",
-        "mongodb_q_3_2": "pending",
-        "couchbase":  "skip",
-        "spark_local": "pending",
-        "spark_hdfs": "pending"
+        "lwc_local":      "ignoreFieldOrder",
+        "mimir":          "ignoreFieldOrder"
     },
 
     "data": "zips.data",
@@ -23,13 +18,11 @@
                   when state = \"VA\" then 4
                   else 100
                 end as funnel
-                from zips
+                from `zips.data`
                 group by state
                 order by funnel, state",
 
-    "note": "should be `equalsInitial`, with a separate `containsAtLeast` with
-             the IL entry (and perhaps others).",
-    "predicate": "containsAtLeast",
+    "predicate": "initial",
     "expected": [{ "abbr": "CO", "quantity":  414, "funnel":   1 },
                  { "abbr": "WA", "quantity":  484, "funnel":   2 },
                  { "abbr": "PA", "quantity": 1458, "funnel":   3 },

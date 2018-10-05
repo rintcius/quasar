@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,11 @@
 
 package quasar.yggdrasil.jdbm3
 
-import quasar.blueeyes._
-import java.io.{ DataInput, DataOutput }
 import org.apache.jdbm.Serializer
+
+import java.io.{DataInput, DataOutput}
+
+import scala.annotation.tailrec
 
 object ByteArraySerializer extends Serializer[Array[Byte]] with Serializable {
 

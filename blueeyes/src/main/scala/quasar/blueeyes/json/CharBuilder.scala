@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,8 +15,6 @@
  */
 
 package quasar.blueeyes.json
-
-import quasar.blueeyes._
 
 // efficient char-by-char string builder, taken from jawn under MIT license.
 // (https://github.com/non/jawn)

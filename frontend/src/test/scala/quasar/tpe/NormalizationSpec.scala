@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import quasar.contrib.matryoshka.arbitrary._
 import quasar.ejson.{EJson, EJsonArbitrary}
 import quasar.ejson.implicits._
 import quasar.fp._, Helpers._
+import quasar.contrib.iota._
 
 import scala.Predef.$conforms
 
@@ -33,7 +34,8 @@ import scalaz._, Scalaz._
 import scalaz.scalacheck.ScalazArbitrary._
 
 final class NormalizationSpec extends Qspec with TypeFArbitrary with EJsonArbitrary {
-  implicit val params = Parameters(maxSize = 5)
+  // NB: Limit type depth to something reasonable.
+  implicit val params = Parameters(maxSize = 10)
 
   import TypeF._, normalization._
 

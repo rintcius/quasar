@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,15 +18,16 @@ package quasar.pkg
 
 import slamdata.Predef._
 
+import scala.{Byte, Char}
 import scala.Predef.$conforms
 import scala.collection.mutable.Builder
 import scala.collection.Traversable
 import scala.language.postfixOps
-import scala.{ Byte, Char }
+import scala.math.exp
 
 package object tests extends TestsPackage
 
-trait TestsPackage extends ScalacheckSupport with SpecsSupport
+trait TestsPackage extends NestedGenerators with SpecsSupport
 
 trait SpecsSupport {
   import org.specs2._, matcher._
@@ -93,8 +94,22 @@ trait ScalacheckSupport {
   def mapOfN[K, V](len: Int, k: Gen[K], v: Gen[V]): Gen[sciMap[K, V]] =
     (setOfN(len, k) -> listOfN(len, v)) >> (_ zip _ toMap)
 
-  def genAlphaNumString: Gen[String]   = alphaNumChar.list ^^ (_.mkString)
-  def genBigDecimal: Gen[BigDecimal]   = Arbitrary.arbBigDecimal.arbitrary
+  def genAlphaNumString: Gen[String] = alphaNumChar.list ^^ (_.mkString)
+
+  def genUnicodeChar: Gen[Char] =
+    Gen.frequency(
+      (100, Gen.asciiChar),
+      (1, Gen.choose('λ', '貗')))
+
+  def genUnicodeString: Gen[String] =
+    Gen.listOf(genUnicodeChar).map(_.mkString)
+
+  def genBigDecimal: Gen[BigDecimal] = Arbitrary.arbBigDecimal.arbitrary
+
+  // This is a hack to avoid underflow and overflow exceptions during tests. It's still a problem.
+  def genSmallScaleBigDecimal: Gen[BigDecimal] =
+    genBigDecimal.map(_.setScale(100, BigDecimal.RoundingMode.DOWN))
+
   def genBigInt: Gen[BigInt]           = Arbitrary.arbBigInt.arbitrary
   def genBool: Gen[Boolean]            = oneOf(true, false)
   def genByte: Gen[Byte]               = choose(Byte.MinValue, Byte.MaxValue) ^^ (_.toByte)
@@ -111,6 +126,23 @@ trait ScalacheckSupport {
   def genStartAndEnd: Gen[Int -> Int]  = genMinus10To10 >> (s => (0 upTo 20) ^^ (e => s -> e))
   def genString: Gen[String]           = Arbitrary.arbString.arbitrary
 
+  // mostly copied from scalacheck excluding control characters
+  def genJSONChar: Gen[Char]           = {
+    // exclude 0xFFFE due to this bug: http://bit.ly/1QryQZy
+    // also exclude 0xFFFF as it is not unicode: http://bit.ly/2cVBrzK
+    // excludes
+    val validRangesInclusive = List[(Char, Char)](
+      (0x0020, 0xD7FF),
+      (0xE000, 0xFFFD)
+    )
+
+    Gen.frequency((validRangesInclusive.map {
+      case (first, last) => (last + 1 - first, Gen.choose[Char](first, last))
+    }: List[(Int, Gen[Char])]): _*)
+  }
+
+  def genJSONString: Gen[String] = Gen.listOf(genJSONChar).map(_.mkString)
+
   implicit class ScalacheckIntOps(private val n: Int) {
     def upTo(end: Int): Gen[Int] = choose(n, end)
   }
@@ -124,6 +156,7 @@ trait ScalacheckSupport {
     def list: Gen[List[A]]  = gen.list
     def opt: Gen[Option[A]] = gen.opt
   }
+
   implicit class ScalacheckGenOps[A](gen: Gen[A]) {
     def ^^[B](f: A => B): Gen[B]      = gen map f
     def >>[B](f: A => Gen[B]): Gen[B] = gen flatMap f
@@ -137,12 +170,29 @@ trait ScalacheckSupport {
       10 -> (gen map (x => Some(x)))
     )
   }
+
   implicit class ScalacheckGen2Ops[A, B](gen: (Gen[A], Gen[B])) {
     def >>[C](f: (A, B) => C): Gen[C] = for (a <- gen._1; b <- gen._2) yield f(a, b)
     def zip: Gen[A -> B]              = >>(scala.Tuple2(_, _))
   }
+
   implicit class ScalacheckGen3Ops[A, B, C](gen: (Gen[A], Gen[B], Gen[C])) {
     def >>[D](f: (A, B, C) => D): Gen[D] = for (a <- gen._1; b <- gen._2; c <- gen._3) yield f(a, b, c)
     def zip: Gen[(A, B, C)]              = >>(scala.Tuple3(_, _, _))
+  }
+}
+
+trait NestedGenerators extends ScalacheckSupport {
+
+  def genNested[A](maxDepth: Int, maxRecursiveDepth: Int, atomic: Gen[A], nested: => Gen[A]): Gen[A] = {
+    val nestedWeight: Int =
+      if (maxDepth < 0) 0 else exp(maxRecursiveDepth.toDouble).toInt
+
+    val nonNestedWeight: Int =
+      exp(maxDepth.toDouble).toInt
+
+    Gen.frequency(
+      nestedWeight -> Gen.delay(nested),
+      nonNestedWeight -> atomic)
   }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,18 +16,13 @@
 
 package quasar.niflheim
 
-import quasar.blueeyes._
 import quasar.blueeyes.json._
+import quasar.precog.BitSet
 import quasar.precog.common._
-import quasar.precog.util._
 
 import scala.collection.mutable
-import scala.collection.mutable.{Map => MMap}
 
-import java.io._
-import java.time.{LocalDateTime, ZonedDateTime}
-
-case class CTree(path: CPath, fields: MMap[String, CTree], indices: ArrayBuffer[CTree], types: MMap[CType, Int]) {
+case class CTree(path: CPath, fields: mutable.Map[String, CTree], indices: mutable.ArrayBuffer[CTree], types: mutable.Map[CType, Int]) {
   def getField(s: String): CTree = fields.getOrElseUpdate(s, CTree.empty(CPath(path.nodes :+ CPathField(s))))
   def getIndex(n: Int): CTree = {
     var i = indices.length
@@ -49,15 +44,15 @@ case class CTree(path: CPath, fields: MMap[String, CTree], indices: ArrayBuffer[
 }
 
 object CTree {
-  def empty(path: CPath) = CTree(path, MMap.empty[String, CTree], ArrayBuffer.empty[CTree], MMap.empty[CType, Int])
+  def empty(path: CPath) = CTree(path, mutable.Map.empty[String, CTree], mutable.ArrayBuffer.empty[CTree], mutable.Map.empty[CType, Int])
 }
 
 object Segments {
   def empty(id: Long): Segments =
-    Segments(id, 0, CTree.empty(CPath.Identity), ArrayBuffer.empty[Segment])
+    Segments(id, 0, CTree.empty(CPath.Identity), mutable.ArrayBuffer.empty[Segment])
 }
 
-case class Segments(id: Long, var length: Int, t: CTree, a: ArrayBuffer[Segment]) {
+case class Segments(id: Long, var length: Int, t: CTree, a: mutable.ArrayBuffer[Segment]) {
 
   override def equals(that: Any): Boolean = that match {
     case Segments(`id`, length2, t2, a2) =>
@@ -113,41 +108,7 @@ case class Segments(id: Long, var length: Int, t: CTree, a: ArrayBuffer[Segment]
     }
   }
 
-  def detectDateTime(s: String): LocalDateTime = {
-    if (!DateTimeUtil.looksLikeIso8601(s)) return null
-    try {
-      DateTimeUtil.parseDateTime(s/*, true*/).toLocalDateTime // !!???
-    } catch {
-      case e: IllegalArgumentException => null
-    }
-  }
-
   def addString(row: Int, tree: CTree, s: String) {
-    val dateTime = detectDateTime(s)
-    if (dateTime == null) {
-      addRealString(row, tree, s)
-    } else {
-      addRealDateTime(row, tree, dateTime)
-    }
-  }
-
-  def addRealDateTime(row: Int, tree: CTree, s: LocalDateTime) {
-    val n = tree.getType(CDate)
-    if (n >= 0) {
-      val seg = a(n).asInstanceOf[ArraySegment[LocalDateTime]]
-      seg.defined.set(row)
-      seg.values(row) = s
-    } else {
-      tree.setType(CDate, a.length)
-      val d = new BitSet()
-      d.set(row)
-      val v = new Array[LocalDateTime](length)
-      v(row) = s
-      a.append(ArraySegment[LocalDateTime](id, tree.path, CDate, d, v))
-    }
-  }
-
-  def addRealString(row: Int, tree: CTree, s: String) {
     val n = tree.getType(CString)
     if (n >= 0) {
       val seg = a(n).asInstanceOf[ArraySegment[String]]

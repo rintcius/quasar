@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package quasar.blueeyes.json.serialization
 
-import quasar.blueeyes.{HNil => _, _}, json._, Extractor._
+import quasar.blueeyes._, json._, Extractor._
 
 import scalaz._
 import shapeless._
@@ -78,21 +78,21 @@ object IsoSerialization {
       new DecomposerAux[String :: FT, H :: T] {
         def decompose(fields: String :: FT, values: H :: T) =
           // No point propagating decompose validation to the top level, we'd need to throw there anyway
-          dt.decompose(fields.tail, values.tail).insert(fields.head, dh.decompose(values.head)).fold(throw _, identity)
+          dt.decompose(fields.tail, values.tail).insert(JPath(fields.head), dh.decompose(values.head)).fold(throw _, identity)
       }
 
     implicit def hlistDecomposer2[FT <: HList, H, T <: HList](implicit dh: Decomposer[H], dt: DecomposerAux[FT, T]) =
       new DecomposerAux[RichField :: FT, H :: T] {
         def decompose(fields: RichField :: FT, values: H :: T) =
           // No point propagating decompose validation to the top level, we'd need to throw there anyway
-          dt.decompose(fields.tail, values.tail).insert(fields.head.alts.head, dh.decompose(values.head)).fold(throw _, identity)
+          dt.decompose(fields.tail, values.tail).insert(JPath(fields.head.alts.head), dh.decompose(values.head)).fold(throw _, identity)
       }
 
     implicit def hlistDecomposer3[FT <: HList, H, T <: HList](implicit dh: Decomposer[H], dt: DecomposerAux[FT, T]) =
       new DecomposerAux[RichFieldWithDefault[H] :: FT, H :: T] {
         def decompose(fields: RichFieldWithDefault[H] :: FT, values: H :: T) =
           // No point propagating decompose validation to the top level, we'd need to throw there anyway
-          dt.decompose(fields.tail, values.tail).insert(fields.head.alts.head, dh.decompose(values.head)).fold(throw _, identity)
+          dt.decompose(fields.tail, values.tail).insert(JPath(fields.head.alts.head), dh.decompose(values.head)).fold(throw _, identity)
       }
 
     implicit def hlistDecomposer4[FT <: HList, H, T <: HList](implicit dh: Decomposer[H], dt: DecomposerAux[FT, T]) =
@@ -100,7 +100,7 @@ object IsoSerialization {
         def decompose(fields: String :: FT, values: Option[H] :: T) = {
           val tail = dt.decompose(fields.tail, values.tail)
           // No point propagating decompose validation to the top level, we'd need to throw there anyway
-          values.head.map(h => tail.insert(fields.head, dh.decompose(h)).fold(throw _, identity)).getOrElse(tail)
+          values.head.map(h => tail.insert(JPath(fields.head), dh.decompose(h)).fold(throw _, identity)).getOrElse(tail)
         }
       }
 
@@ -109,7 +109,7 @@ object IsoSerialization {
         def decompose(fields: RichField :: FT, values: Option[H] :: T) = {
           val tail = dt.decompose(fields.tail, values.tail)
           // No point propagating decompose validation to the top level, we'd need to throw there anyway
-          values.head.map(h => tail.insert(fields.head.alts.head, dh.decompose(h)).fold(throw _, identity)).getOrElse(tail)
+          values.head.map(h => tail.insert(JPath(fields.head.alts.head), dh.decompose(h)).fold(throw _, identity)).getOrElse(tail)
         }
       }
 
@@ -118,7 +118,7 @@ object IsoSerialization {
         def decompose(fields: RichFieldWithDefault[H] :: FT, values: Option[H] :: T) = {
           val tail = dt.decompose(fields.tail, values.tail)
           // No point propagating decompose validation to the top level, we'd need to throw there anyway
-          values.head.map(h => tail.insert(fields.head.alts.head, dh.decompose(h)).fold(throw _, identity)).getOrElse(tail)
+          values.head.map(h => tail.insert(JPath(fields.head.alts.head), dh.decompose(h)).fold(throw _, identity)).getOrElse(tail)
         }
       }
 
@@ -155,7 +155,7 @@ object IsoSerialization {
       new ExtractorAux[String :: FT, H :: T] {
         def extract(source: JValue, fields: String :: FT) =
           for {
-            h <- eh.validated(source, fields.head)
+            h <- eh.validated(source, JPath(fields.head))
             t <- et.extract(source, fields.tail)
           } yield h :: t
       }
@@ -167,7 +167,7 @@ object IsoSerialization {
             h <- fields.head.alts.find { alt =>
                   (source \? alt).isDefined
                 }.map { alt =>
-                  eh.validated(source, alt)
+                  eh.validated(source, JPath(alt))
                 }.getOrElse(Failure(Invalid("Missing field")))
             t <- et.extract(source, fields.tail)
           } yield h :: t
@@ -180,7 +180,7 @@ object IsoSerialization {
             h <- fields.head.alts.find { alt =>
                   (source \? alt).isDefined
                 }.map { alt =>
-                  eh.validated(source, alt)
+                  eh.validated(source, JPath(alt))
                 }.getOrElse(Success(fields.head.default))
             t <- et.extract(source, fields.tail)
           } yield h :: t
@@ -212,11 +212,11 @@ object IsoSerialization {
       }
   }
 
-  class IsoDecomposer[T, F <: HList, L <: HList](fields: F, iso: Iso[T, L], decomposer: DecomposerAux[F, L]) extends Decomposer[T] {
+  class IsoDecomposer[T, F <: HList, L <: HList](fields: F, iso: Generic.Aux[T, L], decomposer: DecomposerAux[F, L]) extends Decomposer[T] {
     def decompose(t: T) = decomposer.decompose(fields, iso.to(t))
   }
 
-  class IsoExtractor[T, F <: HList, L <: HList](fields: F, iso: Iso[T, L], extractor: ExtractorAux[F, L]) extends Extractor[T] {
+  class IsoExtractor[T, F <: HList, L <: HList](fields: F, iso: Generic.Aux[T, L], extractor: ExtractorAux[F, L]) extends Extractor[T] {
     def validated(source: JValue) =
       for {
         l <- extractor.extract(source, fields)
@@ -224,18 +224,18 @@ object IsoSerialization {
   }
 
   class MkDecomposer[T] {
-    def apply[F <: HList, L <: HList](fields: F)(implicit iso: Iso[T, L], decomposer: DecomposerAux[F, L]): Decomposer[T] =
+    def apply[F <: HList, L <: HList](fields: F)(implicit iso: Generic.Aux[T, L], decomposer: DecomposerAux[F, L]): Decomposer[T] =
       new IsoDecomposer(fields, iso, decomposer)
   }
 
   class MkExtractor[T] {
-    def apply[F <: HList, L <: HList](fields: F)(implicit iso: Iso[T, L], extractor: ExtractorAux[F, L]): Extractor[T] =
+    def apply[F <: HList, L <: HList](fields: F)(implicit iso: Generic.Aux[T, L], extractor: ExtractorAux[F, L]): Extractor[T] =
       new IsoExtractor(fields, iso, extractor)
   }
 
   class MkSerialization[T] {
     def apply[F <: HList, L <: HList](
-        fields: F)(implicit iso: Iso[T, L], decomposer: DecomposerAux[F, L], extractor: ExtractorAux[F, L]): (Decomposer[T], Extractor[T]) =
+        fields: F)(implicit iso: Generic.Aux[T, L], decomposer: DecomposerAux[F, L], extractor: ExtractorAux[F, L]): (Decomposer[T], Extractor[T]) =
       (new IsoDecomposer(fields, iso, decomposer), new IsoExtractor(fields, iso, extractor))
   }
 }

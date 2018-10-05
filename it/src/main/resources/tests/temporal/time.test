@@ -1,27 +1,19 @@
 {
     "name": "filter on time_of_day",
 
-    "NB": "Couchbase disabled due to heap exhaustion",
-
     "backends": {
-        "couchbase":         "skip",
-        "mongodb_2_6":       "pending",
-        "mongodb_3_0":       "pending",
-        "mongodb_read_only": "pending",
-        "mongodb_3_2":       "pending",
-        "mongodb_q_3_2":     "pending",
-        "postgresql":        "pending"
+        "lwc_local": "ignoreFieldOrder",
+        "mimir":     "pendingIgnoreFieldOrder"
     },
-
     "data": "../days.data",
 
-    "query": "select day, time_of_day(ts) as tod, time_of_day(day) as notadate, time_of_day(missing) as missing from `../days`
-    where time_of_day(ts) >= time(\"08:00\") and time_of_day(ts) < time(\"10:20:30.400\")",
+    "query": "select day, time_of_day(ts) as tod, time_of_day(day) as notadate, time_of_day(missing) as missing from `../days.data`
+    where time_of_day(ts) >= offsettime(\"08:00Z\") and time_of_day(ts) < offsettime(\"10:20:30.400Z\")",
 
-    "predicate": "containsExactly",
-    "ignoreFieldOrder": ["couchbase"],
+    "predicate": "exactly",
+    "ignoreResultOrder": true,
     "expected": [
-        { "day": "Tuesday",   "tod": { "$time": "08:00:00.000" } },
-        { "day": "Wednesday", "tod": { "$time": "09:00:00.000" } },
-        { "day": "Thursday",  "tod": { "$time": "10:00:00.000" } }]
+        { "day": "Tuesday",   "tod": { "$offsettime": "08:00:00.000000000Z" } },
+        { "day": "Wednesday", "tod": { "$offsettime": "09:00:00.000000000Z" } },
+        { "day": "Thursday",  "tod": { "$offsettime": "10:00:00.000000000Z" } }]
 }

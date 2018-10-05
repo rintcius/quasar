@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,11 @@
 
 package quasar.niflheim
 
-import quasar.precog.util.FileLock
-
 import org.objectweb.howl.log._
 
-import java.io.RandomAccessFile
+import org.slf4s.Logging
+
+import java.io.File
 import java.nio.ByteBuffer
 import java.util.concurrent.ScheduledExecutorService
 
@@ -47,12 +47,12 @@ class CookStateLog(baseDir: File, scheduler: ScheduledExecutorService) extends L
   txLog.open()
   txLog.setAutoMark(false) // We only mark when we're ready to write to a new raw log
 
-  def close = {
+  def close() = {
     if (pendingCookIds0.size > 0) {
       log.warn("Closing txLog with pending cooks: " + pendingCookIds0.keys.mkString("[", ", ", "]"))
     }
     txLog.close()
-    workLock.release
+    workLock.release()
   }
 
   // Maps from blockId to txKey

@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,9 +17,10 @@
 package quasar.yggdrasil
 
 import quasar.blueeyes._
-import table._
+import quasar.precog.BitSet
 import quasar.precog.common._
 import quasar.yggdrasil.bytecode._
+import quasar.yggdrasil.table._
 
 object Schema {
   def ctypes(jtype: JType): Set[CType] = jtype match {
@@ -37,13 +38,18 @@ object Schema {
       ctypes(elemType) collect {
         case cType: CValueType[_] => CArrayType(cType)
       }
-    case JNumberT  => Set(CLong, CDouble, CNum)
-    case JTextT    => Set(CString)
-    case JBooleanT => Set(CBoolean)
-    case JNullT    => Set(CNull)
-    case JDateT    => Set(CDate)
-    case JPeriodT  => Set(CPeriod)
-    case _         => Set.empty
+    case JNumberT         => Set(CLong, CDouble, CNum)
+    case JTextT           => Set(CString)
+    case JBooleanT        => Set(CBoolean)
+    case JNullT           => Set(CNull)
+    case JOffsetDateTimeT => Set(COffsetDateTime)
+    case JOffsetTimeT     => Set(COffsetTime)
+    case JOffsetDateT     => Set(COffsetDate)
+    case JLocalDateTimeT  => Set(CLocalDateTime)
+    case JLocalTimeT      => Set(CLocalTime)
+    case JLocalDateT      => Set(CLocalDate)
+    case JIntervalT       => Set(CInterval)
+    case _                => Set.empty
   }
 
   def cpath(jtype: JType): Seq[CPath] = {
@@ -51,11 +57,10 @@ object Schema {
       case JArrayFixedT(indices)                           => indices flatMap { case (idx, tpe) => CPath(CPathIndex(idx)) combine cpath(tpe) } toSeq
       case JObjectFixedT(fields)                           => fields flatMap { case (name, tpe) => CPath(CPathField(name)) combine cpath(tpe) } toSeq
       case JArrayHomogeneousT(elemType)                    => Seq(CPath(CPathArray))
-      case JNumberT | JTextT | JBooleanT | JNullT | JDateT => Nil
       case _                                               => Nil
     }
 
-    cpaths sorted
+    cpaths.sorted
   }
 
   def sample(jtype: JType, size: Int): Option[JType] = {
@@ -121,23 +126,38 @@ object Schema {
         val path = CPath(nodes.reverse)
         ColumnRef(path, CLong: CType) :: ColumnRef(path, CDouble) :: ColumnRef(path, CNum) :: Nil
 
+      case JUnionT(ltpe, rtpe) =>
+        buildPath(nodes, refs, ltpe) ++ buildPath(nodes, refs, rtpe)
+
       case JTextT =>
         ColumnRef(CPath(nodes.reverse), CString) :: Nil
 
       case JBooleanT =>
         ColumnRef(CPath(nodes.reverse), CBoolean) :: Nil
 
-      case JDateT =>
-        ColumnRef(CPath(nodes.reverse), CDate) :: Nil
+      case JOffsetDateTimeT =>
+        ColumnRef(CPath(nodes.reverse), COffsetDateTime) :: Nil
 
-      case JPeriodT =>
-        ColumnRef(CPath(nodes.reverse), CPeriod) :: Nil
+      case JOffsetTimeT =>
+        ColumnRef(CPath(nodes.reverse), COffsetTime) :: Nil
+
+      case JOffsetDateT =>
+        ColumnRef(CPath(nodes.reverse), COffsetDate) :: Nil
+
+      case JLocalDateTimeT =>
+        ColumnRef(CPath(nodes.reverse), CLocalDateTime) :: Nil
+
+      case JLocalTimeT =>
+        ColumnRef(CPath(nodes.reverse), CLocalTime) :: Nil
+
+      case JLocalDateT =>
+        ColumnRef(CPath(nodes.reverse), CLocalDate) :: Nil
+
+      case JIntervalT =>
+        ColumnRef(CPath(nodes.reverse), CInterval) :: Nil
 
       case JNullT =>
         ColumnRef(CPath(nodes.reverse), CNull) :: Nil
-
-      case JUnionT(ltpe, rtpe) =>
-        buildPath(nodes, refs, ltpe) ++ buildPath(nodes, refs, rtpe)
     }
 
     buildPath(Nil, refsOriginal, jtype).toSet
@@ -147,9 +167,14 @@ object Schema {
     case CBoolean               => Some(JBooleanT)
     case CString                => Some(JTextT)
     case CLong | CDouble | CNum => Some(JNumberT)
-    case CArrayType(elemType)   => fromCValueType(elemType) map (JArrayHomogeneousT(_))
-    case CDate                  => Some(JDateT)
-    case CPeriod                => Some(JPeriodT)
+    case CArrayType(elemType)   => fromCValueType(elemType) map JArrayHomogeneousT
+    case COffsetDateTime        => Some(JOffsetDateTimeT)
+    case COffsetTime            => Some(JOffsetTimeT)
+    case COffsetDate            => Some(JOffsetDateT)
+    case CLocalDateTime         => Some(JLocalDateTimeT)
+    case CLocalTime             => Some(JLocalTimeT)
+    case CLocalDate             => Some(JLocalDateT)
+    case CInterval              => Some(JIntervalT)
     case _                      => None
   }
 
@@ -158,13 +183,16 @@ object Schema {
     */
   def replaceLeaf(jtype: JType)(leaf: JType): JType = {
     def inner(jtype: JType): JType = jtype match {
-      case JNumberT | JTextT | JBooleanT | JNullT | JDateT | JPeriodT => leaf
-      case JArrayFixedT(elements)                                     => JArrayFixedT(elements.mapValues(inner))
-      case JObjectFixedT(fields)                                      => JObjectFixedT(fields.mapValues(inner))
-      case JUnionT(left, right)                                       => JUnionT(inner(left), inner(right))
-      case JArrayHomogeneousT(tpe)                                    => JArrayHomogeneousT(inner(tpe))
-      case arr @ JArrayUnfixedT                                       => arr
-      case obj @ JObjectUnfixedT                                      => obj
+      case JNumberT | JTextT | JBooleanT | JNullT |
+           JLocalDateTimeT | JLocalTimeT | JLocalDateT |
+           JOffsetDateTimeT | JOffsetTimeT | JOffsetDateT |
+           JIntervalT              => leaf
+      case JArrayFixedT(elements)  => JArrayFixedT(elements.mapValues(inner))
+      case JObjectFixedT(fields)   => JObjectFixedT(fields.mapValues(inner))
+      case JUnionT(left, right)    => JUnionT(inner(left), inner(right))
+      case JArrayHomogeneousT(tpe) => JArrayHomogeneousT(inner(tpe))
+      case JArrayUnfixedT          => JArrayUnfixedT
+      case JObjectUnfixedT         => JObjectUnfixedT
     }
 
     inner(jtype)
@@ -236,8 +264,13 @@ object Schema {
       case JTextT    => handleRoot(Seq(CString), cols)
       case JNullT    => handleRoot(Seq(CNull), cols)
 
-      case JDateT   => handleRoot(Seq(CDate), cols)
-      case JPeriodT => handleRoot(Seq(CPeriod), cols)
+      case JOffsetDateTimeT => handleRoot(Seq(COffsetDateTime), cols)
+      case JOffsetTimeT     => handleRoot(Seq(COffsetTime), cols)
+      case JOffsetDateT     => handleRoot(Seq(COffsetDate), cols)
+      case JLocalDateTimeT  => handleRoot(Seq(CLocalDateTime), cols)
+      case JLocalTimeT      => handleRoot(Seq(CLocalTime), cols)
+      case JLocalDateT      => handleRoot(Seq(CLocalDate), cols)
+      case JIntervalT       => handleRoot(Seq(CInterval), cols)
 
       case JObjectUnfixedT => handleUnfixed(CEmptyObject, _.isInstanceOf[CPathField], cols)
       case JArrayUnfixedT  => handleUnfixed(CEmptyArray, _.isInstanceOf[CPathIndex], cols)
@@ -346,8 +379,13 @@ object Schema {
 
     case (JNullT, (CPath.Identity, CNull)) => true
 
-    case (JDateT, (CPath.Identity, CDate))     => true
-    case (JPeriodT, (CPath.Identity, CPeriod)) => true
+    case (JOffsetDateTimeT, (CPath.Identity, COffsetDateTime)) => true
+    case (JOffsetTimeT, (CPath.Identity, COffsetTime))         => true
+    case (JOffsetDateT, (CPath.Identity, COffsetDate))         => true
+    case (JLocalDateTimeT, (CPath.Identity, CLocalDateTime))   => true
+    case (JLocalTimeT, (CPath.Identity, CLocalTime))           => true
+    case (JLocalDateT, (CPath.Identity, CLocalDate))           => true
+    case (JIntervalT,  (CPath.Identity, CInterval))            => true
 
     case (JObjectUnfixedT, (CPath.Identity, CEmptyObject))                         => true
     case (JObjectUnfixedT, (CPath(CPathField(_), _ *), _))                         => true
@@ -391,20 +429,25 @@ object Schema {
 
     case JTextT => ctpes.contains(CPath.Identity -> CString)
 
-    case JBooleanT => ctpes.contains(CPath.Identity, CBoolean)
+    case JBooleanT => ctpes.contains(CPath.Identity -> CBoolean)
 
-    case JNullT => ctpes.contains(CPath.Identity, CNull)
+    case JNullT => ctpes.contains(CPath.Identity -> CNull)
 
-    case JDateT   => ctpes.contains(CPath.Identity, CDate)
-    case JPeriodT => ctpes.contains(CPath.Identity, CPeriod)
+    case JOffsetDateTimeT => ctpes.contains(CPath.Identity -> COffsetDateTime)
+    case JOffsetTimeT     => ctpes.contains(CPath.Identity -> COffsetTime)
+    case JOffsetDateT     => ctpes.contains(CPath.Identity -> COffsetDate)
+    case JLocalDateTimeT  => ctpes.contains(CPath.Identity -> CLocalDateTime)
+    case JLocalTimeT      => ctpes.contains(CPath.Identity -> CLocalTime)
+    case JLocalDateT      => ctpes.contains(CPath.Identity -> CLocalDate)
+    case JIntervalT       => ctpes.contains(CPath.Identity -> CInterval)
 
-    case JObjectUnfixedT if ctpes.contains(CPath.Identity, CEmptyObject) => true
+    case JObjectUnfixedT if ctpes.contains(CPath.Identity -> CEmptyObject) => true
     case JObjectUnfixedT =>
       ctpes.exists {
         case (CPath(CPathField(_), _ *), _) => true
         case _                              => false
       }
-    case JObjectFixedT(fields) if fields.isEmpty => ctpes.contains(CPath.Identity, CEmptyObject)
+    case JObjectFixedT(fields) if fields.isEmpty => ctpes.contains(CPath.Identity -> CEmptyObject)
     case JObjectFixedT(fields) => {
       val keys = fields.keySet
       keys.forall { key =>
@@ -412,14 +455,14 @@ object Schema {
       }
     }
 
-    case JArrayUnfixedT if ctpes.contains(CPath.Identity, CEmptyArray) => true
+    case JArrayUnfixedT if ctpes.contains(CPath.Identity -> CEmptyArray) => true
     case JArrayUnfixedT =>
       ctpes.exists {
         case (CPath(CPathArray, _ *), _)    => true
         case (CPath(CPathIndex(_), _ *), _) => true
         case _                              => false
       }
-    case JArrayFixedT(elements) if elements.isEmpty => ctpes.contains(CPath.Identity, CEmptyArray)
+    case JArrayFixedT(elements) if elements.isEmpty => ctpes.contains(CPath.Identity -> CEmptyArray)
     case JArrayFixedT(elements) => {
       val indices = elements.keySet
       indices.forall { i =>

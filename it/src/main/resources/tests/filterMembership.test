@@ -1,10 +1,8 @@
 {
     "name": "filter on list membership",
-    "backends": {
-        "postgresql": "pending"
-    },
     "data": "zips.data",
-    "query": "select count(*) as cnt from zips where state in (\"AZ\", \"CO\")",
-    "predicate": "containsExactly",
+    "query": "select count(*) as cnt from `zips.data` where state in (\"AZ\", \"CO\")",
+    "predicate": "exactly",
+    "ignoreResultOrder": true,
     "expected": [{"cnt": 684}]
 }

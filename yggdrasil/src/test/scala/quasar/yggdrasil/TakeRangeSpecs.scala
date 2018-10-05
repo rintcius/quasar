@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,10 +18,10 @@ package quasar.yggdrasil
 package table
 
 import quasar.blueeyes.json._
-import scalaz.syntax.comonad._
-import quasar.precog.TestSupport._
+import quasar.pkg.tests._
+import quasar.yggdrasil.TestIdentities._
 
-trait TakeRangeSpec[M[+_]] extends ColumnarTableModuleTestSupport[M] with SpecificationLike with ScalaCheck {
+trait TakeRangeSpec extends ColumnarTableModuleTestSupport with SpecificationLike with ScalaCheck {
   import SampleData._
 
   def checkTakeRange = {
@@ -35,7 +35,7 @@ trait TakeRangeSpec[M[+_]] extends ColumnarTableModuleTestSupport[M] with Specif
 
       val takeRangeTable = table.takeRange(start, count)
 
-      val result = toJson(takeRangeTable).copoint
+      val result = toJson(takeRangeTable).unsafeRunSync
       val expected =
         if (start < 0) Stream()
         else sample.data.toSeq.drop(start).take(count)
@@ -61,7 +61,7 @@ trait TakeRangeSpec[M[+_]] extends ColumnarTableModuleTestSupport[M] with Specif
       JObject(JField("value", JNum(12)) :: JField("key", JArray(JNum(2) :: Nil)) :: Nil),
       JObject(JField("value", JObject(JField("baz", JBool(true)) :: Nil)) :: JField("key", JArray(JNum(3) :: Nil)) :: Nil))
 
-    results.copoint must_== expected
+    results.getJValues must_== expected
   }
 
   def testTakeRangeNegStart = {
@@ -77,7 +77,7 @@ trait TakeRangeSpec[M[+_]] extends ColumnarTableModuleTestSupport[M] with Specif
 
     val results = toJson(table.takeRange(-1, 5))
 
-    results.copoint must_== Stream()
+    results.getJValues must_== Stream()
   }
 
   def testTakeRangeNegNumber = {
@@ -93,7 +93,7 @@ trait TakeRangeSpec[M[+_]] extends ColumnarTableModuleTestSupport[M] with Specif
 
     val results = toJson(table.takeRange(2, -3))
 
-    results.copoint must_== Stream()
+    results.getJValues must_== Stream()
   }
 
   def testTakeRangeNeg = {
@@ -109,7 +109,7 @@ trait TakeRangeSpec[M[+_]] extends ColumnarTableModuleTestSupport[M] with Specif
 
     val results = toJson(table.takeRange(-1, 5))
 
-    results.copoint must_== Stream()
+    results.getJValues must_== Stream()
   }
 
   def testTakeRangeLarger = {
@@ -129,7 +129,7 @@ trait TakeRangeSpec[M[+_]] extends ColumnarTableModuleTestSupport[M] with Specif
       JObject(JField("value", JObject(JField("baz", JBool(true)) :: Nil)) :: JField("key", JArray(JNum(3) :: Nil)) :: Nil),
       JObject(JField("value", JString("ack")) :: JField("key", JArray(JNum(4) :: Nil)) :: Nil))
 
-    results.copoint must_== expected
+    results.getJValues must_== expected
   }
 
   def testTakeRangeEmpty = {
@@ -147,7 +147,7 @@ trait TakeRangeSpec[M[+_]] extends ColumnarTableModuleTestSupport[M] with Specif
 
     val expected = Stream()
 
-    results.copoint must_== expected
+    results.getJValues must_== expected
   }
 
   def testTakeRangeAcrossSlices = {
@@ -175,7 +175,7 @@ trait TakeRangeSpec[M[+_]] extends ColumnarTableModuleTestSupport[M] with Specif
       JObject(JField("value", JString("ack3")) :: JField("key", JArray(JNum(6) :: Nil)) :: Nil),
       JObject(JField("value", JString("ack4")) :: JField("key", JArray(JNum(7) :: Nil)) :: Nil))
 
-    results.copoint must_== expected
+    results.getJValues must_== expected
   }
 
   def testTakeRangeSecondSlice = {
@@ -199,7 +199,7 @@ trait TakeRangeSpec[M[+_]] extends ColumnarTableModuleTestSupport[M] with Specif
       JObject(JField("value", JString("ack3")) :: JField("key", JArray(JNum(6) :: Nil)) :: Nil),
       JObject(JField("value", JString("ack4")) :: JField("key", JArray(JNum(7) :: Nil)) :: Nil))
 
-    results.copoint must_== expected
+    results.getJValues must_== expected
   }
 
   def testTakeRangeFirstSliceOnly = {
@@ -226,6 +226,6 @@ trait TakeRangeSpec[M[+_]] extends ColumnarTableModuleTestSupport[M] with Specif
       JObject(JField("value", JString("ack1")) :: JField("key", JArray(JNum(4) :: Nil)) :: Nil),
       JObject(JField("value", JString("ack2")) :: JField("key", JArray(JNum(5) :: Nil)) :: Nil))
 
-    results.copoint must_== expected
+    results.getJValues must_== expected
   }
 }

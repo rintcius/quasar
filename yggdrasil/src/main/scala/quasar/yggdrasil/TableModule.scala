@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,24 +16,26 @@
 
 package quasar.yggdrasil
 
-import vfs.ResourceError
-import quasar.yggdrasil.bytecode.JType
-import quasar.blueeyes._
 import quasar.precog.common._
-import quasar.precog.common.security._
+import quasar.yggdrasil.vfs.ResourceError
+import quasar.yggdrasil.bytecode.JType
 
-import quasar.blueeyes.json._
+import qdata.QDataDecode
+import qdata.time.{DateTimeInterval, OffsetDate}
 
-import collection.Set
+import scala.collection.immutable.Set
+
+import cats.effect.{IO, LiftIO}
 
 import scalaz._
-import scalaz.syntax.monad._
 
 import java.nio.CharBuffer
-import java.time.LocalDateTime
+import java.time.{LocalDate, LocalDateTime, LocalTime, OffsetDateTime, OffsetTime}
+import scala.concurrent.ExecutionContext
 
 // TODO: define better upper/lower bound methods, better comparisons,
 // better names, better everything!
+// TODO: investigate adding columns to TableSize
 
 sealed trait TableSize {
   def maxSize: Long
@@ -120,13 +122,10 @@ object TableModule {
   }
 }
 
-trait TableModule[M[+ _]] extends TransSpecModule {
+trait TableModule extends TransSpecModule {
   import TableModule._
 
-  implicit def M: Monad[M]
-
   type Reducer[α]
-  type TableMetrics
 
   type Table <: TableLike
   type TableCompanion <: TableCompanionLike
@@ -141,17 +140,24 @@ trait TableModule[M[+ _]] extends TransSpecModule {
     def constLong(v: Set[Long]): Table
     def constDouble(v: Set[Double]): Table
     def constDecimal(v: Set[BigDecimal]): Table
-    def constDate(v: Set[LocalDateTime]): Table
+    def constOffsetDateTime(v: Set[OffsetDateTime]): Table
+    def constOffsetTime(v: Set[OffsetTime]): Table
+    def constOffsetDate(v: Set[OffsetDate]): Table
+    def constLocalDateTime(v: Set[LocalDateTime]): Table
+    def constLocalTime(v: Set[LocalTime]): Table
+    def constLocalDate(v: Set[LocalDate]): Table
+    def constInterval(v: Set[DateTimeInterval]): Table
     def constBoolean(v: Set[Boolean]): Table
     def constNull: Table
 
     def constEmptyObject: Table
     def constEmptyArray: Table
 
-    def fromRValues(values: Stream[RValue], maxSliceSize: Option[Int] = None): Table
+    def fromRValues(values: Stream[RValue], maxSliceRows: Option[Int] = None): Table
 
-    def merge[N[+ _]](grouping: GroupingSpec)(body: (RValue, GroupId => M[Table]) => N[Table])(implicit nt: N ~> M): M[Table]
-    def align(sourceLeft: Table, alignOnL: TransSpec1, sourceRight: Table, alignOnR: TransSpec1): M[(Table, Table)]
+    def fromQDataStream[M[_]: Monad: MonadFinalizers[?[_], IO]: LiftIO, A: QDataDecode](values: fs2.Stream[IO, A])(implicit ec: ExecutionContext): M[Table]
+
+    def align(sourceLeft: Table, alignOnL: TransSpec1, sourceRight: Table, alignOnR: TransSpec1): IO[(Table, Table)]
 
     /**
       * Joins `left` and `right` together using their left/right key specs. The
@@ -161,7 +167,7 @@ trait TableModule[M[+ _]] extends TransSpecModule {
       */
     def join(left: Table, right: Table, orderHint: Option[JoinOrder] = None)(leftKeySpec: TransSpec1,
                                                                              rightKeySpec: TransSpec1,
-                                                                             joinSpec: TransSpec2): M[(JoinOrder, Table)]
+                                                                             joinSpec: TransSpec2): IO[(JoinOrder, Table)]
 
     /**
       * Performs a back-end specific cross. Unlike Table#cross, this does not
@@ -169,7 +175,7 @@ trait TableModule[M[+ _]] extends TransSpecModule {
       * Hints can be provided on how we'd prefer the table to be crossed, but
       * the actual cross order is returned as part of the result.
       */
-    def cross(left: Table, right: Table, orderHint: Option[CrossOrder] = None)(spec: TransSpec2): M[(CrossOrder, Table)]
+    def cross(left: Table, right: Table, orderHint: Option[CrossOrder] = None)(spec: TransSpec2): IO[(CrossOrder, Table)]
   }
 
   trait TableLike {
@@ -186,12 +192,12 @@ trait TableModule[M[+ _]] extends TransSpecModule {
       * For each distinct path in the table, load all columns identified by the specified
       * jtype and concatenate the resulting slices into a new table.
       */
-    def load(apiKey: APIKey, tpe: JType): EitherT[M, ResourceError, Table]
+    def load(tpe: JType): EitherT[IO, ResourceError, Table]
 
     /**
       * Folds over the table to produce a single value (stored in a singleton table).
       */
-    def reduce[A: Monoid](reducer: Reducer[A]): M[A]
+    def reduce[A: Monoid](reducer: Reducer[A]): IO[A]
 
     /**
       * Removes all rows in the table for which definedness is satisfied
@@ -220,10 +226,21 @@ trait TableModule[M[+ _]] extends TransSpecModule {
     def cross(that: Table)(spec: TransSpec2): Table
 
     /**
+      * Performs a dimensional pivot on any array or object values at the given
+      * focus.  We can view the focus as a form of lens: the structure at the
+      * focus is pivoted, while everything *around* the focus is left untouched.
+      * Usually, this results in data being duplicated, since the resulting
+      * number of rows will be greater-than or equal-to the input number of rows,
+      * provided that the focus does indeed refer to arrays/objects and those
+      * structures are non-empty.
+      */
+    def leftShift(focus: CPath, emitOnUndef: Boolean): Table
+
+    /**
       * Force the table to a backing store, and provice a restartable table
       * over the results.
       */
-    def force: M[Table]
+    def force: IO[Table]
 
     def paged(limit: Int): Table
 
@@ -237,13 +254,13 @@ trait TableModule[M[+ _]] extends TransSpecModule {
       * we assign a unique row ID as part of the key so that multiple equal values are
       * preserved
       */
-    def sort(sortKey: TransSpec1, sortOrder: DesiredSortOrder = SortAscending, unique: Boolean = false): M[Table]
+    def sort(sortKey: TransSpec1, sortOrder: DesiredSortOrder = SortAscending, unique: Boolean = false): IO[Table]
 
     def distinct(spec: TransSpec1): Table
 
     def concat(t2: Table): Table
 
-    def zip(t2: Table): M[Table]
+    def zip(t2: Table): IO[Table]
 
     def toArray[A](implicit tpe: CValueType[A]): Table
 
@@ -258,70 +275,39 @@ trait TableModule[M[+ _]] extends TransSpecModule {
       * we assign a unique row ID as part of the key so that multiple equal values are
       * preserved
       */
-    def groupByN(groupKeys: Seq[TransSpec1], valueSpec: TransSpec1, sortOrder: DesiredSortOrder = SortAscending, unique: Boolean = false): M[Seq[Table]]
+    def groupByN(groupKeys: Seq[TransSpec1], valueSpec: TransSpec1, sortOrder: DesiredSortOrder = SortAscending, unique: Boolean = false): IO[Seq[Table]]
 
-    def partitionMerge(partitionBy: TransSpec1)(f: Table => M[Table]): M[Table]
+    def partitionMerge(partitionBy: TransSpec1, keepKey: Boolean = false)(f: Table => IO[Table]): IO[Table]
 
-    def takeRange(startIndex: Long, numberToTake: Long): Table
+    // @deprecated("use drop/take directly")
+    def takeRange(startIndex: Long, numberToTake: Long): Table = {
+      if (startIndex < 0 || numberToTake < 0)   // it's defined this way, for... reasons
+        Table.empty
+      else if (startIndex == 0)
+        take(numberToTake)
+      else if (numberToTake == Long.MaxValue)
+        drop(startIndex)
+      else
+        drop(startIndex).take(numberToTake)
+    }
+
+    def drop(count: Long): Table
+
+    def take(count: Long): Table
 
     def canonicalize(length: Int, maxLength0: Option[Int] = None): Table
 
-    def schemas: M[Set[JType]]
+    def schemas: IO[Set[JType]]
 
-    def renderJson(prefix: String = "", delimiter: String = "\n", suffix: String = ""): StreamT[M, CharBuffer]
+    def renderJson(prefix: String = "", delimiter: String = "\n", suffix: String = "", precise: Boolean = false): StreamT[IO, CharBuffer]
 
-    def renderCsv(): StreamT[M, CharBuffer]
+    def renderCsv(assumeHomogeneous: Boolean): StreamT[IO, CharBuffer]
 
     // for debugging only!!
-    def toJson: M[Iterable[JValue]]
+    def toJson: IO[Iterable[RValue]]
 
     def printer(prelude: String = "", flag: String = ""): Table
 
     def metrics: TableMetrics
-  }
-
-  sealed trait GroupingSpec {
-    def sources: Vector[GroupingSource]
-    def sorted: M[GroupingSpec]
-  }
-
-  object GroupingSpec {
-    sealed trait Alignment
-    case object Union        extends Alignment
-    case object Intersection extends Alignment
-  }
-
-  /**
-    * Definition for a single group set and its associated composite key part.
-    *
-    * @param table The target set for the grouping
-    * @param targetTrans The key which will be used by `merge` to access a particular subset of the target
-    * @param groupKeySpec A composite union/intersect overlay on top of transspec indicating the composite key for this target set
-    */
-  final case class GroupingSource(table: Table,
-                                  idTrans: trans.TransSpec1,
-                                  targetTrans: Option[trans.TransSpec1],
-                                  groupId: GroupId,
-                                  groupKeySpec: trans.GroupKeySpec)
-      extends GroupingSpec {
-    def sources: Vector[GroupingSource] = Vector(this)
-    def sorted: M[GroupingSource] =
-      for {
-        t <- table.sort(trans.DerefObjectStatic(trans.Leaf(trans.Source), CPathField("key")))
-      } yield {
-        GroupingSource(t, idTrans, targetTrans, groupId, groupKeySpec)
-      }
-  }
-
-  final case class GroupingAlignment(groupKeyLeftTrans: trans.TransSpec1,
-                                     groupKeyRightTrans: trans.TransSpec1,
-                                     left: GroupingSpec,
-                                     right: GroupingSpec,
-                                     alignment: GroupingSpec.Alignment)
-      extends GroupingSpec {
-    def sources: Vector[GroupingSource] = left.sources ++ right.sources
-    def sorted: M[GroupingAlignment] = (left.sorted |@| right.sorted) { (t1, t2) =>
-      GroupingAlignment(groupKeyLeftTrans, groupKeyRightTrans, t1, t2, alignment)
-    }
   }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,6 +30,11 @@ trait MonadTell_[F[_], W] {
 
 object MonadTell_ extends MonadTell_Instances {
   def apply[F[_], W](implicit T: MonadTell_[F, W]): MonadTell_[F, W] = T
+
+  def ignore[F[_], W](implicit F: Applicative[F]): MonadTell_[F, W] =
+    new MonadTell_[F, W] {
+      def writer[A](w: W, a: A) = a.point[F]
+    }
 }
 
 sealed abstract class MonadTell_Instances extends MonadTell_Instances0 {
@@ -41,6 +46,11 @@ sealed abstract class MonadTell_Instances extends MonadTell_Instances0 {
   implicit def writerTMonadTell[F[_]: Functor, W1, W2: Monoid](implicit T: MonadTell_[F, W1]): MonadTell_[WriterT[F, W2, ?], W1] =
     new MonadTell_[WriterT[F, W2, ?], W1] {
       def writer[A](w: W1, a: A) = WriterT(T.writer(w, a) strengthL mzero[W2])
+    }
+
+  implicit def writerMonadTell[W]: MonadTell_[Writer[W, ?], W] =
+    new MonadTell_[Writer[W, ?], W] {
+      def writer[A](w: W, a: A) = WriterT.writer((w, a))
     }
 
   implicit def stateTMonadTell[F[_]: Monad, W, S](implicit T: MonadTell_[F, W]): MonadTell_[StateT[F, S, ?], W] =

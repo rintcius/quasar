@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,16 +18,27 @@ package quasar.repl
 
 import slamdata.Predef._
 
+import monocle.Prism
+import scalaz._, Scalaz._
+
 sealed abstract class DebugLevel
+
 object DebugLevel {
   final case object Silent extends DebugLevel
   final case object Normal extends DebugLevel
   final case object Verbose extends DebugLevel
 
-  def fromInt(code: Int): Option[DebugLevel] = code match {
-    case 0 => Some(Silent)
-    case 1 => Some(Normal)
-    case 2 => Some(Verbose)
-    case _ => None
-  }
+  val int: Prism[Int, DebugLevel] =
+    Prism.partial[Int, DebugLevel] {
+      case 0 => Silent
+      case 1 => Normal
+      case 2 => Verbose
+    } {
+      case Silent  => 0
+      case Normal  => 1
+      case Verbose => 2
+    }
+
+  implicit val order: Order[DebugLevel] = Order.orderBy(int(_))
+
 }

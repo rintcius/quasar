@@ -1,0 +1,14 @@
+{
+  "name": "select constant",
+
+  "backends": {
+  },
+
+  "query": "select 42",
+
+  "predicate": "exactly",
+  "ignoreResultOrder": false,
+  "ignoreFieldOrder": false,
+
+  "expected": [42]
+}

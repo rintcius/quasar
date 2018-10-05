@@ -2,17 +2,16 @@
   "name": "numeric field names",
 
   "backends": {
-    "marklogic_xml": "pending",
-    "postgresql":    "pending"
+    "lwc_local": "ignoreFieldOrder",
+    "mimir": "ignoreFieldOrder"
   },
 
   "data": "smallZips.data",
 
-  "query": "select city as `12`, pop as `42` from smallZips",
+  "query": "select city as `12`, pop as `42` from `smallZips.data`",
 
-  "predicate": "containsAtLeast",
-
-  "ignoreFieldOrder": [ "couchbase" ],
+  "predicate": "atLeast",
+  "ignoreResultOrder": true,
 
   "expected": [
     { "12": "NEW SALEM", "42": 14077 }

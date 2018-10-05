@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,17 +17,16 @@
 package quasar.niflheim
 
 import quasar.precog.common._
-import quasar.precog.common.accounts.AccountId
-import quasar.precog.common.ingest.EventId
-import quasar.precog.common.security.Authorities
 import quasar.precog.util._
 
 import akka.actor.{Actor, ActorRef, ActorSystem, Props}
 import akka.pattern.{AskSupport, GracefulStopSupport}
 import akka.util.Timeout
 
-import scala.concurrent.{ExecutionContext, Future, Promise}
+import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration._
+
+import org.slf4s.Logging
 
 import quasar.blueeyes.json._
 import quasar.blueeyes.json.serialization._
@@ -35,23 +34,21 @@ import quasar.blueeyes.json.serialization.DefaultSerialization._
 import quasar.blueeyes.json.serialization.IsoSerialization._
 import quasar.blueeyes.json.serialization.Extractor._
 
-import org.objectweb.howl.log._
-
 import scalaz._
+import scalaz.effect.IO
 import scalaz.Validation._
 import scalaz.syntax.monad._
-import scalaz.syntax.monoid._
 
-import java.io.FileNotFoundException
+import java.io.File
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.atomic._
 
 import scala.collection.immutable.SortedMap
-import scala.collection.JavaConverters._
 
 import shapeless._
 
 case class Insert(batch: Seq[NIHDB.Batch], responseRequested: Boolean)
+case class InsertSegments(offset: Long, length: Int, segments: List[Segment], responseRequested: Boolean)
 
 case object GetSnapshot
 
@@ -67,6 +64,7 @@ sealed trait InsertResult
 case class Inserted(offset: Long, size: Int) extends InsertResult
 case object Skipped extends InsertResult
 
+case object Cook
 case object Quiesce
 
 object NIHDB {
@@ -76,23 +74,32 @@ object NIHDB {
 
   final val projectionIdGen = new AtomicInteger()
 
-  final def create(chef: ActorRef, authorities: Authorities, baseDir: File, cookThreshold: Int, timeout: FiniteDuration, txLogScheduler: ScheduledExecutorService)(implicit actorSystem: ActorSystem): IO[Validation[Error, NIHDB]] = {
-    NIHDBActor.create(chef, authorities, baseDir, cookThreshold, timeout, txLogScheduler) map { _ map { actor => new NIHDBImpl(actor, timeout, authorities) } }
-  }
+  final def create(
+      chef: ActorRef,
+      baseDir: File,
+      cookThreshold: Int,
+      timeout: FiniteDuration,
+      txLogScheduler: ScheduledExecutorService)(
+      implicit actorSystem: ActorSystem)
+      : IO[Validation[Error, NIHDB]] =
+    NIHDBActor.create(chef, baseDir, cookThreshold, timeout, txLogScheduler) map { _ map { actor => new NIHDBImpl(actor, timeout) } }
 
-  final def open(chef: ActorRef, baseDir: File, cookThreshold: Int, timeout: FiniteDuration, txLogScheduler: ScheduledExecutorService)(implicit actorSystem: ActorSystem) = {
-    NIHDBActor.open(chef, baseDir, cookThreshold, timeout, txLogScheduler) map { _ map { _ map { case (authorities, actor) => new NIHDBImpl(actor, timeout, authorities) } } }
-  }
-
-  final def hasProjection(dir: File) = NIHDBActor.hasProjection(dir)
+  final def open(chef: ActorRef, baseDir: File, cookThreshold: Int, timeout: FiniteDuration, txLogScheduler: ScheduledExecutorService)(implicit actorSystem: ActorSystem): IO[Option[Validation[Error, NIHDB]]] =
+    NIHDBActor.open(chef, baseDir, cookThreshold, timeout, txLogScheduler) map { _ map { _ map { actor => new NIHDBImpl(actor, timeout) } } }
 }
 
 trait NIHDB {
-  def authorities: Authorities
-
-  def insert(batch: Seq[NIHDB.Batch]): IO[PrecogUnit]
+  def insert(batch: Seq[NIHDB.Batch]): IO[Unit]
 
   def insertVerified(batch: Seq[NIHDB.Batch]): Future[InsertResult]
+
+  /**
+   * Please don't mix segment insertion with value insertion on the same dataset. The results may be
+   * somewhat odd and *definitely* out of order. Also note that segment insertion doesn't obey the
+   * same atomicity guarantees as value insertion (naturally, since it bypasses the append log).
+   * External atomicity guarantees should be used to avoid corruption in all cases.
+   */
+  def insertSegmentsVerified(offset: Long, length: Int, segments: List[Segment]): Future[InsertResult]
 
   def getSnapshot(): Future[NIHDBSnapshot]
 
@@ -116,21 +123,33 @@ trait NIHDB {
    */
   def count(paths0: Option[Set[CPath]]): Future[Long]
 
-  def quiesce: IO[PrecogUnit]
+  /**
+   * Forces the chef to cook the current outstanding commit log.  This should only
+   * be called in the event that an ingestion is believed to be 100% complete, since
+   * it will result in a "partial" block (i.e. a block that is not of maximal length).
+   * Note that the append log is visible to snapshots, meaning that this function
+   * should be unnecessary in nearly all circumstances.
+   */
+  def cook: Future[Unit]
 
-  def close(implicit actorSystem: ActorSystem): Future[PrecogUnit]
+  def quiesce: Future[Unit]
+
+  def close: Future[Unit]
 }
 
-private[niflheim] class NIHDBImpl private[niflheim] (actor: ActorRef, timeout: Timeout, val authorities: Authorities)(implicit executor: ExecutionContext) extends NIHDB with GracefulStopSupport with AskSupport {
+private[niflheim] class NIHDBImpl private[niflheim] (actor: ActorRef, timeout: Timeout)(implicit executor: ExecutionContext) extends NIHDB with GracefulStopSupport with AskSupport {
   private implicit val impFiniteDuration = timeout
 
   val projectionId = NIHDB.projectionIdGen.getAndIncrement
 
-  def insert(batch: Seq[NIHDB.Batch]): IO[PrecogUnit] =
+  def insert(batch: Seq[NIHDB.Batch]): IO[Unit] =
     IO(actor ! Insert(batch, false))
 
   def insertVerified(batch: Seq[NIHDB.Batch]): Future[InsertResult] =
     (actor ? Insert(batch, true)).mapTo[InsertResult]
+
+  def insertSegmentsVerified(offset: Long, length: Int, segments: List[Segment]): Future[InsertResult] =
+    (actor ? InsertSegments(offset, length, segments, true)).mapTo[InsertResult]
 
   def getSnapshot(): Future[NIHDBSnapshot] =
     (actor ? GetSnapshot).mapTo[NIHDBSnapshot]
@@ -153,11 +172,14 @@ private[niflheim] class NIHDBImpl private[niflheim] (actor: ActorRef, timeout: T
   def count(paths0: Option[Set[CPath]]): Future[Long] =
     getSnapshot().map(_.count(paths0))
 
-  def quiesce: IO[PrecogUnit] =
-    IO(actor ! Quiesce)
+  def cook: Future[Unit] =
+    (actor ? Cook).mapTo[Unit]
 
-  def close(implicit actorSystem: ActorSystem): Future[PrecogUnit] =
-    gracefulStop(actor, timeout.duration) map { _ => PrecogUnit }
+  def quiesce: Future[Unit] =
+    (actor ? Quiesce).mapTo[Unit]
+
+  def close: Future[Unit] =
+    gracefulStop(actor, timeout.duration).map(_ => ())
 }
 
 private[niflheim] object NIHDBActor extends Logging {
@@ -166,18 +188,15 @@ private[niflheim] object NIHDBActor extends Logging {
   final val rawSubdir = "raw_blocks"
   final val lockName = "NIHDBProjection"
 
-  private[niflheim] final val internalDirs =
-    Set(cookedSubdir, rawSubdir, descriptorFilename, CookStateLog.logName + "_1.log", CookStateLog.logName + "_2.log",  lockName + ".lock", CookStateLog.lockName + ".lock")
-
-  final def create(chef: ActorRef, authorities: Authorities, baseDir: File, cookThreshold: Int, timeout: FiniteDuration, txLogScheduler: ScheduledExecutorService)(implicit actorSystem: ActorSystem): IO[Validation[Error, ActorRef]] = {
+  final def create(chef: ActorRef, baseDir: File, cookThreshold: Int, timeout: FiniteDuration, txLogScheduler: ScheduledExecutorService)(implicit actorSystem: ActorSystem): IO[Validation[Error, ActorRef]] = {
     val descriptorFile = new File(baseDir, descriptorFilename)
     val currentState: IO[Validation[Error, ProjectionState]] =
       if (descriptorFile.exists) {
         ProjectionState.fromFile(descriptorFile)
       } else {
-        val state = ProjectionState.empty(authorities)
+        val state = ProjectionState.empty
         for {
-          _ <- IO { log.info("No current descriptor found for " + baseDir + "; " + authorities + ", creating fresh descriptor") }
+          _ <- IO { log.info("No current descriptor found for " + baseDir + ", creating fresh descriptor") }
           _ <- ProjectionState.toFile(state, descriptorFile)
         } yield {
           success(state)
@@ -197,13 +216,11 @@ private[niflheim] object NIHDBActor extends Logging {
     }
   }
 
-  final def open(chef: ActorRef, baseDir: File, cookThreshold: Int, timeout: FiniteDuration, txLogScheduler: ScheduledExecutorService)(implicit actorSystem: ActorSystem): IO[Option[Validation[Error, (Authorities, ActorRef)]]] = {
+  final def open(chef: ActorRef, baseDir: File, cookThreshold: Int, timeout: FiniteDuration, txLogScheduler: ScheduledExecutorService)(implicit actorSystem: ActorSystem): IO[Option[Validation[Error, ActorRef]]] = {
     val currentState: IO[Option[Validation[Error, ProjectionState]]] = readDescriptor(baseDir)
 
-    currentState map { _ map { _ map { s => (s.authorities, actorSystem.actorOf(Props(new NIHDBActor(s, baseDir, chef, cookThreshold, txLogScheduler)))) } } }
+    currentState map { _ map { _ map { s => actorSystem.actorOf(Props(new NIHDBActor(s, baseDir, chef, cookThreshold, txLogScheduler))) } } }
   }
-
-  final def hasProjection(dir: File) = (new File(dir, descriptorFilename)).exists
 
   private case class BlockState(cooked: List[CookedReader], pending: Map[Long, StorageReader], rawLog: RawHandler)
   private class State(val txLog: CookStateLog, var blockState: BlockState, var currentBlocks: SortedMap[Long, StorageReader])
@@ -229,7 +246,7 @@ private[niflheim] class NIHDBActor private (private var currentState: Projection
   private[this] var actorState: Option[State] = None
   private def state = {
     import scalaz.syntax.effect.id._
-    actorState getOrElse open.flatMap(_.tap(s => IO(actorState = Some(s)))).unsafePerformIO
+    actorState getOrElse open.flatMap(_.tap(s => IO { actorState = Some(s) })).unsafePerformIO
   }
 
   private def initDirs(f: File) = IO {
@@ -286,7 +303,7 @@ private[niflheim] class NIHDBActor private (private var currentState: Projection
     blockState.pending.foreach {
       case (id, reader) =>
         log.debug("Restarting pending cook on block %s:%d".format(baseDir, id))
-        chef ! Prepare(id, cookSequence.getAndIncrement, cookedDir, reader)
+        chef ! Prepare(id, cookSequence.getAndIncrement, cookedDir, reader, () => ())
     }
 
     new State(txLog, blockState, currentBlocks)
@@ -300,11 +317,28 @@ private[niflheim] class NIHDBActor private (private var currentState: Projection
     } yield state
   }
 
+  private def cook(responseRequested: Boolean) = IO {
+    state.blockState.rawLog.close()
+    val toCook = state.blockState.rawLog
+    val newRaw = RawHandler.empty(toCook.id + 1, rawFileFor(toCook.id + 1))
+
+    state.blockState = state.blockState.copy(pending = state.blockState.pending + (toCook.id -> toCook), rawLog = newRaw)
+    state.txLog.startCook(toCook.id)
+
+    val target = sender
+    val onComplete = if (responseRequested)
+      () => target ! (())
+    else
+      () => ()
+
+    chef ! Prepare(toCook.id, cookSequence.getAndIncrement, cookedDir, toCook, onComplete)
+  }
+
   private def quiesce = IO {
     actorState foreach { s =>
       log.debug("Releasing resources for projection in " + baseDir)
-      s.blockState.rawLog.close
-      s.txLog.close
+      s.blockState.rawLog.close()
+      s.txLog.close()
       ProjectionState.toFile(currentState, descriptorFile)
       actorState = None
     }
@@ -315,7 +349,7 @@ private[niflheim] class NIHDBActor private (private var currentState: Projection
   } except { case t: Throwable =>
     IO { log.error("Error during close", t) }
   } ensuring {
-    IO { workLock.release }
+    IO { workLock.release() }
   }
 
   override def postStop() = {
@@ -331,17 +365,14 @@ private[niflheim] class NIHDBActor private (private var currentState: Projection
     SortedMap(allBlocks.map { r => r.id -> r }.toSeq: _*)
   }
 
-  def updatedThresholds(current: Map[Int, Int], ids: Seq[Long]): Map[Int, Int] = {
-    (current.toSeq ++ ids.map {
-      i => val EventId(p, s) = EventId.fromLong(i); (p -> s)
-    }).groupBy(_._1).map { case (p, ids) => (p -> ids.map(_._2).max) }
-  }
-
   override def receive = {
     case GetSnapshot =>
       sender ! getSnapshot()
 
-    case Cooked(id, _, _, file) =>
+    case Spoilt(_, _, onComplete) =>
+      onComplete()
+
+    case Cooked(id, _, _, file, onComplete) =>
       // This could be a replacement for an existing id, so we
       // ned to remove/close any existing cooked block with the same
       // ID
@@ -361,6 +392,7 @@ private[niflheim] class NIHDBActor private (private var currentState: Projection
 
       ProjectionState.toFile(currentState, descriptorFile).unsafePerformIO
       state.txLog.completeCook(id)
+      onComplete()
 
     case Insert(batch, responseRequested) =>
       if (batch.isEmpty) {
@@ -383,13 +415,7 @@ private[niflheim] class NIHDBActor private (private var currentState: Projection
 
           if (state.blockState.rawLog.length >= cookThreshold) {
             log.debug("Starting cook on %s after threshold exceeded".format(baseDir.getCanonicalPath))
-            state.blockState.rawLog.close
-            val toCook = state.blockState.rawLog
-            val newRaw = RawHandler.empty(toCook.id + 1, rawFileFor(toCook.id + 1))
-
-            state.blockState = state.blockState.copy(pending = state.blockState.pending + (toCook.id -> toCook), rawLog = newRaw)
-            state.txLog.startCook(toCook.id)
-            chef ! Prepare(toCook.id, cookSequence.getAndIncrement, cookedDir, toCook)
+            cook(false).unsafePerformIO
           }
 
           log.debug("Insert complete on %d rows at offset %d for %s".format(values.length, offset, baseDir.getCanonicalPath))
@@ -397,15 +423,47 @@ private[niflheim] class NIHDBActor private (private var currentState: Projection
         }
       }
 
+    case InsertSegments(offset, length, segments, responseRequested) =>
+      if (length == 0) {
+        log.warn("Skipping insert with an empty batch on %s".format(baseDir.getCanonicalPath))
+        if (responseRequested) sender ! Skipped
+      } else if (offset < currentState.maxOffset) {
+        log.warn("Skipping insert with already-inserted offset on %s".format(baseDir.getCanonicalPath))
+        if (responseRequested) sender ! Skipped
+      } else {
+        log.debug("Inserting from segments %d rows at offset %d for %s".format(length, offset, baseDir.getCanonicalPath))
+
+        {
+          state.blockState.rawLog.close()
+          state.blockState = state.blockState.copy(rawLog = RawHandler.empty(offset + 1, rawFileFor(offset + 1)))
+        }
+
+        currentState = currentState.copy(maxOffset = offset)
+        state.txLog.startCook(offset)
+
+        val target = sender
+        val onComplete = if (responseRequested)
+          () => target ! Inserted(offset, length)
+        else
+          () => ()
+
+        cookedDir.mkdir()   // I don't get why we need this, but we do
+        chef ! PrepareSegments(offset, cookSequence.getAndIncrement, cookedDir, offset, length, segments, onComplete)
+      }
+
+    case Cook =>
+      cook(true).unsafePerformIO
+
     case GetStatus =>
       sender ! Status(state.blockState.cooked.length, state.blockState.pending.size, state.blockState.rawLog.length)
 
     case Quiesce =>
       quiesce.unsafePerformIO
+      sender ! (())
   }
 }
 
-private[niflheim] case class ProjectionState(maxOffset: Long, cookedMap: Map[Long, String], authorities: Authorities) {
+private[niflheim] case class ProjectionState(maxOffset: Long, cookedMap: Map[Long, String]) {
   def readers(baseDir: File): List[CookedReader] =
     cookedMap.map {
       case (id, metadataFile) =>
@@ -416,10 +474,10 @@ private[niflheim] case class ProjectionState(maxOffset: Long, cookedMap: Map[Lon
 private[niflheim] object ProjectionState {
   import Extractor.Error
 
-  def empty(authorities: Authorities) = ProjectionState(-1L, Map.empty, authorities)
+  def empty = ProjectionState(-1L, Map.empty)
 
   // FIXME: Add version for this format
-  val v1Schema = "maxOffset" :: "cookedMap" :: "authorities" :: HNil
+  val v1Schema = "maxOffset" :: "cookedMap" :: HNil
 
   implicit val stateDecomposer = decomposer[ProjectionState](v1Schema)
   implicit val stateExtractor  = extractor[ProjectionState](v1Schema)

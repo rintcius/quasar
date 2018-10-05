@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,29 +16,24 @@
 
 package quasar.mimir
 
-import quasar.blueeyes._
 import quasar.precog.common._
 
 import scalaz._
 import scalaz.std.anyVal.booleanInstance.disjunction
 import scalaz.std.option.optionFirst
 
-trait DAGRewriterSpecs[M[+_]] extends EvaluatorSpecification[M] {
+trait DAGRewriterSpecs extends EvaluatorSpecification {
 
   import dag._
   import instructions._
 
-  implicit val nt = NaturalTransformation.refl[M]
-
-  val evaluator = Evaluator(M)
+  val evaluator = Evaluator
   import evaluator._
   import library._
 
   "DAG rewriting" should {
     "compute identities given a relative path" in {
-      val line = Line(1, 1, "")
-
-      val input = dag.AbsoluteLoad(Const(CString("/numbers"))(line))(line)
+      val input = dag.AbsoluteLoad(Const(CString("/numbers")))
 
       val ctx = defaultEvaluationContext
       val result = fullRewriteDAG(true, ctx)(input)
@@ -52,20 +47,18 @@ trait DAGRewriterSpecs[M[+_]] extends EvaluatorSpecification[M] {
        * foo.a + count(foo) + foo.c
        */
 
-      val line = Line(1, 1, "")
-
-      val t1 = dag.AbsoluteLoad(Const(CString("/hom/pairs"))(line))(line)
+      val t1 = dag.AbsoluteLoad(Const(CString("/hom/pairs")))
 
       val input =
         Join(Add, IdentitySort,
           Join(Add, Cross(None),
             Join(DerefObject, Cross(None),
               t1,
-              Const(CString("first"))(line))(line),
-            dag.Reduce(Count, t1)(line))(line),
+              Const(CString("first"))),
+            dag.Reduce(Count, t1)),
           Join(DerefObject, Cross(None),
             t1,
-            Const(CString("second"))(line))(line))(line)
+            Const(CString("second"))))
 
       val ctx = defaultEvaluationContext
       val optimize = true
@@ -97,4 +90,4 @@ trait DAGRewriterSpecs[M[+_]] extends EvaluatorSpecification[M] {
   }
 }
 
-object DAGRewriterSpecs extends DAGRewriterSpecs[Need]
+object DAGRewriterSpecs extends DAGRewriterSpecs

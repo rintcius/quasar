@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,17 +16,15 @@
 
 package quasar
 
-import quasar.precog.PackageAliases
-
 import scalaz._
 
-package object niflheim extends PackageAliases {
+package object niflheim {
 
   /**
    * Dear god don't use this!  It's a shim to make old things work.  This is NOT
    * a lawful monad!
    */
-  @deprecated
+  // @deprecated("don't use this", "ever")
   private[niflheim] implicit def validationMonad[E]: Monad[Validation[E, ?]] =
     new Monad[Validation[E, ?]] {
       def point[A](a: => A) = Success(a)

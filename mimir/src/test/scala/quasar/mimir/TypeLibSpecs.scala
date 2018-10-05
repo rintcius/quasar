@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,14 +16,13 @@
 
 package quasar.mimir
 
-import quasar.blueeyes._
+import quasar.blueeyes.json._
 import quasar.precog.common._
-import quasar.yggdrasil._
 
 import scalaz._
 
-trait TypeLibSpecs[M[+_]] extends EvaluatorSpecification[M]
-    with LongIdMemoryDatasetConsumer[M] { self =>
+trait TypeLibSpecs extends EvaluatorSpecification
+    with LongIdMemoryDatasetConsumer { self =>
 
   import dag._
   import instructions._
@@ -38,17 +37,15 @@ trait TypeLibSpecs[M[+_]] extends EvaluatorSpecification[M]
 
   "the type functions" should {
     "return correct booleans for isNumber" in {
-      val line = Line(1, 1, "")
-
       val input = dag.Operate(BuiltInFunction1Op(isNumber),
-        dag.AbsoluteLoad(Const(CString("/het/numbersAcrossSlices2"))(line))(line))(line)
+        dag.AbsoluteLoad(Const(CString("/het/numbersAcrossSlices2"))))
 
       val result = testEval(input)
 
       result must haveSize(24)
 
       val result2 = result.toSeq collect {
-        case (ids, SBoolean(b)) if ids.length == 1 => b
+        case (ids, JBool(b)) if ids.length == 1 => b
       }
 
       val (trues, falses) = result2 partition identity
@@ -58,17 +55,15 @@ trait TypeLibSpecs[M[+_]] extends EvaluatorSpecification[M]
     }
 
     "return correct booleans for isBoolean" in {
-      val line = Line(1, 1, "")
-
       val input = dag.Operate(BuiltInFunction1Op(isBoolean),
-        dag.AbsoluteLoad(Const(CString("/het/numbersAcrossSlices2"))(line))(line))(line)
+        dag.AbsoluteLoad(Const(CString("/het/numbersAcrossSlices2"))))
 
       val result = testEval(input)
 
       result must haveSize(24)
 
       val result2 = result.toSeq collect {
-        case (ids, SBoolean(b)) if ids.length == 1 => b
+        case (ids, JBool(b)) if ids.length == 1 => b
       }
 
       val (trues, falses) = result2 partition identity
@@ -78,17 +73,15 @@ trait TypeLibSpecs[M[+_]] extends EvaluatorSpecification[M]
     }
 
     "return correct booleans for isNull" in {
-      val line = Line(1, 1, "")
-
       val input = dag.Operate(BuiltInFunction1Op(isNull),
-        dag.AbsoluteLoad(Const(CString("/het/numbersAcrossSlices2"))(line))(line))(line)
+        dag.AbsoluteLoad(Const(CString("/het/numbersAcrossSlices2"))))
 
       val result = testEval(input)
 
       result must haveSize(24)
 
       val result2 = result.toSeq collect {
-        case (ids, SBoolean(b)) if ids.length == 1 => b
+        case (ids, JBool(b)) if ids.length == 1 => b
       }
 
       val (trues, falses) = result2 partition identity
@@ -98,17 +91,15 @@ trait TypeLibSpecs[M[+_]] extends EvaluatorSpecification[M]
     }
 
     "return correct booleans for isString" in {
-      val line = Line(1, 1, "")
-
       val input = dag.Operate(BuiltInFunction1Op(isString),
-        dag.AbsoluteLoad(Const(CString("/het/numbersAcrossSlices2"))(line))(line))(line)
+        dag.AbsoluteLoad(Const(CString("/het/numbersAcrossSlices2"))))
 
       val result = testEval(input)
 
       result must haveSize(24)
 
       val result2 = result.toSeq collect {
-        case (ids, SBoolean(b)) if ids.length == 1 => b
+        case (ids, JBool(b)) if ids.length == 1 => b
       }
 
       val (trues, falses) = result2 partition identity
@@ -118,17 +109,15 @@ trait TypeLibSpecs[M[+_]] extends EvaluatorSpecification[M]
     }
 
     "return correct booleans for isObject" in {
-      val line = Line(1, 1, "")
-
       val input = dag.Operate(BuiltInFunction1Op(isObject),
-        dag.AbsoluteLoad(Const(CString("/het/numbersAcrossSlices2"))(line))(line))(line)
+        dag.AbsoluteLoad(Const(CString("/het/numbersAcrossSlices2"))))
 
       val result = testEval(input)
 
       result must haveSize(24)
 
       val result2 = result.toSeq collect {
-        case (ids, SBoolean(b)) if ids.length == 1 => b
+        case (ids, JBool(b)) if ids.length == 1 => b
       }
 
       val (trues, falses) = result2 partition identity
@@ -138,17 +127,15 @@ trait TypeLibSpecs[M[+_]] extends EvaluatorSpecification[M]
     }
 
     "return correct booleans for isArray" in {
-      val line = Line(1, 1, "")
-
       val input = dag.Operate(BuiltInFunction1Op(isArray),
-        dag.AbsoluteLoad(Const(CString("/het/numbersAcrossSlices2"))(line))(line))(line)
+        dag.AbsoluteLoad(Const(CString("/het/numbersAcrossSlices2"))))
 
       val result = testEval(input)
 
       result must haveSize(24)
 
       val result2 = result.toSeq collect {
-        case (ids, SBoolean(b)) if ids.length == 1 => b
+        case (ids, JBool(b)) if ids.length == 1 => b
       }
 
       val (trues, falses) = result2 partition identity
@@ -159,4 +146,4 @@ trait TypeLibSpecs[M[+_]] extends EvaluatorSpecification[M]
   }
 }
 
-object TypeLibSpecs extends TypeLibSpecs[Need]
+object TypeLibSpecs extends TypeLibSpecs

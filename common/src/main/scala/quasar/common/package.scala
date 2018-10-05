@@ -1,5 +1,5 @@
 /*
- * Copyright 2014–2017 SlamData Inc.
+ * Copyright 2014–2018 SlamData Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,9 +22,29 @@ import quasar.contrib.scalaz.{MonadListen_, MonadTell_}
 import scalaz._
 
 package object common {
+  type CIName = CIString
+
+  object CIName {
+    def apply(value: String): CIName =
+      CIString(value)
+
+    def unapply(name: CIName): Option[String] =
+      CIString.unapply(name)
+  }
+
   type PhaseResults = Vector[PhaseResult]
+
+  object PhaseResults {
+    final def logPhase[M[_]]
+      (pr: PhaseResult)
+      (implicit MT: PhaseResultTell[M])
+        : M[Unit] =
+      MT.tell(Vector(pr))
+  }
+
   type PhaseResultW[A] = Writer[PhaseResults, A]
   type PhaseResultT[F[_], A] = WriterT[F, PhaseResults, A]
+  type PhaseResultCatsT[F[_], A] = cats.data.WriterT[F, PhaseResults, A]
 
   type PhaseResultTell[F[_]] = MonadTell_[F, PhaseResults]
 
@@ -36,5 +56,21 @@ package object common {
 
   object PhaseResultListen {
     def apply[F[_]](implicit F: PhaseResultListen[F]) = F
+  }
+
+  object phase {
+    def apply[F[_]] = new PartiallyApplied[F]
+    final class PartiallyApplied[F[_]] {
+      def apply[A: RenderTree](label: String, a: A)(implicit F: PhaseResultTell[F]): F[A] =
+        F.writer(Vector(PhaseResult.tree(label, a)), a)
+    }
+  }
+
+  object phaseM {
+    def apply[F[_]] = new PartiallyApplied[F]
+    final class PartiallyApplied[F[_]] {
+      def apply[A: RenderTree](label: String, fa: F[A])(implicit F0: PhaseResultTell[F], F1: Monad[F]): F[A] =
+        F1.bind(fa)(phase[F](label, _))
+    }
   }
 }
