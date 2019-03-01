@@ -115,7 +115,7 @@ lazy val foundation = project
       "org.scalaz"                 %% "scalaz-core"               % scalazVersion,
       "org.scalaz"                 %% "scalaz-concurrent"         % scalazVersion,
       "org.scalaz.stream"          %% "scalaz-stream"             % scalazStreamVersion,
-      "com.codecommit"             %% "shims"                     % "1.2.1",
+      "com.codecommit"             %% "shims"                     % "1.7.0",
       "org.typelevel"              %% "cats-effect"               % catsEffectVersion,
       "co.fs2"                     %% "fs2-core"                  % fs2Version,
       "co.fs2"                     %% "fs2-io"                    % fs2Version,
@@ -192,6 +192,7 @@ lazy val common = project
 lazy val frontend = project
   .settings(name := "quasar-frontend")
   .dependsOn(
+    api,
     common % BothScopes,
     ejson % BothScopes)
   .settings(commonSettings)
@@ -235,8 +236,8 @@ lazy val sql = project
 lazy val qscript = project
   .settings(name := "quasar-qscript")
   .dependsOn(
-    frontend % BothScopes,
-    api)
+    api,
+    frontend % BothScopes)
   .settings(commonSettings)
   .enablePlugins(AutomateHeaderPlugin)
 
@@ -291,8 +292,8 @@ lazy val impl = project
       "com.slamdata"   %% "tectonic-fs2"   % tectonicVersion.value,
       "org.http4s"     %% "jawn-fs2"       % jawnfs2Version,
       "org.slf4s"      %% "slf4s-api"      % slf4sVersion,
-      "org.spire-math" %% "jawn-argonaut"  % jawnVersion,
-      "org.spire-math" %% "jawn-util"      % jawnVersion,
+      "org.typelevel"  %% "jawn-argonaut"  % jawnVersion,
+      "org.typelevel"  %% "jawn-util"      % jawnVersion,
       // woodstox is added here as a quick and dirty way to get azure working
       // see ch3385 for details
       "com.fasterxml.woodstox" % "woodstox-core" % "5.0.3"))

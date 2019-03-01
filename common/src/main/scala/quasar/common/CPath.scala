@@ -21,7 +21,6 @@ import slamdata.Predef._
 import scalaz.{Cord, Order, Show}
 import scalaz.Ordering._
 import scalaz.std.anyVal._
-import scalaz.std.list._
 import scalaz.std.string._
 import scalaz.syntax.show._
 
@@ -30,12 +29,14 @@ sealed trait CPath { self =>
   def nodes: List[CPathNode]
 
   def \(that: CPath): CPath = CPath(self.nodes ++ that.nodes)
-  def \(that: String): CPath = CPath(self.nodes :+ CPathField(that))
-  def \(that: Int): CPath = CPath(self.nodes :+ CPathIndex(that))
+  def \(that: CPathNode): CPath = CPath(self.nodes :+ that)
+  def \(that: String): CPath = self \ CPathField(that)
+  def \(that: Int): CPath = self \ CPathIndex(that)
 
   def \:(that: CPath): CPath = CPath(that.nodes ++ self.nodes)
-  def \:(that: String): CPath = CPath(CPathField(that) +: self.nodes)
-  def \:(that: Int): CPath = CPath(CPathIndex(that) +: self.nodes)
+  def \:(that: CPathNode): CPath = CPath(that +: self.nodes)
+  def \:(that: String): CPath = CPathField(that) \: self
+  def \:(that: Int): CPath = CPathIndex(that) \: self
 
   def hasPrefixComponent(p: CPathNode): Boolean = nodes.startsWith(p :: Nil)
   def hasPrefix(p: CPath): Boolean = nodes.startsWith(p.nodes)
@@ -166,9 +167,8 @@ object CPath {
     case CPathMeta(name) => Cord("CPathMeta(") ++ name.show ++ Cord(")")
   }
 
-  implicit val cPathShow: Show[CPath] = Show.show {
-    case CompositeCPath(nodes) => nodes.show
-  }
+  implicit val cPathShow: Show[CPath] =
+    Show.showFromToString
 
   implicit object CPathOrder extends scalaz.Order[CPath] {
     def order(v1: CPath, v2: CPath): scalaz.Ordering = {
