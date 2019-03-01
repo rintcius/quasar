@@ -117,7 +117,7 @@ object ChildAggregatingMiddleware {
       * having one of, or both, of the source and output value.
       */
     // FIXME: Recursion, need to indicate whether toplevel src/value are included or not
-    // FIXME: need to be able to indicate that source needs to be concatenanted for hte cartesian case.
+    // FIXME: need to be able to indicate that source needs to be concatenated for the cartesian case.
     def go(in: List[PI], spath: CPath, vpath: CPath)
         : (List[PI], Either[List[String], (Option[List[String]], Option[List[String]])]) =
       in match {

@@ -23,24 +23,18 @@ import quasar.api.datasource.{DatasourceRef, Datasources}
 import quasar.api.resource.ResourcePath
 import quasar.api.table.{TableRef, Tables}
 import quasar.common.PhaseResultTell
-import quasar.connector.{Datasource, QueryResult}
+import quasar.connector.QueryResult
 import quasar.contrib.std.uuid._
 import quasar.ejson.{EJson, Fixed}
 import quasar.ejson.implicits._
 import quasar.impl.DatasourceModule
 import quasar.impl.datasource.{AggregateResult, CompositeResult}
-import quasar.impl.datasources.{
-  CompositeResourceSchema,
-  DefaultDatasources,
-  DefaultDatasourceErrors,
-  DefaultDatasourceManager,
-  ManagedDatasource
-}
+import quasar.impl.datasources._
 import quasar.impl.datasources.middleware._
 import quasar.impl.schema.{SstConfig, SstEvalConfig}
 import quasar.impl.storage.IndexedStore
 import quasar.impl.table.{DefaultTables, PreparationsManager}
-import quasar.qscript.{construction, Hole, Map => QSMap, QScriptEducated}
+import quasar.qscript.{QScriptEducated, construction, Map => QSMap}
 import quasar.run.implicits._
 
 import java.util.UUID
@@ -50,9 +44,8 @@ import scala.concurrent.ExecutionContext
 import argonaut.Json
 import argonaut.JsonScalaz._
 
-import cats.Functor
 import cats.effect.{ConcurrentEffect, ContextShift, Sync, Timer}
-import cats.syntax.functor._
+import cats.syntax.contravariant._
 
 import fs2.Stream
 
@@ -60,9 +53,7 @@ import matryoshka.data.Fix
 
 import org.slf4s.Logging
 
-import pathy.Path.posixCodec
-
-import scalaz.{~>, IMap}
+import scalaz.IMap
 import scalaz.syntax.show._
 
 import shims._
@@ -114,18 +105,19 @@ object Quasar extends Logging {
       dsManager <-
         Stream.resource(DefaultDatasourceManager.Builder[UUID, Fix, F]
           .withMiddleware(ConditionReportingMiddleware(onCondition)(_, _))
-          .withMiddleware(ChildAggregatingMiddleware(_, _))
+          .withMiddleware(ChildAggregatingMiddleware(SourceKey, ValueKey)(_, _))
           .build(moduleMap, configured))
 
       freshUUID = ConcurrentEffect[F].delay(UUID.randomUUID)
 
-      resourceSchema = CompositeResourceSchema[F, Fix[EJson], Double](sstEvalConfig)
+      resourceSchema = CompositeResourceSchema[F, Fix[EJson], Double](sstEvalConfig, SourceKey, ValueKey)
 
       datasources =
-        DefaultDatasources(freshUUID, datasourceRefs, dsErrors, dsManager, resourceSchema)
+        DefaultDatasources[F, UUID, Json, SstConfig[Fix[EJson], Double], Fix, EvalResult[F]](
+          freshUUID, datasourceRefs, dsErrors, dsManager, toEvalResultSchema(resourceSchema))
 
       lookupRunning =
-        (id: UUID) => dsManager.managedDatasource(id).map(_.map(_.modify(reifiedAggregateDs)))
+        (id: UUID) => dsManager.managedDatasource(id)
 
       sqlEvaluator = Sql2QueryEvaluator(qscriptEvaluator(lookupRunning))
 
@@ -139,27 +131,21 @@ object Quasar extends Logging {
 
   ////
 
-  import CompositeResourceSchema.{SourceKey, ValueKey}
+  private val SourceKey = "source"
+  private val ValueKey = "value"
 
   private val rec = construction.RecFunc[Fix]
   private val ejs = Fixed[Fix[EJson]]
 
-  private def reifiedAggregateDs[F[_]: Functor, G[_]]
-      : Datasource[F, G, ?, CompositeResult[F, QueryResult[F]]] ~> Datasource[F, G, ?, EvalResult[F]] =
-    new (Datasource[F, G, ?, CompositeResult[F, QueryResult[F]]] ~> Datasource[F, G, ?, EvalResult[F]]) {
-      def apply[A](ds: Datasource[F, G, A, CompositeResult[F, QueryResult[F]]]) = {
-        val l = Datasource.pevaluator[F, G, A, CompositeResult[F, QueryResult[F]], A, EvalResult[F]]
-        l.modify(_.map(_.map(reifyAggregateStructure)))(ds)
-      }
+  def toEvalResultSchema[F[_], J, N](
+      compositeSchema: ResourceSchema[F, SstConfig[J, N], (ResourcePath, CompositeResult[F, QueryResult[F]])])
+      : ResourceSchema[F, SstConfig[J, N], (ResourcePath, EvalResult[F])] =
+    compositeSchema.contramap {
+      case (rp, evalResult) => (rp, toCompositeResult(evalResult))
     }
 
-  private def reifyAggregateStructure[F[_], A](s: Stream[F, (ResourcePath, A)])
-      : Stream[F, (ResourcePath, QSMap[Fix, A])] =
-    s map { case (rp, a) =>
-      val fm = rec.StaticMapS(
-        SourceKey -> rec.Constant[Hole](ejs.str(posixCodec.printPath(rp.toPath))),
-        ValueKey -> rec.Hole)
-
-      (rp, QSMap(a, fm))
-    }
+  def toCompositeResult[F[_]](evalResult: EvalResult[F]): CompositeResult[F, QueryResult[F]] =
+    // Just returning `src` of the FreeMap here as opposed to changing the ResourceSchema implementation
+    // to apply the FreeMap to each result of the aggregate
+    evalResult.fold(Left(_), ar => Right(ar.map { case (rp, fm) => (rp, fm.src) }))
 }
