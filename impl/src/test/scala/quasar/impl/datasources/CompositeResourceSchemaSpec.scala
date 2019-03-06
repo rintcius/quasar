@@ -153,7 +153,7 @@ object CompositeResourceSchemaSpec extends quasar.EffectfulQSpec[IO] {
       (ResourcePath.root() / ResourceName("c")) -> boolResult(cs))
 
     resourceSchema(defaultCfg, (path, Right(agg.covary[IO])), 1.hour) map { qsst =>
-      qsst must_= Some(SstSchema.fromSampled(100, aggSst))
+      qsst must_= Some(SstSchema.fromSampled(100, sst))
     }
   }
 
