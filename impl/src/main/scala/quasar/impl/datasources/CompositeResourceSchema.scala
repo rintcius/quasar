@@ -16,7 +16,7 @@
 
 package quasar.impl.datasources
 
-import slamdata.Predef.{Double, List, Option, String}
+import slamdata.Predef.{Double, Option, String}
 
 import quasar.api.resource.ResourcePath
 import quasar.connector.{MonadResourceErr, QueryResult}
@@ -26,15 +26,12 @@ import quasar.impl.parsing.ResourceParser
 import quasar.impl.schema._
 import quasar.sst.SST
 
-import scala.Predef.ArrowAssoc
 import scala.concurrent.duration.FiniteDuration
 import scala.util.{Left, Right}
 
 import cats.effect.{Concurrent, Timer}
 
 import matryoshka.{Corecursive, Recursive}
-
-import pathy.Path.posixCodec
 
 import qdata.QDataEncode
 
@@ -79,16 +76,8 @@ final class CompositeResourceSchema[
     // compute bound
     val readParallelism = evalConfig.parallelism.value.toInt * 2
 
-    def attributeSource(rp: ResourcePath)(valSst: S): S = {
-      val srcSst = sstQDataEncode.makeString(posixCodec.printPath(rp.toPath))
-
-      val assocs = List(sourceKey -> srcSst, valueKey -> valSst)
-
-      sstQDataEncode.makeObject(
-        assocs.foldLeft(sstQDataEncode.prepObject) {
-          case (o, (k, v)) => sstQDataEncode.pushObject(k, v, o)
-        })
-    }
+    def attributeSource(rp: ResourcePath)(valSst: S): S =
+      valSst
 
     val ssts = resource match {
       case (rp, Left(qr)) =>
