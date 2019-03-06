@@ -75,5 +75,5 @@ object ChildAggregatingMiddleware {
       ir: InterpretedRead[ResourcePath],
       cp: ResourcePath)
       : (InterpretedRead[ResourcePath], RecFreeMap[Fix]) =
-    (ir, rec.Hole)
+    (ir.copy(path = cp), rec.Hole)
 }
