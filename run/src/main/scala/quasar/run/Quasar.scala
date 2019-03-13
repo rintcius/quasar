@@ -23,7 +23,7 @@ import quasar.api.datasource.{DatasourceRef, Datasources}
 import quasar.api.resource.ResourcePath
 import quasar.api.table.{TableRef, Tables}
 import quasar.common.PhaseResultTell
-import quasar.connector.QueryResult
+import quasar.connector.{Datasource, QueryResult}
 import quasar.contrib.std.uuid._
 import quasar.ejson.{EJson, Fixed}
 import quasar.ejson.implicits._
@@ -44,8 +44,10 @@ import scala.concurrent.ExecutionContext
 import argonaut.Json
 import argonaut.JsonScalaz._
 
+import cats.Functor
 import cats.effect.{ConcurrentEffect, ContextShift, Sync, Timer}
 import cats.syntax.contravariant._
+import cats.syntax.functor._
 
 import fs2.Stream
 
@@ -53,7 +55,9 @@ import matryoshka.data.Fix
 
 import org.slf4s.Logging
 
-import scalaz.IMap
+import pathy.Path.posixCodec
+
+import scalaz.{~>, IMap}
 import scalaz.syntax.show._
 
 import shims._

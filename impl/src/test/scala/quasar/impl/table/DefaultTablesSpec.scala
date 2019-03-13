@@ -17,9 +17,8 @@
 package quasar.impl.table
 
 import slamdata.Predef._
-
 import quasar.api.QueryEvaluator
-import quasar.api.table.{TableName, TableRef, Tables, TablesSpec}
+import quasar.api.table._
 import quasar.contrib.scalaz.MonadState_
 import quasar.contrib.std.uuid._
 import quasar.impl.storage.{IndexedStore, PureIndexedStore}
@@ -76,8 +75,22 @@ final class DefaultTablesSpec extends TablesSpec[IO, UUID, String, String, Strin
   val tables: Tables[IO, UUID, String, String, String] =
     DefaultTables[IO, UUID, String, String, String](freshId, tableStore, evaluator, manager(0), lookup, lookupSchema)
 
-  val table1: TableRef[String] = TableRef(TableName("table1"), "select * from table1")
-  val table2: TableRef[String] = TableRef(TableName("table2"), "select * from table2")
+  val columns1: List[TableColumn] =
+    List(TableColumn("foo1", ColumnType.Number),
+      TableColumn("foo2", ColumnType.String),
+      TableColumn("foo3", ColumnType.Boolean),
+      TableColumn("foo4", ColumnType.Null),
+      TableColumn("foo5", ColumnType.OffsetDateTime))
+
+  val columns2: List[TableColumn] =
+    List(TableColumn("bar1", ColumnType.Number),
+      TableColumn("bar2", ColumnType.String),
+      TableColumn("bar3", ColumnType.Boolean),
+      TableColumn("bar4", ColumnType.Null),
+      TableColumn("bar5", ColumnType.OffsetDateTime))
+
+  val table1: TableRef[String] = TableRef(TableName("table1"), "select * from table1", columns1)
+  val table2: TableRef[String] = TableRef(TableName("table2"), "select * from table2", columns2)
 
   val preparation1: String = table1.query
   val preparation2: String = table2.query
@@ -96,14 +109,14 @@ object DefaultTablesSpec {
 
   def mutableState[F[_]: Sync, S](init: S): MonadState_[F, S] = new MonadState_[F, S] {
     private var s: S = init
-  
+
     def get: F[S] = Sync[F].delay(s)
     def put(s0: S): F[Unit] = Sync[F].delay(s = s0)
   }
 
   implicit val msmaptref: MonadState_[IO, IMap[UUID, TableRef[String]]] =
     mutableState[IO, IMap[UUID, TableRef[String]]](IMap())
-  
+
   implicit val msmapstring: MonadState_[IO, IMap[UUID, String]] =
     mutableState[IO, IMap[UUID, String]](IMap())
 }

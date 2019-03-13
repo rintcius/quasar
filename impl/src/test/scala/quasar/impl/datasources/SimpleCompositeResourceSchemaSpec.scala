@@ -53,7 +53,6 @@ import matryoshka.implicits._
 
 import qdata.QDataDecode
 
-import scalaz.IMap
 import scalaz.std.anyVal._
 import scalaz.std.option._
 
@@ -61,7 +60,7 @@ import shims.{eqToScalaz => _, orderToScalaz => _, _}
 
 import spire.std.double._
 
-object CompositeResourceSchemaSpec extends quasar.EffectfulQSpec[IO] {
+object SimpleCompositeResourceSchemaSpec extends quasar.EffectfulQSpec[IO] {
 
   implicit val ioResourceErrorME: MonadError_[IO, ResourceError] =
     MonadError_.facet[IO](ResourceError.throwableP)
@@ -81,18 +80,6 @@ object CompositeResourceSchemaSpec extends quasar.EffectfulQSpec[IO] {
     TypeStat.bool(3.0, 2.0),
     TypeST(TypeF.simple[Fix[EJson], SST[Fix[EJson], Double]](SimpleType.Bool))).embed
 
-  val srcSst = envT(
-    TypeStat.str(5.0, 2.0, 2.0, "/a", "/c"),
-    TypeST(TypeF.simple[Fix[EJson], SST[Fix[EJson], Double]](SimpleType.Str))).embed
-
-  val aggSst = envT(
-    TypeStat.coll(5.0, Some(2.0), Some(2.0)),
-    TypeST(TypeF.map[Fix[EJson], SST[Fix[EJson], Double]](
-      IMap(
-        EJson.str[Fix[EJson]]("source") -> srcSst,
-        EJson.str[Fix[EJson]]("value") -> sst),
-      None))).embed
-
   val schema = SstSchema.fromSampled(100.0, sst)
 
   val parsedResult: QueryResult[IO] =
@@ -108,10 +95,7 @@ object CompositeResourceSchemaSpec extends quasar.EffectfulQSpec[IO] {
       ScalarStages.Id)
 
   val resourceSchema: ResourceSchema[IO, SstConfig[Fix[EJson], Double], (ResourcePath, CompositeResult[IO, QueryResult[IO]])] =
-    CompositeResourceSchema[IO, Fix[EJson], Double](
-      SstEvalConfig(20L, 1L, 100L),
-      "source",
-      "value")
+    SimpleCompositeResourceSchema[IO, Fix[EJson], Double](SstEvalConfig(20L, 1L, 100L))
 
   "computes an SST of parsed data" >>* {
     resourceSchema(defaultCfg, (path, Left(parsedResult)), 1.hour) map { qsst =>
@@ -153,7 +137,7 @@ object CompositeResourceSchemaSpec extends quasar.EffectfulQSpec[IO] {
       (ResourcePath.root() / ResourceName("c")) -> boolResult(cs))
 
     resourceSchema(defaultCfg, (path, Right(agg.covary[IO])), 1.hour) map { qsst =>
-      qsst must_= Some(SstSchema.fromSampled(100, aggSst))
+      qsst must_= Some(SstSchema.fromSampled(100, sst))
     }
   }
 

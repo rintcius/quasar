@@ -20,6 +20,7 @@ import slamdata.Predef.{Map => SMap, _}
 
 import quasar.{IdStatus, Qspec, Type}, IdStatus.{ExcludeId, IncludeId}
 import quasar.contrib.pathy.AFile
+import quasar.ejson
 import quasar.ejson.{EJson, Fixed}
 import quasar.ejson.implicits._
 import quasar.fp._
@@ -40,7 +41,7 @@ import matryoshka._
 import matryoshka.data.Fix
 import org.specs2.matcher.{Expectable, Matcher, MatchResult}
 import pathy.Path, Path.{file, Sandboxed}
-import scalaz.{\/, Cofree}
+import scalaz.{\/, Cofree, IList, NonEmptyList}
 import scalaz.syntax.apply._
 import scalaz.syntax.equal._
 import scalaz.syntax.show._
@@ -92,6 +93,104 @@ object ApplyProvenanceSpec extends Qspec with QSUTTypes[Fix] {
       tree must haveDimensions(dims)
     }
 
+    "produce normalized provenance for map" in {
+      val fm1: RecFreeMap =
+        recFunc.StaticMapS(
+          "A" -> recFunc.ProjectKeyS(recFunc.Hole, "X"),
+          "B" -> recFunc.ProjectKeyS(recFunc.Hole, "Y"))
+
+      val fm2: RecFreeMap =
+        recFunc.Add(recFunc.ProjectKeyS(recFunc.Hole, "B"), RecIntLit(17))
+
+      val tree: Cofree[QSU, Symbol] =
+        qsu.map('name2, (
+          qsu.map('name1, (
+            qsu.read('name0, (afile, ExcludeId)),
+            fm1)),
+          fm2))
+
+      val dims: SMap[Symbol, QDims] = SMap(
+        'name0 -> Dimensions.origin(
+          P.value(IdAccess.identity('name0)),
+          P.prjPath(J.str("foobar"))),
+        'name1 -> Dimensions.origin(
+          P.thenn(
+            P.both(
+              P.thenn(
+                P.injValue(J.str("A")),
+                P.prjValue(J.str("X"))),
+              P.thenn(
+                P.injValue(J.str("B")),
+                P.prjValue(J.str("Y")))),
+            P.value(IdAccess.identity('name0))),
+          P.prjPath(J.str("foobar"))),
+        'name2 -> Dimensions.origin(
+          P.thenn(
+            P.prjValue(J.str("Y")),
+            P.value(IdAccess.identity('name0))),
+          P.prjPath(J.str("foobar"))))
+
+      tree must haveDimensions(dims)
+    }
+
+    "produce provenance for map involving a union" in {
+      val fm1: RecFreeMap =
+        recFunc.StaticMapS(
+          "x" -> recFunc.IfUndefined(
+            recFunc.ProjectKeyS(recFunc.Hole, "a"),
+            recFunc.ProjectKeyS(recFunc.Hole, "b")),
+          "y" -> recFunc.ProjectKeyS(recFunc.Hole, "c"))
+
+      val fm2: RecFreeMap =
+        recFunc.Add(
+          recFunc.ProjectKeyS(recFunc.Hole, "x"),
+          recFunc.ProjectKeyS(recFunc.Hole, "y"))
+
+      val tree: Cofree[QSU, Symbol] =
+        qsu.map('name0, (
+          qsu.map('name1, (
+            qsu.read('name2, (afile, ExcludeId)),
+            fm1)),
+          fm2))
+
+      val dims: SMap[Symbol, QDims] = SMap(
+        'name0 -> Dimensions(IList(
+          NonEmptyList(
+            P.thenn(
+              P.both(
+                P.prjValue(J.str("a")),
+                P.prjValue(J.str("c"))),
+              P.value(IdAccess.identity('name2))),
+            P.prjPath(J.str("foobar"))),
+          NonEmptyList(
+            P.thenn(
+              P.both(
+                P.prjValue(J.str("b")),
+                P.prjValue(J.str("c"))),
+              P.value(IdAccess.identity('name2))),
+            P.prjPath(J.str("foobar"))))),
+        'name1 -> Dimensions(IList(
+          NonEmptyList(
+            P.thenn(
+              P.both(
+                P.thenn(P.injValue(J.str("x")), P.prjValue(J.str("a"))),
+                P.thenn(P.injValue(J.str("y")), P.prjValue(J.str("c")))),
+              P.value(IdAccess.identity('name2))),
+            P.prjPath(J.str("foobar"))),
+          NonEmptyList(
+            P.thenn(
+              P.both(
+                P.thenn(P.injValue(J.str("x")), P.prjValue(J.str("b"))),
+                P.thenn(P.injValue(J.str("y")), P.prjValue(J.str("c")))),
+              P.value(IdAccess.identity('name2))),
+            P.prjPath(J.str("foobar"))))),
+        'name2 -> Dimensions.origin(
+          P.value(IdAccess.identity('name2)),
+          P.prjPath(J.str("foobar"))))
+
+      tree must haveDimensions(dims)
+    }
+
     "compute correct provenance nested dimEdits" >> {
       val tree =
         qsu.lpReduce('n4, (
@@ -118,6 +217,13 @@ object ApplyProvenanceSpec extends Qspec with QSUTTypes[Fix] {
           P.value(IdAccess.identity('n2)),
           P.value(IdAccess.groupKey('n2, 1)),
           P.value(IdAccess.groupKey('n2, 0)),
+          P.prjPath(J.str("foobar"))),
+        'n1 -> Dimensions.origin(
+          P.value(IdAccess.identity('n1)),
+          P.value(IdAccess.groupKey('n1, 0)),
+          P.prjPath(J.str("foobar"))),
+        'n0 -> Dimensions.origin(
+          P.value(IdAccess.identity('n0)),
           P.prjPath(J.str("foobar")))
       ))
     }
@@ -135,11 +241,104 @@ object ApplyProvenanceSpec extends Qspec with QSUTTypes[Fix] {
       tree must haveDimensions(SMap(
         'n0 -> Dimensions.origin(
           P.thenn(
-            P.value(IdAccess.identity('n2)),
+            P.thenn(
+              P.prjValue(J.str("bar")),
+              P.value(IdAccess.identity('n2))),
             P.prjPath(J.str("foobar")))),
+        'n1 -> Dimensions.origin(
+          P.thenn(
+            P.prjValue(J.str("bar")),
+            P.value(IdAccess.identity('n2))),
+          P.prjPath(J.str("foobar"))),
         'n2 -> Dimensions.origin(
           P.value(IdAccess.identity('n2)),
           P.prjPath(J.str("foobar")))
+      ))
+    }
+
+    //      Read
+    //        |
+    //    Transpose
+    //     /     \
+    // DimEdit    Map
+    //   |         |
+    // QSFilter    |
+    //   \        /
+    //   AutoJoin2
+    //        |
+    //     DimEdit
+    "compute provenance for graph branch with squash" >> {
+      val root =
+        qsu.transpose('n1, (
+          qsu.read('n0, (afile, ExcludeId)),
+          QScriptUniform.Retain.Identities,
+          Rotation.FlattenMap))
+
+      val tree =
+        qsu.dimEdit('n6, (
+          qsu._autojoin2('n5, (
+            qsu.qsFilter('n4, (
+              qsu.dimEdit('n3, (
+                root,
+                DTrans.Squash[Fix]())),
+              recFunc.Gt(recFunc.Hole, recFunc.Constant(ejson.Fixed[Fix[EJson]].int(42))))),
+            qsu.map('n2, (
+              root,
+              recFunc.ProjectKeyS(recFunc.Hole, "baz"))),
+            func.ConcatMaps(func.LeftSide, func.RightSide))),
+          DTrans.Squash[Fix]()))
+
+      tree must haveDimensions(SMap(
+        'n0 -> Dimensions.origin(
+          P.value(IdAccess.identity('n0)),
+          P.prjPath(J.str("foobar"))),
+        'n1 -> Dimensions.origin(
+          P.thenn(
+            P.value(IdAccess.identity('n1)),
+            P.value(IdAccess.identity('n0))),
+          P.prjPath(J.str("foobar"))),
+        'n2 -> Dimensions.origin(
+          P.thenn(
+            P.prjValue(J.str("baz")),
+            P.thenn(
+              P.value(IdAccess.identity('n1)),
+              P.value(IdAccess.identity('n0)))),
+          P.prjPath(J.str("foobar"))),
+        'n3 -> Dimensions.origin(
+          P.thenn(
+            P.value(IdAccess.identity('n1)),
+            P.thenn(
+              P.value(IdAccess.identity('n0)),
+              P.prjPath(J.str("foobar"))))),
+        'n4 -> Dimensions.origin(
+          P.thenn(
+            P.value(IdAccess.identity('n1)),
+            P.thenn(
+              P.value(IdAccess.identity('n0)),
+              P.prjPath(J.str("foobar"))))),
+        'n5 -> Dimensions.origin(
+          P.thenn(
+            P.prjValue(J.str("baz")),
+            P.thenn(
+              P.value(IdAccess.identity('n1)),
+              P.value(IdAccess.identity('n0)))),
+          P.thenn(
+            P.value(IdAccess.identity('n1)),
+            P.thenn(
+              P.value(IdAccess.identity('n0)),
+              P.prjPath(J.str("foobar"))))),
+        'n6 -> Dimensions.origin(
+          P.thenn(
+            P.prjValue(J.str("baz")),
+            P.thenn(
+              P.value(IdAccess.identity('n1)),
+              P.thenn(
+                P.value(IdAccess.identity('n0)),
+                P.thenn(
+                  P.value(IdAccess.identity('n1)),
+                    P.thenn(
+                      P.value(IdAccess.identity('n0)),
+                      P.prjPath(J.str("foobar"))))))))
       ))
     }
   }
@@ -403,8 +602,21 @@ object ApplyProvenanceSpec extends Qspec with QSUTTypes[Fix] {
       }) must beTrue
     }
 
-    "delete key is identity" >> {
-      computeFuncDims(func.DeleteKeyS(func.Hole, "k"))(κ(rdims)) must_= Some(rdims)
+    "delete key" >> {
+      "identity when key is static" >> {
+        computeFuncDims(func.DeleteKeyS(func.Hole, "k"))(κ(rdims)) must_= Some(rdims)
+      }
+
+      "join when key is dynamic" >> {
+        val l = qprov.projectStatic(J.str("obj"), rdims)
+        val r = qprov.projectStatic(J.str("keyName"), rdims)
+
+        val mf = func.DeleteKey(
+          func.ProjectKeyS(func.Hole, "obj"),
+          func.ProjectKeyS(func.Hole, "keyName"))
+
+        computeFuncDims(mf)(κ(rdims)) must_= Some(qprov.join(l, r))
+      }
     }
 
     "if undefined unions" >> {
@@ -492,6 +704,18 @@ object ApplyProvenanceSpec extends Qspec with QSUTTypes[Fix] {
     "undefined is empty" >> {
       computeFuncDims(func.Undefined)(κ(rdims)) must beNone
     }
+
+    "default is to join" >> {
+      val fm = func.Add(
+        func.ProjectKeyS(func.Hole, "x"),
+        func.ProjectKeyS(func.Hole, "y"))
+
+      val exp = qprov.join(
+        qprov.projectStatic(J.str("x"), rdims),
+        qprov.projectStatic(J.str("y"), rdims))
+
+      computeFuncDims(fm)(κ(rdims)) must_= Some(exp)
+    }
   }
 
   // checks the expected dimensions
@@ -519,8 +743,9 @@ object ApplyProvenanceSpec extends Qspec with QSUTTypes[Fix] {
           result(
             qauth.dims ≟ expectedDims,
             s"received expected authenticated QSU:\n${aqsu.shows}",
-            s"received unexpected authenticated QSU:\n${aqsu.shows}\n" +
-            s"expected:\n[\n${printMultiline(expected.toList)}\n]",
+            s"received unexpected dims:\n${printMultiline(qauth.dims.toList)}\n" + // `aqsu.shows` prunes orphan dims
+            s"wth graph:\n${resultGraph.shows}\n" +
+            s"expected:\n[\n${printMultiline(expectedDims.toList)}\n]",
             s)
         }).merge
       }

@@ -89,6 +89,19 @@ abstract class TablesSpec[F[_]: Monad: Sync, I: Equal: Show, Q: Equal: Show, D: 
       }
     }
 
+    "error when replacing a table with a name conflict" >>* {
+      for {
+        errorOrId1 <- tables.createTable(table1)
+        id1 <- isSuccess(errorOrId1)
+        errorOrId2 <- tables.createTable(table2)
+        _ <- isSuccess(errorOrId2)
+        table11 = table1.copy(name = table2.name)
+        cond <- tables.replaceTable(id1, table11)
+      } yield {
+        cond must beAbnormal(TableError.NameConflict(table2.name): TableError.ModificationError[I])
+      }
+    }
+
     "error when preparing a nonexistent table" >>* {
       for {
         id <- uniqueId.point[F]
@@ -115,17 +128,6 @@ abstract class TablesSpec[F[_]: Monad: Sync, I: Equal: Show, Q: Equal: Show, D: 
       for {
         id <- uniqueId.point[F]
         result <- tables.preparedData(id)
-      } yield {
-        result must beLike {
-          case -\/(TableError.TableNotFound(i)) => i must_= id
-        }
-      }
-    }
-
-    "error when requesting live data for a nonexistent table" >>* {
-      for {
-        id <- uniqueId.point[F]
-        result <- tables.liveData(id)
       } yield {
         result must beLike {
           case -\/(TableError.TableNotFound(i)) => i must_= id
@@ -209,6 +211,25 @@ abstract class TablesSpec[F[_]: Monad: Sync, I: Equal: Show, Q: Equal: Show, D: 
       }
     }
 
+    "succesfully replace a table without changing name" >>* {
+      for {
+        errorOrId <- tables.createTable(table1)
+        id <- isSuccess(errorOrId)
+        originalResult <- tables.table(id)
+        newCols = TableColumn("quux", ColumnType.Number) :: table1.columns
+        newTable = table1.copy(columns = newCols)
+        _ <- tables.replaceTable(id, newTable)
+        replacedResult <- tables.table(id)
+      } yield {
+        originalResult must beLike {
+          case \/-(t) => t must_= table1
+        }
+        replacedResult must beLike {
+          case \/-(t) => t must_= newTable
+        }
+      }
+    }
+
     "successfully prepare a table" >>* {
       for {
         errorOrId <- tables.createTable(table1)
@@ -243,24 +264,6 @@ abstract class TablesSpec[F[_]: Monad: Sync, I: Equal: Show, Q: Equal: Show, D: 
 
         replacedResult must beLike {
           case \/-(t) => t must_= table2
-        }
-      }
-    }
-
-    "get live data for a table" >>* {
-      for {
-        errorOrId <- tables.createTable(table1)
-        id <- isSuccess(errorOrId)
-
-        tableResult <- tables.table(id)
-        liveResult <- tables.liveData(id)
-      } yield {
-        tableResult must beLike {
-          case \/-(t) => t must_= table1
-        }
-
-        liveResult must beLike {
-          case \/-(data) => data must_= preparation1
         }
       }
     }
