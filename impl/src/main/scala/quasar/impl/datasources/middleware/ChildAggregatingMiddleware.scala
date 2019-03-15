@@ -16,29 +16,40 @@
 
 package quasar.impl.datasources.middleware
 
-import slamdata.Predef._
-
-import quasar.{ScalarStages, ScalarStage => S}
+import slamdata.Predef.{Map => SMap, _}
+import quasar.{ScalarStages, ScalarStage}, ScalarStage._
 import quasar.api.resource.ResourcePath
-import quasar.common.CPath
+import quasar.api.table.ColumnType
+import quasar.common.{CPath, CPathField}
 import quasar.connector.{Datasource, MonadResourceErr}
 import quasar.ejson.{EJson, Fixed}
 import quasar.impl.datasource.{AggregateResult, ChildAggregatingDatasource}
 import quasar.impl.datasources.ManagedDatasource
-import quasar.qscript.{construction, Hole, InterpretedRead, Map, QScriptEducated, RecFreeMap}
+import quasar.qscript.{Hole, InterpretedRead, Map, QScriptEducated, RecFreeMap, construction}
 import quasar.qscript.RecFreeS._
 
 import scala.util.{Either, Left}
 
 import cats.Monad
+import cats.instances.list._
+import cats.instances.option._
 import cats.instances.string._
 import cats.syntax.eq._
 import cats.syntax.flatMap._
 import cats.syntax.functor._
+import cats.syntax.option._
 import fs2.Stream
 import matryoshka.data.Fix
 import pathy.Path.posixCodec
 import shims._
+
+// imports for implicit of type quasar.RenderTree[quasar.qscript.RecFreeMap[matryoshka.data.Fix]]
+import quasar.contrib.iota._
+import quasar.contrib.matryoshka._
+import quasar.fp._
+import matryoshka._
+import matryoshka.data._
+
 
 object ChildAggregatingMiddleware {
   def apply[T[_[_]], F[_]: Monad: MonadResourceErr, I, R](
@@ -68,10 +79,7 @@ object ChildAggregatingMiddleware {
   private val rec = construction.RecFunc[Fix]
   private val ejs = Fixed[Fix[EJson]]
 
-  private val IdIdx = CPath.parse(".0")
-  private val ValIdx = CPath.parse(".1")
-
-  private def rewriteInstructions(
+  def rewriteInstructions(
       sourceKey: String,
       valueKey: String)(
       ir: InterpretedRead[ResourcePath],
@@ -81,14 +89,14 @@ object ChildAggregatingMiddleware {
     val SrcField = CPath.parse("." + sourceKey)
     val ValField = CPath.parse("." + valueKey)
 
-    def sourceFunc =
-      rec.Constant[Hole](EJson.str[Fix[EJson]](posixCodec.printPath(cp.toPath)))
+    val Undefined: (List[ScalarStage], Either[List[String], (Option[List[String]], Option[List[String]])]) =
+      (Nil, Right((None, None)))
+
+    val SourceFunc =
+      rec.Constant[Hole](ejs.str(posixCodec.printPath(cp.toPath)))
 
     def reifyPath(path: List[String]): RecFreeMap[Fix] =
       path.foldRight(rec.Hole)(rec.MakeMapS)
-
-    def dropPrefix(pfx: CPath, from: CPath): CPath =
-      from.dropPrefix(pfx) getOrElse from
 
     def reifyStructure(
         sourceLoc: Option[List[String]],
@@ -96,34 +104,111 @@ object ChildAggregatingMiddleware {
         : RecFreeMap[Fix] =
       (sourceLoc, valueLoc) match {
         case (Some(sloc), Some(vloc)) =>
-          rec.ConcatMaps(reifyPath(sloc) >> sourceFunc, reifyPath(vloc))
+          rec.ConcatMaps(reifyPath(sloc) >> SourceFunc, reifyPath(vloc))
 
-        case (Some(sloc), None) => reifyPath(sloc) >> sourceFunc
+        case (Some(sloc), None) => reifyPath(sloc) >> SourceFunc
         case (None, Some(vloc)) => reifyPath(vloc)
         case (None, None) => rec.Undefined
       }
 
     def injectSource(fields: List[String]): RecFreeMap[Fix] =
       fields.foldLeft(rec.Hole) { (obj, field) =>
-        rec.ConcatMaps(obj, rec.MakeMapS(field, sourceFunc))
+        rec.ConcatMaps(obj, rec.MakeMapS(field, SourceFunc))
       }
+
+    def cpath(l: List[String]) = CPath.parse(l.mkString(".", ".", ""))
 
     /** Returns the rewritten parse instructions and either what sourced-valued fields
       * to add to the output object or whether a new output object should be created
       * having one of, or both, of the source and output value.
       */
-    def go(in: List[S], spath: CPath, vpath: CPath)
-        : (List[S], Either[List[String], (Option[List[String]], Option[List[String]])]) =
+    @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
+    def go(in: List[ScalarStage], sKey: Option[List[String]], vKey: Option[List[String]])
+        : (List[ScalarStage], Either[List[String], (Option[List[String]], Option[List[String]])]) = {
+
+      val spath: Option[CPath] = sKey.map(cpath)
+      val vpath: Option[CPath] = vKey.map(cpath)
+
       in match {
+        case Nil =>
+          (Nil, Right((sKey, vKey)))
+        case Project(p) :: t =>
+          if (p === CPath.Identity)
+            go(t, sKey, vKey)
+          else if (p.some === spath)
+            //project source
+            //(t, Right((Some(Nil), None)))
+            go(t, Some(Nil), None) //TODO recurse or not?
+          else if (p.some === vpath)
+            // project value
+            (t, Right((None, Some(Nil))))
+          else
+            vpath.flatMap(p.dropPrefix(_)).fold(Undefined)(p0 => (Project(p0) :: t, Right((None, Some(Nil)))))
+
+        case w @ Wrap(_) :: Nil =>
+          (w, Right((sKey, vKey)))
+
+        case m @ Mask(_) :: t if sKey === None && vKey === Some(Nil) =>
+          (m, Right((sKey, vKey)))
+
+        case m @ Mask(mask) :: t =>
+
+          val exclude: Option[List[String]] = None
+          val excludeMask: Option[SMap[CPath, Set[ColumnType]]] = None
+
+          val (mask1, sloc, vloc) =
+            mask.foldLeft((excludeMask, exclude, exclude)) {
+              case ( acc @ (m, sp, vp), (k, v)) =>
+                if (k.some === spath && v.contains(ColumnType.String))
+                  (m, sKey, vp)
+                else {
+                  vpath.flatMap(k.dropPrefix(_)).fold(acc) { droppedK =>
+                    val newM = m
+                      .getOrElse(SMap[CPath, Set[ColumnType]]())
+                      .updated(droppedK, v)
+                    (Some(newM), sp, Some(Nil))
+                  }
+                }
+            }
+          go(mask1.fold(t)(Mask(_) :: t), sloc, vloc)
+
+        case Cartesian(cs) :: Nil =>
+          val init: (SMap[CPathField, (CPathField, List[Focused])], List[String]) = (SMap(), Nil)
+          val (cart, sourceFields) = cs.foldLeft(init) {
+            case ((m, srcs), entry@(out, (in, _))) =>
+              if (in.name === sourceKey)
+                (m, out.name :: srcs)
+              else if (in.name === valueKey)
+                (m + entry, srcs)
+              else
+                (m, srcs)
+          }
+          (cart.toList, sourceFields) match {
+            case (Nil, Nil) => Undefined
+            case (Nil, sfs) => (Nil, Right((Some(sfs), None)))
+            case ((o, (_, f)) :: Nil, Nil) => go(Wrap(o.name) :: f, None, Some(Nil))
+            case _ => ???
+              //(List(Wrap(valueKey), Cartesian(cart)), Left(sourceFields))
+          }
         case other =>
-          (other, Right((Some(List(sourceKey)), Some(List(valueKey)))))
+          ???
+          //(other, Right((sKey, vKey)))
       }
+    }
 
     ir.stages match {
       case rest =>
-        val (out, struct) = go(rest.stages, SrcField, ValField)
+        val (out, struct) = go(rest.stages, Some(List(sourceKey)), Some(List(valueKey)))
         val structure = struct.fold(injectSource, (reifyStructure _).tupled)
-        (InterpretedRead(cp, ScalarStages(rest.idStatus, out)), structure)
+        val ir = InterpretedRead(cp, ScalarStages(rest.idStatus, out))
+
+        import quasar.RenderTree.ops._
+        import scalaz.syntax.show._
+        println(s"IR $ir")
+        println("Struct")
+        println(structure.render.show)
+        (ir, structure)
+
     }
   }
 }

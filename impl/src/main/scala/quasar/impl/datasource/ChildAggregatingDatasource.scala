@@ -16,8 +16,8 @@
 
 package quasar.impl.datasource
 
-import slamdata.Predef.{Boolean, None, Option, Some, Unit}
-
+import slamdata.Predef._
+import quasar.RenderTree
 import quasar.api.datasource.DatasourceType
 import quasar.api.resource.{ResourceName, ResourcePath, ResourcePathType}
 import quasar.connector.{Datasource, MonadResourceErr, ResourceError}
@@ -31,17 +31,14 @@ import cats.instances.option._
 import cats.syntax.applicative._
 import cats.syntax.flatMap._
 import cats.syntax.functor._
-
 import fs2.Stream
-
 import monocle.Lens
-
 import shims._
 
 /** A datasource transformer that converts underlying prefix paths into prefix
   * resources by aggregating all child leaf resources of the prefix.
   */
-final class ChildAggregatingDatasource[F[_]: Monad: MonadResourceErr, Q, R, S, T] private (
+final class ChildAggregatingDatasource[F[_]: Monad: MonadResourceErr, Q, R, S: RenderTree, T] private(
     underlying: Datasource[F, Stream[F, ?], Q, R],
     queryPath: Q => ResourcePath,
     componentQuery: (Q, ResourcePath) => (Q, S),
@@ -63,6 +60,12 @@ final class ChildAggregatingDatasource[F[_]: Monad: MonadResourceErr, Q, R, S, T
           val results =
             resources evalMap { cp =>
               val (cq, s) = componentQuery(q, cp)
+
+              import quasar.RenderTree.ops._
+              import scalaz.syntax.show._
+              println("ChildAgg structure")
+              println(s.render.show)
+
               underlying.evaluate(cq).map(r => (cp, componentResult(r, s))).attempt
             }
 
@@ -97,7 +100,7 @@ final class ChildAggregatingDatasource[F[_]: Monad: MonadResourceErr, Q, R, S, T
 }
 
 object ChildAggregatingDatasource {
-  def apply[F[_]: Monad: MonadResourceErr, Q, R, S, T](
+  def apply[F[_]: Monad: MonadResourceErr, Q, R, S: RenderTree, T](
       underlying: Datasource[F, Stream[F, ?], Q, R])(
       queryPath: Q => ResourcePath,
       componentQuery: (Q, ResourcePath) => (Q, S),
