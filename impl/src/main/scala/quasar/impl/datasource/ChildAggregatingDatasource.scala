@@ -61,10 +61,10 @@ final class ChildAggregatingDatasource[F[_]: Monad: MonadResourceErr, Q, R, S: R
             resources evalMap { cp =>
               val (cq, s) = componentQuery(q, cp)
 
-              import quasar.RenderTree.ops._
-              import scalaz.syntax.show._
-              println("ChildAgg structure")
-              println(s.render.show)
+//              import quasar.RenderTree.ops._
+//              import scalaz.syntax.show._
+//              println("ChildAgg structure")
+//              println(s.render.show)
 
               underlying.evaluate(cq).map(r => (cp, componentResult(r, s))).attempt
             }

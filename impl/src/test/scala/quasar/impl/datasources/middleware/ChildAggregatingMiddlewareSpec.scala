@@ -189,17 +189,17 @@ class ChildAggregatingMiddlewareSpec extends Qspec with TreeMatchers {
       rec.StaticMapS("s" -> rec.Constant(json.str("/some/src/path"))))
   }
 
-//  "cartesian of source as s0, source as s1 -> map with s0 and s1 containing source" in {
-//    testTemplate(
-//      ScalarStages(IdStatus.ExcludeId, List(Cartesian(Map(
-//        (CPathField("s0") -> ((CPathField("source"), Nil))),
-//        (CPathField("s1") -> ((CPathField("source"), Nil))))))),
-//      someSourcePath,
-//      InterpretedRead(someSourcePath, ScalarStages(IdStatus.ExcludeId, Nil)),
-//      rec.StaticMapS(
-//        "s0" -> rec.Constant(json.str("/some/src/path")),
-//        "s1" -> rec.Constant(json.str("/some/src/path"))))
-//  }
+  "cartesian of source as s0, source as s1 -> map with s0 and s1 containing source" in {
+    testTemplate(
+      ScalarStages(IdStatus.ExcludeId, List(Cartesian(Map(
+        (CPathField("s0") -> ((CPathField("source"), Nil))),
+        (CPathField("s1") -> ((CPathField("source"), Nil))))))),
+      someSourcePath,
+      InterpretedRead(someSourcePath, ScalarStages(IdStatus.ExcludeId, Nil)),
+      rec.StaticMapS(
+        "s1" -> rec.Constant(json.str("/some/src/path")),
+        "s0" -> rec.Constant(json.str("/some/src/path"))))
+  }
 
   "cartesian of value as v -> wrap v on hole" in {
     testTemplate(
@@ -209,15 +209,39 @@ class ChildAggregatingMiddlewareSpec extends Qspec with TreeMatchers {
       rec.Hole)
   }
 
-//  "cartesian of value as v0, value as v1 -> wrap v on hole" in {
-//    testTemplate(
-//      ScalarStages(IdStatus.ExcludeId, List(Cartesian(Map(
-//        (CPathField("v0") -> ((CPathField("value"), Nil))),
-//        (CPathField("v1") -> ((CPathField("value"), Nil))))))),
-//      someSourcePath,
-//      InterpretedRead(someSourcePath, ScalarStages(IdStatus.ExcludeId, Wrap("v") :: Nil)),
-//      rec.Hole)
-//  }
+  "cartesian of value as v0, value as v1 -> wrap, then transformed cartesian on hole" in {
+    testTemplate(
+      ScalarStages(IdStatus.ExcludeId,
+        List(Cartesian(Map(
+          (CPathField("v0") -> ((CPathField("value"), Nil))),
+          (CPathField("v1") -> ((CPathField("value"), Nil))))))),
+      someSourcePath,
+      InterpretedRead(someSourcePath, ScalarStages(IdStatus.ExcludeId,
+        List(
+          Wrap("cartesian_value_wrap"),
+          Cartesian(Map(
+            (CPathField("v0") -> ((CPathField("cartesian_value_wrap"), Nil))),
+            (CPathField("v1") -> ((CPathField("cartesian_value_wrap"), Nil)))))))),
+      rec.Hole)
+  }
+
+  "mask value top, then cartesian of value as v0, value as v1 -> transformed cartesian on map with wrapper containing hole" in {
+    testTemplate(
+      ScalarStages(IdStatus.ExcludeId,
+        List(
+          Mask(Map(CPath.parse("value") -> ColumnType.Top)),
+          Cartesian(Map(
+            (CPathField("v0") -> ((CPathField("value"), Nil))),
+            (CPathField("v1") -> ((CPathField("value"), Nil))))))),
+      someSourcePath,
+      InterpretedRead(someSourcePath, ScalarStages(IdStatus.ExcludeId,
+        List(
+          Wrap("cartesian_value_wrap"),
+          Cartesian(Map(
+            (CPathField("v0") -> ((CPathField("cartesian_value_wrap"), Nil))),
+            (CPathField("v1") -> ((CPathField("cartesian_value_wrap"), Nil)))))))),
+      rec.Hole)
+  }
 
   def testTemplate(
       stages: ScalarStages,

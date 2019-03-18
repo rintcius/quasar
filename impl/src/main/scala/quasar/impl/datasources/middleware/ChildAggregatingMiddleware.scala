@@ -33,6 +33,7 @@ import scala.util.{Either, Left}
 import cats.Monad
 import cats.instances.list._
 import cats.instances.option._
+import cats.instances.set._
 import cats.instances.string._
 import cats.syntax.eq._
 import cats.syntax.flatMap._
@@ -79,6 +80,9 @@ object ChildAggregatingMiddleware {
   private val rec = construction.RecFunc[Fix]
   private val ejs = Fixed[Fix[EJson]]
 
+  type Path = List[String]
+  val IdentityPath: Path = Nil
+
   def rewriteInstructions(
       sourceKey: String,
       valueKey: String)(
@@ -86,21 +90,23 @@ object ChildAggregatingMiddleware {
       cp: ResourcePath)
       : (InterpretedRead[ResourcePath], RecFreeMap[Fix]) = {
 
-    val SrcField = CPath.parse("." + sourceKey)
-    val ValField = CPath.parse("." + valueKey)
+    val SrcField = List(sourceKey)
+    val ValField = List(valueKey)
 
-    val Undefined: (List[ScalarStage], Either[List[String], (Option[List[String]], Option[List[String]])]) =
+    val Undefined: (List[ScalarStage], Either[(List[CPathField], Boolean), (Option[Path], Option[Path])]) =
       (Nil, Right((None, None)))
 
     val SourceFunc =
       rec.Constant[Hole](ejs.str(posixCodec.printPath(cp.toPath)))
 
-    def reifyPath(path: List[String]): RecFreeMap[Fix] =
+    val CartesianValueWrap = CPathField("cartesian_value_wrap")
+
+    def reifyPath(path: Path): RecFreeMap[Fix] =
       path.foldRight(rec.Hole)(rec.MakeMapS)
 
     def reifyStructure(
-        sourceLoc: Option[List[String]],
-        valueLoc: Option[List[String]])
+        sourceLoc: Option[Path],
+        valueLoc: Option[Path])
         : RecFreeMap[Fix] =
       (sourceLoc, valueLoc) match {
         case (Some(sloc), Some(vloc)) =>
@@ -111,20 +117,29 @@ object ChildAggregatingMiddleware {
         case (None, None) => rec.Undefined
       }
 
-    def injectSource(fields: List[String]): RecFreeMap[Fix] =
-      fields.foldLeft(rec.Hole) { (obj, field) =>
-        rec.ConcatMaps(obj, rec.MakeMapS(field, SourceFunc))
-      }
+    def injectSource(sourceFields: List[CPathField], addHole: Boolean): RecFreeMap[Fix] = {
+      val srcs = rec.StaticMapS(sourceFields.map(f => (f.name, SourceFunc)) :_*)
+      if (addHole)
+        if (sourceFields.isEmpty) rec.Hole
+        else rec.ConcatMaps(rec.Hole, srcs)
+      else srcs
+    }
 
-    def cpath(l: List[String]) = CPath.parse(l.mkString(".", ".", ""))
+    def cpath(l: Path) = CPath.parse(l.mkString(".", ".", ""))
+
+    def containsPath_(paths: Option[List[CPath]], path: CPath): Boolean =
+      paths.map(_.contains(path)).getOrElse(false)
+
+    def containsPath(paths: Option[List[Path]], path: CPath): Boolean =
+      containsPath_(paths.map(_.map(cpath(_))), path)
 
     /** Returns the rewritten parse instructions and either what sourced-valued fields
       * to add to the output object or whether a new output object should be created
       * having one of, or both, of the source and output value.
       */
     @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
-    def go(in: List[ScalarStage], sKey: Option[List[String]], vKey: Option[List[String]])
-        : (List[ScalarStage], Either[List[String], (Option[List[String]], Option[List[String]])]) = {
+    def go(in: List[ScalarStage], sKey: Option[Path], vKey: Option[Path])
+        : (List[ScalarStage], Either[(List[CPathField], Boolean), (Option[Path], Option[Path])]) = {
 
       val spath: Option[CPath] = sKey.map(cpath)
       val vpath: Option[CPath] = vKey.map(cpath)
@@ -138,17 +153,17 @@ object ChildAggregatingMiddleware {
           else if (p.some === spath)
             //project source
             //(t, Right((Some(Nil), None)))
-            go(t, Some(Nil), None) //TODO recurse or not?
+            go(t, Some(IdentityPath), None) //TODO recurse or not?
           else if (p.some === vpath)
             // project value
-            (t, Right((None, Some(Nil))))
+            (t, Right((None, Some(IdentityPath))))
           else
             vpath.flatMap(p.dropPrefix(_)).fold(Undefined)(p0 => (Project(p0) :: t, Right((None, Some(Nil)))))
 
         case w @ Wrap(_) :: Nil =>
           (w, Right((sKey, vKey)))
 
-        case m @ Mask(_) :: t if sKey === None && vKey === Some(Nil) =>
+        case m @ Mask(_) :: t if sKey === None && vKey === Some(IdentityPath) =>
           (m, Right((sKey, vKey)))
 
         case m @ Mask(mask) :: t =>
@@ -163,31 +178,39 @@ object ChildAggregatingMiddleware {
                   (m, sKey, vp)
                 else {
                   vpath.flatMap(k.dropPrefix(_)).fold(acc) { droppedK =>
-                    val newM = m
-                      .getOrElse(SMap[CPath, Set[ColumnType]]())
-                      .updated(droppedK, v)
-                    (Some(newM), sp, Some(Nil))
+                    if ((droppedK === CPath.Identity) && (v === ColumnType.Top))
+                      acc
+                    else {
+                      val newM = m
+                        .getOrElse(SMap[CPath, Set[ColumnType]]())
+                        .updated(droppedK, v)
+                      (Some(newM), sp, Some(Nil))
+                    }
                   }
                 }
             }
           go(mask1.fold(t)(Mask(_) :: t), sloc, vloc)
 
         case Cartesian(cs) :: Nil =>
-          val init: (SMap[CPathField, (CPathField, List[Focused])], List[String]) = (SMap(), Nil)
+          val init: (SMap[CPathField, (CPathField, List[Focused])], List[CPathField]) = (SMap(), Nil)
           val (cart, sourceFields) = cs.foldLeft(init) {
-            case ((m, srcs), entry@(out, (in, _))) =>
+            case ((m, srcs), entry@(out, (in, fs))) =>
               if (in.name === sourceKey)
-                (m, out.name :: srcs)
+                (m, out :: srcs)
               else if (in.name === valueKey)
-                (m + entry, srcs)
+                (m + ((out -> ((CartesianValueWrap, fs)))), srcs)
               else
                 (m, srcs)
           }
           (cart.toList, sourceFields) match {
-            case (Nil, Nil) => Undefined
-            case (Nil, sfs) => (Nil, Right((Some(sfs), None)))
-            case ((o, (_, f)) :: Nil, Nil) => go(Wrap(o.name) :: f, None, Some(Nil))
-            case _ => ???
+            case (Nil, Nil) =>
+              Undefined
+            case (Nil, sfs) =>
+              (Nil, Left((sfs, false)))
+            case ((o, (_, f)) :: Nil, Nil) =>
+              go(Wrap(o.name) :: f, None, Some(Nil))
+            case (c, sfs) =>
+              (Wrap(CartesianValueWrap.name) :: Cartesian(cart) :: Nil, Left((sfs, true)))
               //(List(Wrap(valueKey), Cartesian(cart)), Left(sourceFields))
           }
         case other =>
@@ -198,15 +221,15 @@ object ChildAggregatingMiddleware {
 
     ir.stages match {
       case rest =>
-        val (out, struct) = go(rest.stages, Some(List(sourceKey)), Some(List(valueKey)))
-        val structure = struct.fold(injectSource, (reifyStructure _).tupled)
+        val (out, struct) = go(rest.stages, Some(SrcField), Some(ValField))
+        val structure = struct.fold((injectSource _).tupled, (reifyStructure _).tupled)
         val ir = InterpretedRead(cp, ScalarStages(rest.idStatus, out))
 
-        import quasar.RenderTree.ops._
-        import scalaz.syntax.show._
-        println(s"IR $ir")
-        println("Struct")
-        println(structure.render.show)
+//        import quasar.RenderTree.ops._
+//        import scalaz.syntax.show._
+//        println(s"IR $ir")
+//        println("Struct")
+//        println(structure.render.show)
         (ir, structure)
 
     }
