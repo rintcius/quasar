@@ -17,7 +17,8 @@
 package quasar.impl.datasources.middleware
 
 import slamdata.Predef.{Map => SMap, _}
-import quasar.{ScalarStages, ScalarStage}, ScalarStage._
+import quasar.{ScalarStage, ScalarStages}
+import ScalarStage._
 import quasar.api.resource.ResourcePath
 import quasar.api.table.ColumnType
 import quasar.common.{CPath, CPathField}
@@ -90,6 +91,8 @@ object ChildAggregatingMiddleware {
       cp: ResourcePath)
       : (InterpretedRead[ResourcePath], RecFreeMap[Fix]) = {
 
+    val Debug = true
+
     val SrcField = List(sourceKey)
     val ValField = List(valueKey)
 
@@ -132,6 +135,16 @@ object ChildAggregatingMiddleware {
 
     def containsPath(paths: Option[List[Path]], path: CPath): Boolean =
       containsPath_(paths.map(_.map(cpath(_))), path)
+
+    def printDebug(ir: InterpretedRead[ResourcePath], fm: RecFreeMap[Fix]) = {
+      import quasar.RenderTree.ops._
+      import scalaz.syntax.show._
+
+      println("IR on child datasource:")
+      println(ir.render.show)
+      println("Structure to apply:")
+      println(fm.render.show)
+    }
 
     /** Returns the rewritten parse instructions and either what sourced-valued fields
       * to add to the output object or whether a new output object should be created
@@ -225,11 +238,8 @@ object ChildAggregatingMiddleware {
         val structure = struct.fold((injectSource _).tupled, (reifyStructure _).tupled)
         val ir = InterpretedRead(cp, ScalarStages(rest.idStatus, out))
 
-//        import quasar.RenderTree.ops._
-//        import scalaz.syntax.show._
-//        println(s"IR $ir")
-//        println("Struct")
-//        println(structure.render.show)
+        if (Debug) printDebug(ir, structure)
+
         (ir, structure)
 
     }
