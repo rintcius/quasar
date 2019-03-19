@@ -225,6 +225,18 @@ class ChildAggregatingMiddlewareSpec extends Qspec with TreeMatchers {
       rec.Hole)
   }
 
+  "cartesian of source as s, value as v -> map with s0 and s1 containing source" in {
+    testTemplate(
+      ScalarStages(IdStatus.ExcludeId, List(Cartesian(Map(
+        (CPathField("s") -> ((CPathField("source"), Nil))),
+        (CPathField("v") -> ((CPathField("value"), Nil))))))),
+      someSourcePath,
+      InterpretedRead(someSourcePath, ScalarStages(IdStatus.ExcludeId, Nil)),
+      rec.StaticMapS(
+        "s" -> rec.Constant(json.str("/some/src/path")),
+        "v" -> rec.Hole))
+  }
+
   "mask value top, then cartesian of value as v0, value as v1 -> transformed cartesian on map with wrapper containing hole" in {
     testTemplate(
       ScalarStages(IdStatus.ExcludeId,
@@ -243,6 +255,24 @@ class ChildAggregatingMiddlewareSpec extends Qspec with TreeMatchers {
       rec.Hole)
   }
 
+  "mask source top and value.x top, then cartesian of source as s, value as v -> transformed cartesian on map with wrapper containing hole" in {
+    testTemplate(
+      ScalarStages(IdStatus.ExcludeId,
+        List(
+          Mask(Map(
+            CPath.parse("source") -> ColumnType.Top,
+            CPath.parse("value.x") -> ColumnType.Top)),
+          Cartesian(Map(
+            (CPathField("s") -> ((CPathField("source"), Nil))),
+            (CPathField("v") -> ((CPathField("value"), Nil))))))),
+      someSourcePath,
+      InterpretedRead(someSourcePath, ScalarStages(IdStatus.ExcludeId,
+        List(Mask(Map(CPath.parse("x") -> ColumnType.Top))))),
+      rec.StaticMapS(
+        "s" -> rec.Constant(json.str("/some/src/path")),
+        "v" -> rec.Hole))
+  }
+
   def testTemplate(
       stages: ScalarStages,
       path: ResourcePath,
@@ -251,12 +281,6 @@ class ChildAggregatingMiddlewareSpec extends Qspec with TreeMatchers {
 
     val (outIR, fm) =
       ChildAggregatingMiddleware.rewriteInstructions("source", "value")(InterpretedRead(dontCare, stages), path)
-
-//    import quasar.RenderTree.ops._
-//    import quasar.RenderedTree._
-//    import scalaz.syntax.show._
-//    println(fm.render.show)
-//    println(outIR)
 
     fm must beTreeEqual(expectedFm)
     outIR must_=== expected
