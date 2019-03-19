@@ -146,6 +146,14 @@ object ChildAggregatingMiddleware {
       println(fm.render.show)
     }
 
+    def printNotImplemented(stages: List[ScalarStage]) = {
+      import quasar.RenderTree.ops._
+      import scalaz.syntax.show._
+
+      println("Rewrite not implemented:")
+      println(stages.render.show)
+    }
+
     /** Returns the rewritten parse instructions and either what sourced-valued fields
       * to add to the output object or whether a new output object should be created
       * having one of, or both, of the source and output value.
@@ -191,18 +199,19 @@ object ChildAggregatingMiddleware {
                   (m, sKey, vp)
                 else {
                   vpath.flatMap(k.dropPrefix(_)).fold(acc) { droppedK =>
-                    if ((droppedK === CPath.Identity) && (v === ColumnType.Top))
-                      acc
-                    else {
-                      val newM = m
-                        .getOrElse(SMap[CPath, Set[ColumnType]]())
-                        .updated(droppedK, v)
-                      (Some(newM), sp, Some(Nil))
-                    }
+                    val newM =
+                      if ((droppedK === CPath.Identity) && (v === ColumnType.Top))
+                        m
+                      else
+                        Some(m
+                          .getOrElse(SMap[CPath, Set[ColumnType]]())
+                          .updated(droppedK, v))
+                    (newM, sp, Some(IdentityPath))
                   }
                 }
             }
-          go(mask1.fold(t)(Mask(_) :: t), sloc, vloc)
+          val rec = go(t, sloc, vloc)
+          rec.copy(_1 = mask1.fold(rec._1)(Mask(_) :: rec._1))
 
         case Cartesian(cs) :: Nil =>
           val init: (SMap[CPathField, (CPathField, List[Focused])], List[CPathField]) = (SMap(), Nil)
@@ -222,13 +231,14 @@ object ChildAggregatingMiddleware {
               (Nil, Left((sfs, false)))
             case ((o, (_, f)) :: Nil, Nil) =>
               go(Wrap(o.name) :: f, None, Some(Nil))
+            case ((o, (_, f)) :: Nil, sf :: Nil) =>
+              (f, Right((Some(List(sf.name)), Some(List(o.name)))))
             case (c, sfs) =>
               (Wrap(CartesianValueWrap.name) :: Cartesian(cart) :: Nil, Left((sfs, true)))
-              //(List(Wrap(valueKey), Cartesian(cart)), Left(sourceFields))
           }
         case other =>
+          printNotImplemented(other)
           ???
-          //(other, Right((sKey, vKey)))
       }
     }
 
