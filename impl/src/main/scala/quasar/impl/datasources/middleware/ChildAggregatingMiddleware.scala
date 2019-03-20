@@ -144,6 +144,24 @@ object ChildAggregatingMiddleware {
     def containsPath(paths: Option[List[Path]], path: CPath): Boolean =
       containsPath_(paths.map(_.map(cpath(_))), path)
 
+    def cartoucheMatch(cartoucheIn: CPathField, cartoucheFocused: List[Focused], key: Path): Option[List[Focused]] =
+      cpath(key).dropPrefix(CPath(cartoucheIn)).flatMap(p =>
+        if (p === CPath.Identity)
+          cartoucheFocused.some
+        else
+          cartoucheFocused match {
+              //FIXME need to collect all Project's
+            case Project(name) :: t =>
+              name.dropPrefix(p).map(p0 =>
+                if (p0 === CPath.Identity)
+                  t
+                else
+                  Project(p0) :: t
+              )
+            case _ => None
+          }
+      )
+
     def printDebug(ir: InterpretedRead[ResourcePath], fm: RecFreeMap[Fix]) = {
       import quasar.RenderTree.ops._
       import scalaz.syntax.show._
@@ -225,12 +243,21 @@ object ChildAggregatingMiddleware {
           val init: (SMap[CPathField, (CPathField, List[Focused])], List[CPathField]) = (SMap(), Nil)
           val (cart, sourceFields) = cs.foldLeft(init) {
             case ((m, srcs), entry@(out, (in, fs))) =>
-              if (in.name === sourceKey)
-                (m, out :: srcs)
-              else if (in.name === valueKey)
-                (m + ((out -> ((CartesianValueWrap, fs)))), srcs)
-              else
-                (m, srcs)
+              val sMatch = sKey.flatMap(cartoucheMatch(in, fs, _))
+              sMatch match {
+                case Some(Nil) =>
+                  (m, out :: srcs) //FIXME handle not just Some(Nil) but any Some(_)
+                case Some(_) =>
+                  (m, srcs)
+                case None =>
+                  val vMatch = vKey.flatMap(cartoucheMatch(in, fs, _))
+                  vMatch match {
+                    case Some(fs0) =>
+                      (m + ((out -> ((CartesianValueWrap, fs0)))), srcs)
+                    case None =>
+                      (m, srcs)
+                  }
+              }
           }
           (cart.toList, sourceFields) match {
             case (Nil, Nil) =>

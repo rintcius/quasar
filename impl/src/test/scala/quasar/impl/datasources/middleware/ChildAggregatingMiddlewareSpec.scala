@@ -287,6 +287,21 @@ class ChildAggregatingMiddlewareSpec extends Qspec with TreeMatchers {
         "v" -> rec.Hole))
   }
 
+  "wrap something, then cartesian of something.source as s, something.value as v -> map with s and v" in {
+    testTemplate(
+      ScalarStages(IdStatus.ExcludeId,
+        List(
+          Wrap("something"),
+          Cartesian(Map(
+            (CPathField("s") -> ((CPathField("something"), Project(CPath.parse("source")) :: Nil))),
+            (CPathField("v") -> ((CPathField("something"), Project(CPath.parse("value")) :: Nil))))))),
+      someSourcePath,
+      InterpretedRead(someSourcePath, ScalarStages(IdStatus.ExcludeId, Nil)),
+      rec.StaticMapS(
+        "s" -> rec.Constant(json.str("/some/src/path")),
+        "v" -> rec.Hole))
+  }
+
   def testTemplate(
       stages: ScalarStages,
       path: ResourcePath,
