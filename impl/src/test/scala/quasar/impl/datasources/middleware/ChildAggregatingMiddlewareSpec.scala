@@ -123,22 +123,36 @@ class ChildAggregatingMiddlewareSpec extends Qspec with TreeMatchers {
       rec.Hole)
   }
 
-  "project source, then wrap -> wrap on src path" in {
+  "project source, then wrap -> map with wrap containing src path" in {
     testTemplate(
       ScalarStages(IdStatus.ExcludeId, List(Project(CPath.parse(("source"))), Wrap("wrap"))),
       someSourcePath,
-      InterpretedRead(someSourcePath, ScalarStages(IdStatus.ExcludeId, List(Wrap("wrap")))),
-      rec.Constant(json.str("/some/src/path")))
+      InterpretedRead(someSourcePath, ScalarStages(IdStatus.ExcludeId, Nil)),
+      rec.StaticMapS("wrap" -> rec.Constant(json.str("/some/src/path"))))
   }
 
   "wrap -> wrap on map with source and value" in {
     testTemplate(
       ScalarStages(IdStatus.ExcludeId, List(Wrap("name"))),
       someSourcePath,
-      InterpretedRead(someSourcePath, ScalarStages(IdStatus.ExcludeId, List(Wrap("name")))),
-      rec.StaticMapS(
-        "source" -> rec.Constant(json.str("/some/src/path")),
-        "value" -> rec.Hole))
+      InterpretedRead(someSourcePath, ScalarStages(IdStatus.ExcludeId, Nil)),
+      rec.StaticMapS("name" ->
+        rec.StaticMapS(
+          "source" -> rec.Constant(json.str("/some/src/path")),
+          "value" -> rec.Hole)))
+  }
+
+  "2 wraps -> wrap them as static map" in {
+    testTemplate(
+      ScalarStages(IdStatus.ExcludeId, List(Wrap("first"), Wrap("second"))),
+      someSourcePath,
+      InterpretedRead(someSourcePath, ScalarStages(IdStatus.ExcludeId, Nil)),
+      rec.StaticMapS("second" ->
+        rec.StaticMapS("first" ->
+          rec.StaticMapS(
+            "source" -> rec.Constant(json.str("/some/src/path")),
+            "value" -> rec.Hole)
+        )))
   }
 
   "mask source (string) -> map with source" in {
@@ -162,7 +176,7 @@ class ChildAggregatingMiddlewareSpec extends Qspec with TreeMatchers {
       ScalarStages(IdStatus.ExcludeId, List(Mask(Map(CPath.parse("value") -> Set(ColumnType.String))))),
       someSourcePath,
       InterpretedRead(someSourcePath, ScalarStages(IdStatus.ExcludeId, List(Mask(Map(CPath.parse("") -> Set(ColumnType.String)))))),
-      rec.Hole)
+      rec.StaticMapS("value" -> rec.Hole))
   }
 
   "mask value.something -> mask something on map with value" in {
@@ -170,7 +184,7 @@ class ChildAggregatingMiddlewareSpec extends Qspec with TreeMatchers {
       ScalarStages(IdStatus.ExcludeId, List(Mask(Map(CPath.parse("value.something") -> Set(ColumnType.String))))),
       someSourcePath,
       InterpretedRead(someSourcePath, ScalarStages(IdStatus.ExcludeId, List(Mask(Map(CPath.parse("something") -> Set(ColumnType.String)))))),
-      rec.Hole)
+      rec.StaticMapS("value" -> rec.Hole))
   }
 
   "mask empty -> undefined" in {
@@ -201,12 +215,12 @@ class ChildAggregatingMiddlewareSpec extends Qspec with TreeMatchers {
         "s0" -> rec.Constant(json.str("/some/src/path"))))
   }
 
-  "cartesian of value as v -> wrap v on hole" in {
+  "cartesian of value as v -> map with v containing hole" in {
     testTemplate(
       ScalarStages(IdStatus.ExcludeId, List(Cartesian(Map((CPathField("v") -> ((CPathField("value"), Nil))))))),
       someSourcePath,
-      InterpretedRead(someSourcePath, ScalarStages(IdStatus.ExcludeId, Wrap("v") :: Nil)),
-      rec.Hole)
+      InterpretedRead(someSourcePath, ScalarStages(IdStatus.ExcludeId, Nil)),
+      rec.StaticMapS("v" -> rec.Hole))
   }
 
   "cartesian of value as v0, value as v1 -> wrap, then transformed cartesian on hole" in {

@@ -113,7 +113,10 @@ object ChildAggregatingMiddleware {
         : RecFreeMap[Fix] =
       (sourceLoc, valueLoc) match {
         case (Some(sloc), Some(vloc)) =>
-          rec.ConcatMaps(reifyPath(sloc) >> SourceFunc, reifyPath(vloc))
+          val commonPrefix = (sloc zip vloc).takeWhile(p => p._1 === p._2).map(p => CPathField(p._1))
+          val sPostfix = sloc.drop(commonPrefix.size)
+          val vPostfix = vloc.drop(commonPrefix.size)
+          reifyWraps(commonPrefix, rec.ConcatMaps(reifyPath(sPostfix) >> SourceFunc, reifyPath(vPostfix)))
 
         case (Some(sloc), None) => reifyPath(sloc) >> SourceFunc
         case (None, Some(vloc)) => reifyPath(vloc)
@@ -127,6 +130,11 @@ object ChildAggregatingMiddleware {
         else rec.ConcatMaps(rec.Hole, srcs)
       else srcs
     }
+
+    def reifyWraps(wraps: List[CPathField], fm: RecFreeMap[Fix]): RecFreeMap[Fix] =
+      wraps.reverse.foldLeft(fm) { (acc, field) =>
+        rec.MakeMapS(field.name, acc)
+      }
 
     def cpath(l: Path) = CPath.parse(l.mkString(".", ".", ""))
 
@@ -181,8 +189,8 @@ object ChildAggregatingMiddleware {
           else
             vpath.flatMap(p.dropPrefix(_)).fold(Undefined)(p0 => (Project(p0) :: t, Right((None, Some(Nil)))))
 
-        case w @ Wrap(_) :: Nil =>
-          (w, Right((sKey, vKey)))
+        case Wrap(w) :: t =>
+          go(t, sKey.map(w :: _), vKey.map(w :: _))
 
         case m @ Mask(_) :: t if sKey === None && vKey === Some(IdentityPath) =>
           (m, Right((sKey, vKey)))
@@ -206,7 +214,7 @@ object ChildAggregatingMiddleware {
                         Some(m
                           .getOrElse(SMap[CPath, Set[ColumnType]]())
                           .updated(droppedK, v))
-                    (newM, sp, Some(IdentityPath))
+                    (newM, sp, vKey)
                   }
                 }
             }
