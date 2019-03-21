@@ -251,6 +251,23 @@ class ChildAggregatingMiddlewareSpec extends Qspec with TreeMatchers {
         "v" -> rec.Hole))
   }
 
+  "cartesian of source as s, value.y as y, value as v -> transformed cartesian, map with hole plus s containing source" in {
+    testTemplate(
+      ScalarStages(IdStatus.ExcludeId, List(Cartesian(Map(
+        (CPathField("s") -> ((CPathField("source"), Nil))),
+        (CPathField("y") -> ((CPathField("value"), Project(CPath.parse("y")) :: Nil))),
+        (CPathField("v") -> ((CPathField("value"), Mask(Map(CPath.parse(".") -> Set(ColumnType.Object))) :: Nil))))))),
+      someSourcePath,
+      InterpretedRead(someSourcePath, ScalarStages(IdStatus.ExcludeId, List(
+        Wrap("cartesian_value_wrap"),
+        Cartesian(Map(
+          (CPathField("y") -> ((CPathField("cartesian_value_wrap"), Project(CPath.parse("y")) :: Nil))),
+          (CPathField("v") -> ((CPathField("cartesian_value_wrap"), Mask(Map(CPath.parse(".") -> Set(ColumnType.Object))) :: Nil)))))))),
+      rec.ConcatMaps(
+        rec.Hole,
+        rec.StaticMapS("s" -> rec.Constant(json.str("/some/src/path")))))
+  }
+
   "mask value top, then cartesian of value as v0, value as v1 -> transformed cartesian on map with wrapper containing hole" in {
     testTemplate(
       ScalarStages(IdStatus.ExcludeId,
@@ -300,6 +317,43 @@ class ChildAggregatingMiddlewareSpec extends Qspec with TreeMatchers {
       rec.StaticMapS(
         "s" -> rec.Constant(json.str("/some/src/path")),
         "v" -> rec.Hole))
+  }
+
+  "wrap something, then cartesian of something as b -> transformed cartesian wrapping value, map with b containing source and hole" in {
+    testTemplate(
+      ScalarStages(IdStatus.ExcludeId,
+        List(
+          Wrap("something"),
+          Cartesian(Map(
+            (CPathField("b") -> ((CPathField("something"), Nil))))))),
+      someSourcePath,
+      InterpretedRead(someSourcePath, ScalarStages(IdStatus.ExcludeId, Wrap("value") :: Nil)),
+      rec.StaticMapS(
+        "b" -> rec.ConcatMaps(
+            rec.StaticMapS("source" -> rec.Constant(json.str("/some/src/path"))),
+            rec.Hole)))
+  }
+
+  "wrap something, then cartesian of something.source as s, something.value as v, something as x -> concat maps merging transformed cartesian with static map of source part" in {
+    testTemplate(
+      ScalarStages(IdStatus.ExcludeId,
+        List(
+          Wrap("something"),
+          Cartesian(Map(
+            (CPathField("s") -> ((CPathField("something"), Project(CPath.parse("source")) :: Nil))),
+            (CPathField("v") -> ((CPathField("something"), Project(CPath.parse("value")) :: Nil))),
+            (CPathField("x") -> ((CPathField("something"), Nil))))))),
+      someSourcePath,
+      InterpretedRead(someSourcePath, ScalarStages(IdStatus.ExcludeId, List(
+        Wrap("cartesian_value_wrap"),
+        Cartesian(Map(
+          (CPathField("v") -> ((CPathField("cartesian_value_wrap"), Nil))),
+          (CPathField("x") -> ((CPathField("cartesian_value_wrap"), Wrap("value") :: Nil)))))))),
+      rec.ConcatMaps(
+        rec.ConcatMaps(
+          rec.Hole,
+          rec.StaticMapS("x" -> rec.StaticMapS("source" -> rec.Constant(json.str("/some/src/path"))))),
+        rec.StaticMapS("s" -> rec.Constant(json.str("/some/src/path")))))
   }
 
   def testTemplate(

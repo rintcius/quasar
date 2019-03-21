@@ -17,7 +17,7 @@
 package quasar.impl.datasources.middleware
 
 import slamdata.Predef.{Map => SMap, _}
-import quasar.{ScalarStage, ScalarStages}
+import quasar.{RenderTree, ScalarStage, ScalarStages}
 import ScalarStage._
 import quasar.api.resource.ResourcePath
 import quasar.api.table.ColumnType
@@ -91,12 +91,12 @@ object ChildAggregatingMiddleware {
       cp: ResourcePath)
       : (InterpretedRead[ResourcePath], RecFreeMap[Fix]) = {
 
-    val Debug = true
+    val Debug = false
 
     val SrcField = List(sourceKey)
     val ValField = List(valueKey)
 
-    val Undefined: (List[ScalarStage], Either[(List[CPathField], Boolean), (Option[Path], Option[Path])]) =
+    val Undefined: (List[ScalarStage], Either[(List[Path], Boolean), (Option[Path], Option[Path])]) =
       (Nil, Right((None, None)))
 
     val SourceFunc =
@@ -123,12 +123,12 @@ object ChildAggregatingMiddleware {
         case (None, None) => rec.Undefined
       }
 
-    def injectSource(sourceFields: List[CPathField], addHole: Boolean): RecFreeMap[Fix] = {
-      val srcs = rec.StaticMapS(sourceFields.map(f => (f.name, SourceFunc)) :_*)
-      if (addHole)
-        if (sourceFields.isEmpty) rec.Hole
-        else rec.ConcatMaps(rec.Hole, srcs)
-      else srcs
+    def injectSource(sourcePaths: List[Path], addHole: Boolean): RecFreeMap[Fix] = {
+      val sources = sourcePaths.map(sp => reifyWraps(sp.map(CPathField(_)), SourceFunc))
+      val h: List[RecFreeMap[Fix]] = if (addHole) List(rec.Hole) else Nil
+      (h ++ sources).reduceLeftOption[RecFreeMap[Fix]] { case (acc, src) =>
+          rec.ConcatMaps(acc, src)
+      } getOrElse(rec.StaticMapS())
     }
 
     def reifyWraps(wraps: List[CPathField], fm: RecFreeMap[Fix]): RecFreeMap[Fix] =
@@ -144,40 +144,42 @@ object ChildAggregatingMiddleware {
     def containsPath(paths: Option[List[Path]], path: CPath): Boolean =
       containsPath_(paths.map(_.map(cpath(_))), path)
 
-    def cartoucheMatch(cartoucheIn: CPathField, cartoucheFocused: List[Focused], key: Path): Option[List[Focused]] =
-      cpath(key).dropPrefix(CPath(cartoucheIn)).flatMap(p =>
-        if (p === CPath.Identity)
-          cartoucheFocused.some
-        else
-          cartoucheFocused match {
-              //FIXME need to collect all Project's
-            case Project(name) :: t =>
-              name.dropPrefix(p).map(p0 =>
-                if (p0 === CPath.Identity)
-                  t
-                else
-                  Project(p0) :: t
-              )
-            case _ => None
+    def prefixPath(p: Project): (Path, Option[Project]) = {
+      val init: (Path, Option[Project]) = (IdentityPath, None)
+      p.path.nodes.foldLeft(init) { case (acc, node) =>
+        (acc, node) match {
+            case ((path, Some(pr)), n) => (path, Some(Project(pr.path \ n)))
+            case ((path, None), CPathField(n)) => (path ++ List(n), None)
+            case ((path, None), n) => (path, Some(Project(CPath(n))))
           }
-      )
-
-    def printDebug(ir: InterpretedRead[ResourcePath], fm: RecFreeMap[Fix]) = {
-      import quasar.RenderTree.ops._
-      import scalaz.syntax.show._
-
-      println("IR on child datasource:")
-      println(ir.render.show)
-      println("Structure to apply:")
-      println(fm.render.show)
+      }
     }
 
-    def printNotImplemented(stages: List[ScalarStage]) = {
+    @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
+    def matchKeyWithFocusedList(key: Path, focused: List[Focused]): Option[(Path, List[Focused])] = {
+      (key, focused) match {
+        case ((h :: t, (pr @ Project(_)) :: fs)) =>
+          val (path, x) = prefixPath(pr)
+          path match {
+            case Nil => None
+            case hp :: tp =>
+              if (hp === h) matchKeyWithFocusedList(t, tp.map(n => Project(CPath(CPathField(n)))) ++ fs)
+              else None
+          }
+        case other => Some(other)
+      }
+    }
+
+    def matchKeyWithCartouche(key: Path, cartoucheIn: CPathField, cartoucheFocused: List[Focused])
+        : Option[(Path, List[Focused])] =
+      matchKeyWithFocusedList(key, Project(CPath(cartoucheIn)) :: cartoucheFocused)
+
+    def render[A: RenderTree](msg: String, r: A) = {
       import quasar.RenderTree.ops._
       import scalaz.syntax.show._
 
-      println("Rewrite not implemented:")
-      println(stages.render.show)
+      println(s"$msg:")
+      println(r.render.show)
     }
 
     /** Returns the rewritten parse instructions and either what sourced-valued fields
@@ -186,7 +188,7 @@ object ChildAggregatingMiddleware {
       */
     @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
     def go(in: List[ScalarStage], sKey: Option[Path], vKey: Option[Path])
-        : (List[ScalarStage], Either[(List[CPathField], Boolean), (Option[Path], Option[Path])]) = {
+        : (List[ScalarStage], Either[(List[Path], Boolean), (Option[Path], Option[Path])]) = {
 
       val spath: Option[CPath] = sKey.map(cpath)
       val vpath: Option[CPath] = vKey.map(cpath)
@@ -240,24 +242,29 @@ object ChildAggregatingMiddleware {
           rec.copy(_1 = mask1.fold(rec._1)(Mask(_) :: rec._1))
 
         case Cartesian(cs) :: Nil =>
-          val init: (SMap[CPathField, (CPathField, List[Focused])], List[CPathField]) = (SMap(), Nil)
+          val init: (SMap[CPathField, (CPathField, List[Focused])], List[Path]) = (SMap(), Nil)
           val (cart, sourceFields) = cs.foldLeft(init) {
             case ((m, srcs), entry@(out, (in, fs))) =>
-              val sMatch = sKey.flatMap(cartoucheMatch(in, fs, _))
-              sMatch match {
-                case Some(Nil) =>
-                  (m, out :: srcs) //FIXME handle not just Some(Nil) but any Some(_)
-                case Some(_) =>
-                  (m, srcs)
+              val sMatch = sKey.flatMap(matchKeyWithCartouche(_, in, fs))
+              val vMatch = vKey.flatMap(matchKeyWithCartouche(_, in, fs))
+              val newSrcs = sMatch match {
+                case Some((path, Nil)) =>
+                  (out.name :: path) :: srcs
+                case Some(_) => //FIXME handle not just Some(Nil) but any/more Some(_)
+                  ???
                 case None =>
-                  val vMatch = vKey.flatMap(cartoucheMatch(in, fs, _))
-                  vMatch match {
-                    case Some(fs0) =>
-                      (m + ((out -> ((CartesianValueWrap, fs0)))), srcs)
-                    case None =>
-                      (m, srcs)
-                  }
+                  srcs
               }
+
+              val newMap = vMatch match {
+                case Some((Nil, fs0)) =>
+                  m + (out -> ((CartesianValueWrap, fs0)))
+                case Some((path, fs0)) =>
+                  m + (out -> ((CartesianValueWrap, path.map(Wrap(_)) ++ fs0)))
+                case None =>
+                  m
+              }
+              (newMap, newSrcs)
           }
           (cart.toList, sourceFields) match {
             case (Nil, Nil) =>
@@ -267,15 +274,17 @@ object ChildAggregatingMiddleware {
             case ((o, (_, f)) :: Nil, Nil) =>
               go(Wrap(o.name) :: f, None, Some(Nil))
             case ((o, (_, f)) :: Nil, sf :: Nil) =>
-              (f, Right((Some(List(sf.name)), Some(List(o.name)))))
+              (f, Right((Some(sf), Some(List(o.name)))))
             case (c, sfs) =>
               (Wrap(CartesianValueWrap.name) :: Cartesian(cart) :: Nil, Left((sfs, true)))
           }
         case other =>
-          printNotImplemented(other)
+          render("Rewrite not implemented", other)
           ???
       }
     }
+
+    if (Debug) render("Rewriting", ir)
 
     ir.stages match {
       case rest =>
@@ -283,7 +292,10 @@ object ChildAggregatingMiddleware {
         val structure = struct.fold((injectSource _).tupled, (reifyStructure _).tupled)
         val ir = InterpretedRead(cp, ScalarStages(rest.idStatus, out))
 
-        if (Debug) printDebug(ir, structure)
+        if (Debug) {
+          render("IR on child datasource", ir)
+          render("Structure to apply", structure)
+        }
 
         (ir, structure)
 
