@@ -25,7 +25,7 @@ import quasar.connector.{DataFormat, ResourceError, CompressionScheme}, DataForm
 
 import tectonic.{IncompleteParseException, ParseException}
 
-object TectonicResourceError {
+object ResourceErrorRecognizer {
 
   object ZipException {
     def unapply(t: Throwable): Option[Throwable] = t match {
