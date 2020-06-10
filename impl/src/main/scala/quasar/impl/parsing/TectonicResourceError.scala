@@ -18,6 +18,8 @@ package quasar.impl.parsing
 
 import slamdata.Predef.{Option, Some, String, Throwable}
 
+import java.util.zip.ZipException
+
 import quasar.api.resource.ResourcePath
 import quasar.connector.{DataFormat, ResourceError, CompressionScheme}, DataFormat.JsonVariant
 
@@ -30,6 +32,9 @@ object TectonicResourceError {
         ResourceError.malformedResource(path, typeSummary(tpe), Some(msg), Some(cause))
 
       case IncompleteParseException(msg) =>
+        ResourceError.malformedResource(path, typeSummary(tpe), Some(msg), Some(cause))
+
+      case ZipException(msg) =>
         ResourceError.malformedResource(path, typeSummary(tpe), Some(msg), Some(cause))
     }
 
