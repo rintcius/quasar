@@ -16,9 +16,9 @@
 
 package quasar.impl.parsing
 
-import slamdata.Predef.{Option, Some, String, Throwable}
+import slamdata.Predef.{None, Option, Some, String, Throwable}
 
-import java.util.zip.ZipException
+import java.util.{zip => j}
 
 import quasar.api.resource.ResourcePath
 import quasar.connector.{DataFormat, ResourceError, CompressionScheme}, DataFormat.JsonVariant
@@ -26,6 +26,14 @@ import quasar.connector.{DataFormat, ResourceError, CompressionScheme}, DataForm
 import tectonic.{IncompleteParseException, ParseException}
 
 object TectonicResourceError {
+
+  object ZipException {
+    def unapply(t: Throwable): Option[Throwable] = t match {
+      case ex: j.ZipException => Some(ex)
+      case _ => None
+    }
+  }
+
   def apply(path: ResourcePath, tpe: DataFormat, cause: Throwable): Option[ResourceError] =
     Some(cause) collect {
       case ParseException(msg, _, _, _) =>
@@ -34,8 +42,8 @@ object TectonicResourceError {
       case IncompleteParseException(msg) =>
         ResourceError.malformedResource(path, typeSummary(tpe), Some(msg), Some(cause))
 
-      case ZipException(msg) =>
-        ResourceError.malformedResource(path, typeSummary(tpe), Some(msg), Some(cause))
+      case ZipException(_) =>
+        ResourceError.malformedResource(path, typeSummary(tpe), Some(cause.getMessage), Some(cause))
     }
 
   val typeSummary: DataFormat => String = {
