@@ -70,11 +70,6 @@ final class DefaultDiscovery[
           lw.loaders.head match {
             case Loader.Batch(b) => b.loadFull(InterpretedRead(path, ScalarStages.Id))
           }
-
-        case QuasarDatasource.Heavyweight(hw) =>
-          hw.loaders.head match {
-            case Loader.Batch(b) => b.loadFull(dsl.Read(path, IdStatus.ExcludeId))
-          }
       })
 
       s <- EitherT.right[DiscoveryError[I]](Resource.liftF(schema(schemaConfig, (path, result))))

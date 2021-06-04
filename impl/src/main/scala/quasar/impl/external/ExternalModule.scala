@@ -18,7 +18,7 @@ package quasar.impl.external
 
 import quasar.impl.DatasourceModule
 import quasar.connector.destination.DestinationModule
-import quasar.connector.datasource.{HeavyweightDatasourceModule, LightweightDatasourceModule}
+import quasar.connector.datasource.LightweightDatasourceModule
 import quasar.connector.scheduler.SchedulerModule
 
 import slamdata.Predef._
@@ -37,9 +37,6 @@ object ExternalModule {
   val wrap: PartialFunction[AnyRef, ExternalModule] = {
     case lw: LightweightDatasourceModule =>
       Datasource(DatasourceModule.Lightweight(lw))
-
-    case hw: HeavyweightDatasourceModule =>
-      Datasource(DatasourceModule.Heavyweight(hw))
 
     case dm: DestinationModule =>
       Destination(dm)

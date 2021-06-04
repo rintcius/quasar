@@ -18,7 +18,7 @@ package quasar.impl
 
 import quasar.api.datasource.DatasourceType
 import quasar.api.datasource.DatasourceError.ConfigurationError
-import quasar.connector.datasource.{HeavyweightDatasourceModule, LightweightDatasourceModule, Reconfiguration}
+import quasar.connector.datasource.{LightweightDatasourceModule, Reconfiguration}
 
 import scala.Long
 import scala.util.Either
@@ -57,22 +57,5 @@ object DatasourceModule {
     def reconfigure(original: Json, patch: Json)
         : Either[ConfigurationError[Json], (Reconfiguration, Json)] =
       lw.reconfigure(original, patch)
-  }
-
-  final case class Heavyweight(hw: HeavyweightDatasourceModule) extends DatasourceModule {
-    def kind = hw.kind
-
-    def minVersion: Long =
-      hw.minVersion
-
-    def sanitizeConfig(config: Json): Json = hw.sanitizeConfig(config)
-
-    def migrateConfig[F[_]: Sync](from: Long, to: Long, config: Json)
-        : F[Either[ConfigurationError[Json], Json]] =
-      hw.migrateConfig(from, to, config)
-
-    def reconfigure(original: Json, patch: Json)
-        : Either[ConfigurationError[Json], (Reconfiguration, Json)] =
-      hw.reconfigure(original, patch)
   }
 }

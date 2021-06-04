@@ -21,7 +21,7 @@ import slamdata.Predef._
 import quasar.api.datasource.DatasourceType
 import quasar.api.resource._
 import quasar.connector.datasource.Datasource
-import quasar.qscript.{InterpretedRead, QScriptEducated}
+import quasar.qscript.InterpretedRead
 
 import cats.~>
 
@@ -31,20 +31,17 @@ sealed trait QuasarDatasource[T[_[_]], F[_], G[_], R, P <: ResourcePathType] {
   def kind: DatasourceType =
     this match {
       case Lightweight(lw) => lw.kind
-      case Heavyweight(hw) => hw.kind
     }
 
   def pathIsResource(path: ResourcePath): F[Boolean] =
     this match {
       case Lightweight(lw) => lw.pathIsResource(path)
-      case Heavyweight(hw) => hw.pathIsResource(path)
     }
 
   def prefixedChildPaths(prefixPath: ResourcePath)
       : F[Option[G[(ResourceName, P)]]] =
     this match {
       case Lightweight(lw) => lw.prefixedChildPaths(prefixPath)
-      case Heavyweight(hw) => hw.prefixedChildPaths(prefixPath)
     }
 
   def modify[V[_], W[_], S](
@@ -52,17 +49,12 @@ sealed trait QuasarDatasource[T[_[_]], F[_], G[_], R, P <: ResourcePathType] {
       : QuasarDatasource[T, V, W, S, P] =
     this match {
       case Lightweight(lw) => Lightweight(f(lw))
-      case Heavyweight(hw) => Heavyweight(f(hw))
     }
 }
 
 object QuasarDatasource {
   final case class Lightweight[T[_[_]], F[_], G[_], R, P <: ResourcePathType](
       lw: Datasource[F, G, InterpretedRead[ResourcePath], R, P])
-      extends QuasarDatasource[T, F, G, R, P]
-
-  final case class Heavyweight[T[_[_]], F[_], G[_], R, P <: ResourcePathType](
-      hw: Datasource[F, G, T[QScriptEducated[T, ?]], R, P])
       extends QuasarDatasource[T, F, G, R, P]
 
   def lightweight[T[_[_]]] = new PartiallyAppliedLw[T]
@@ -74,15 +66,9 @@ object QuasarDatasource {
       Lightweight(ds)
   }
 
-  def heavyweight[T[_[_]], F[_], G[_], R, P <: ResourcePathType](
-      ds: Datasource[F, G, T[QScriptEducated[T, ?]], R, P])
-      : QuasarDatasource[T, F, G, R, P] =
-    Heavyweight(ds)
-
   def widenPathType[T[_[_]], F[_], G[_], R, PI <: ResourcePathType, P0 >: PI <: ResourcePathType](
       mds: QuasarDatasource[T, F, G, R, PI])
       : QuasarDatasource[T, F, G, R, P0] = mds match {
     case Lightweight(lw) => Lightweight(Datasource.widenPathType(lw))
-    case Heavyweight(hw) => Heavyweight(Datasource.widenPathType(hw))
   }
 }

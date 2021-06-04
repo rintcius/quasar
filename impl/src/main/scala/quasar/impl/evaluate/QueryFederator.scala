@@ -141,12 +141,6 @@ private[evaluate] final class QueryFederatorImpl[
               case Loader.Batch(BatchLoader.Seek(f)) =>
                 QueryAssociate.lightweight[T](f(_, offset))
             })
-
-          case (path, QuasarDatasource.Heavyweight(hw)) =>
-            orElseSeekUnsupported(path, hw.loaders.toList collectFirst {
-              case Loader.Batch(BatchLoader.Seek(f)) =>
-                QueryAssociate.heavyweight(f(_, offset))
-            })
         }
 
       case None =>
@@ -156,10 +150,6 @@ private[evaluate] final class QueryFederatorImpl[
               case Loader.Batch(b) => QueryAssociate.lightweight[T](b.loadFull)
             }
 
-          case QuasarDatasource.Heavyweight(hw) =>
-            hw.loaders.head match {
-              case Loader.Batch(b) => QueryAssociate.heavyweight(b.loadFull)
-            }
         })
     }
   }

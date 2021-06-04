@@ -31,7 +31,6 @@ sealed trait QueryAssociate[T[_[_]], F[_], A] {
   def mapF[G[_], B](f: F[A] => G[B]): QueryAssociate[T, G, B] =
     this match {
       case Lightweight(k) => Lightweight(k andThen f)
-      case Heavyweight(k) => Heavyweight(k andThen f)
     }
 
   def mapK[G[_]](f: F ~> G): QueryAssociate[T, G, A] =
@@ -42,9 +41,6 @@ object QueryAssociate extends QueryAssociateInstances {
   final case class Lightweight[T[_[_]], F[_], A](f: InterpretedRead[ResourcePath] => F[A])
       extends QueryAssociate[T, F, A]
 
-  final case class Heavyweight[T[_[_]], F[_], A](f: T[QScriptEducated[T, ?]] => F[A])
-      extends QueryAssociate[T, F, A]
-
   def lightweight[T[_[_]]]: PartiallyAppliedLightweight[T] =
     new PartiallyAppliedLightweight[T]
 
@@ -53,10 +49,6 @@ object QueryAssociate extends QueryAssociateInstances {
         : QueryAssociate[T, F, A] =
       Lightweight(f)
   }
-
-  def heavyweight[T[_[_]], F[_], A](f: T[QScriptEducated[T, ?]] => F[A])
-      : QueryAssociate[T, F, A] =
-    Heavyweight(f)
 }
 
 sealed abstract class QueryAssociateInstances {

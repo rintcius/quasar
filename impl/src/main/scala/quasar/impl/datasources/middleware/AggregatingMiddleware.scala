@@ -42,11 +42,5 @@ object AggregatingMiddleware {
         QuasarDatasource.lightweight[T](AggregatingDatasource(ds, InterpretedRead.path))
 
       // TODO: union all in QScript?
-      case QuasarDatasource.Heavyweight(hw) =>
-        type Q = T[QScriptEducated[T, ?]]
-        val ds: Datasource[Resource[F, ?], Stream[F, ?], Q, Either[R, AggregateResult[F, R]], ResourcePathType.Physical] =
-          Datasource.ploaders[Resource[F, ?], Stream[F, ?], Q, R, Q, Either[R, AggregateResult[F, R]], ResourcePathType.Physical]
-            .modify(_.map(Left(_)))(hw)
-        QuasarDatasource.heavyweight(Datasource.widenPathType(ds))
     })
 }

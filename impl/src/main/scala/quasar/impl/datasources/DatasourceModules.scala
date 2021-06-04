@@ -172,9 +172,6 @@ object DatasourceModules {
             case DatasourceModule.Lightweight(lw) =>
               handleInitErrors(module.kind, lw.lightweightDatasource[F, A](ref.config, rateLimiting, store, getAuth))
                 .map(QuasarDatasource.lightweight[T](_))
-            case DatasourceModule.Heavyweight(hw) =>
-              handleInitErrors(module.kind, hw.heavyweightDatasource[T, F](ref.config, store))
-                .map(QuasarDatasource.heavyweight(_))
           }
         } yield res
 
