@@ -16,7 +16,6 @@
 
 package quasar.impl.external
 
-import quasar.impl.DatasourceModule
 import quasar.connector.destination.DestinationModule
 import quasar.connector.datasource.LightweightDatasourceModule
 import quasar.connector.scheduler.SchedulerModule
@@ -27,7 +26,7 @@ import slamdata.Predef._
 sealed trait ExternalModule extends Product with Serializable
 
 object ExternalModule {
-  final case class Datasource(mod: DatasourceModule) extends ExternalModule
+  final case class Datasource(mod: LightweightDatasourceModule) extends ExternalModule
   final case class Destination(mod: DestinationModule) extends ExternalModule
   final case class Scheduler(mod: SchedulerModule) extends ExternalModule
 
@@ -36,7 +35,7 @@ object ExternalModule {
 
   val wrap: PartialFunction[AnyRef, ExternalModule] = {
     case lw: LightweightDatasourceModule =>
-      Datasource(DatasourceModule.Lightweight(lw))
+      Datasource(lw)
 
     case dm: DestinationModule =>
       Destination(dm)

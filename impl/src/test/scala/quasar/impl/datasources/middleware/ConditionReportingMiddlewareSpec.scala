@@ -22,7 +22,6 @@ import quasar.{Condition, ConditionMatchers, ScalarStages}
 import quasar.api.datasource.DatasourceType
 import quasar.api.resource._
 import quasar.connector.datasource._
-import quasar.impl.QuasarDatasource
 import quasar.qscript.InterpretedRead
 
 import java.lang.{Throwable, IllegalArgumentException}
@@ -59,12 +58,10 @@ object ConditionReportingMiddlewareSpec extends quasar.EffectfulQSpec[IO] with C
       Resource.pure[IO, Option[List[(ResourceName, ResourcePathType)]]](None)
   }
 
-  val managedTester = QuasarDatasource.lightweight[T](TestDs)
-
   "initial condition is normal" >>* {
     for {
       r <- Ref[IO].of(List[Condition[Throwable]]())
-      ds <- ConditionReportingMiddleware[IO, Unit, Throwable]((_, c) => r.update(c :: _))((), managedTester)
+      ds <- ConditionReportingMiddleware[IO, Unit, Throwable]((_, c) => r.update(c :: _))((), TestDs)
       cs <- r.get
     } yield {
       cs must_=== List(Condition.normal())
@@ -74,7 +71,7 @@ object ConditionReportingMiddlewareSpec extends quasar.EffectfulQSpec[IO] with C
   "operations that succeed emit normal" >>* {
     for {
       r <- Ref[IO].of(List[Condition[Throwable]]())
-      ds <- ConditionReportingMiddleware[IO, Unit, Throwable]((_, c) => r.update(c :: _))((), managedTester)
+      ds <- ConditionReportingMiddleware[IO, Unit, Throwable]((_, c) => r.update(c :: _))((), TestDs)
       _ <- ds.pathIsResource(ResourcePath.root()).use(IO.pure(_))
       cs <- r.get
     } yield {
@@ -85,11 +82,8 @@ object ConditionReportingMiddlewareSpec extends quasar.EffectfulQSpec[IO] with C
   "operations that throw emit abnormal" >>* {
     for {
       r <- Ref[IO].of(List[Condition[Throwable]]())
-      ds <- ConditionReportingMiddleware[IO, Unit, Throwable]((_, c) => r.update(c :: _))((), managedTester)
-      res = ds match {
-        case QuasarDatasource.Lightweight(lw) => lw.loadFull(InterpretedRead(ResourcePath.root(), ScalarStages.Id)).value
-        case _ => Resource.pure[IO, Unit](())
-      }
+      ds <- ConditionReportingMiddleware[IO, Unit, Throwable]((_, c) => r.update(c :: _))((), TestDs)
+      res = ds.loadFull(InterpretedRead(ResourcePath.root(), ScalarStages.Id)).value
       _ <- res.use(IO.pure(_)).attempt
       cs <- r.get
     } yield {

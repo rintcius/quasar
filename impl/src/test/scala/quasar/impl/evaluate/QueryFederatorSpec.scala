@@ -28,7 +28,7 @@ import quasar.connector.evaluate._
 import quasar.contrib.pathy.AFile
 import quasar.contrib.iota.{copkTraverse, copkEqual}
 import quasar.fp.constEqual
-import quasar.impl.{EmptyDatasource, QuasarDatasource}
+import quasar.impl.EmptyDatasource
 import quasar.qscript._
 
 import scala.collection.immutable.SortedMap
@@ -74,11 +74,11 @@ final class QueryFederatorSpec extends Qspec with TreeMatchers {
     EmptyDatasource[M, Stream[M, ?], Q, Int, ResourcePathType](fedType, 2, supportsSeek = true)
 
   val srcs = SortedMap(
-    abs -> Source(abs, QuasarDatasource.lightweight[Fix](absSrc)),
-    xys -> Source(xys, QuasarDatasource.lightweight[Fix](xysSrc)))(
+    abs -> Source(abs, absSrc),
+    xys -> Source(xys, xysSrc))(
     Order[ResourcePath].toOrdering)
 
-  val federator = QueryFederator { f =>
+  val federator = QueryFederator[Fix].apply { (f: AFile) =>
     srcs.get(ResourcePath.leaf(f)).asRight[ResourceError]
   }
 

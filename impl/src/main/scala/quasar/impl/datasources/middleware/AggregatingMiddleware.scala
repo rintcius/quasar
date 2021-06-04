@@ -34,13 +34,9 @@ import shims.{functorToCats, functorToScalaz}
 object AggregatingMiddleware {
   def apply[T[_[_]], F[_]: MonadResourceErr: MonadCreateErr: Sync, I, R](
       datasourceId: I,
-      mds: QuasarDatasource[T, Resource[F, ?], Stream[F, ?], R, ResourcePathType.Physical])
-      : F[QuasarDatasource[T, Resource[F, ?], Stream[F, ?], Either[R, AggregateResult[F, R]], ResourcePathType]] =
-    Sync[F].pure(mds match {
-      case QuasarDatasource.Lightweight(lw) =>
-        val ds: Datasource[Resource[F, ?], Stream[F, ?], InterpretedRead[ResourcePath], R, ResourcePathType.Physical] = lw
-        QuasarDatasource.lightweight[T](AggregatingDatasource(ds, InterpretedRead.path))
-
-      // TODO: union all in QScript?
-    })
+      ds: Datasource[Resource[F, ?], Stream[F, ?], InterpretedRead[ResourcePath], R, ResourcePathType.Physical])
+      : F[Datasource[Resource[F, ?], Stream[F, ?], InterpretedRead[ResourcePath], Either[R, AggregateResult[F, R]], ResourcePathType]] =
+    Sync[F].pure {
+        AggregatingDatasource(ds, InterpretedRead.path)
+    }
 }

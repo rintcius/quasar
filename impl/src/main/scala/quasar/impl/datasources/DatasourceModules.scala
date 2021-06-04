@@ -22,11 +22,10 @@ import quasar.{RateLimiting, RenderTreeT}
 import quasar.api.datasource._
 import quasar.api.datasource.DatasourceError._
 import quasar.api.resource._
-import quasar.impl.{DatasourceModule, QuasarDatasource}
 import quasar.impl.IncompatibleModuleException.linkDatasource
 import quasar.connector.{ExternalCredentials, MonadResourceErr, QueryResult}
-import quasar.connector.datasource.Reconfiguration
-import quasar.qscript.MonadPlannerErr
+import quasar.connector.datasource.{Reconfiguration, Datasource, LightweightDatasourceModule}
+import quasar.qscript.{MonadPlannerErr, InterpretedRead}
 
 import scala.concurrent.ExecutionContext
 
@@ -47,9 +46,11 @@ import scalaz.ISet
 
 import java.util.UUID
 
-trait DatasourceModules[T[_[_]], F[_], G[_], H[_], I, C, R, P <: ResourcePathType] { self =>
+trait DatasourceModules[F[_], G[_], H[_], I, C, R, P <: ResourcePathType] { self =>
+  type DS[FF[_], RR, PP <: ResourcePathType] = Datasource[G, FF, InterpretedRead[ResourcePath], RR, PP]
+
   def create(i: I, ref: DatasourceRef[C])
-      : EitherT[Resource[F, ?], CreateError[C], QuasarDatasource[T, G, H, R, P]]
+      : EitherT[Resource[F, ?], CreateError[C], DS[H, R, P]]
 
   def sanitizeRef(inp: DatasourceRef[C]): F[DatasourceRef[C]]
 
@@ -59,14 +60,14 @@ trait DatasourceModules[T[_[_]], F[_], G[_], H[_], I, C, R, P <: ResourcePathTyp
       : EitherT[F, CreateError[C], (Reconfiguration, DatasourceRef[C])]
 
   def withMiddleware[HH[_], S, Q <: ResourcePathType](
-      f: (I, QuasarDatasource[T, G, H, R, P]) => F[QuasarDatasource[T, G, HH, S, Q]])(
+      f: (I, DS[H, R, P]) => F[DS[HH, S, Q]])(
       implicit
       AF: Monad[F])
-      : DatasourceModules[T, F, G, HH, I, C, S, Q] =
-    new DatasourceModules[T, F, G, HH, I, C, S, Q] {
+      : DatasourceModules[F, G, HH, I, C, S, Q] =
+    new DatasourceModules[F, G, HH, I, C, S, Q] {
       def create(i: I, ref: DatasourceRef[C])
-          : EitherT[Resource[F, ?], CreateError[C], QuasarDatasource[T, G, HH, S, Q]] =
-        self.create(i, ref) flatMap { (mds: QuasarDatasource[T, G, H, R, P]) =>
+          : EitherT[Resource[F, ?], CreateError[C], DS[HH, S, Q]] =
+        self.create(i, ref) flatMap { (mds: DS[H, R, P]) =>
           EitherT.right(Resource.liftF(f(i, mds)))
         }
 
@@ -82,13 +83,13 @@ trait DatasourceModules[T[_[_]], F[_], G[_], H[_], I, C, R, P <: ResourcePathTyp
     }
 
   def withFinalizer(
-      f: (I, QuasarDatasource[T, G, H, R, P]) => F[Unit])(
+      f: (I, DS[H, R, P]) => F[Unit])(
       implicit F: Monad[F])
-      : DatasourceModules[T, F, G, H, I, C, R, P] =
-    new DatasourceModules[T, F, G, H, I, C, R, P] {
+      : DatasourceModules[F, G, H, I, C, R, P] =
+    new DatasourceModules[F, G, H, I, C, R, P] {
       def create(i: I, ref: DatasourceRef[C])
-          : EitherT[Resource[F, ?], CreateError[C], QuasarDatasource[T, G, H, R, P]] =
-        self.create(i, ref) flatMap { (mds: QuasarDatasource[T, G, H, R, P]) =>
+          : EitherT[Resource[F, ?], CreateError[C], DS[H, R, P]] =
+        self.create(i, ref) flatMap { (mds: DS[H, R, P]) =>
           EitherT.right(Resource.make(mds.pure[F])(x => f(i, x)))
         }
 
@@ -104,11 +105,11 @@ trait DatasourceModules[T[_[_]], F[_], G[_], H[_], I, C, R, P <: ResourcePathTyp
     }
 
   def widenPathType[PP >: P <: ResourcePathType](implicit AF: Monad[F])
-      : DatasourceModules[T, F, G, H, I, C, R, PP] =
-    new DatasourceModules[T, F, G, H, I, C, R, PP] {
+      : DatasourceModules[F, G, H, I, C, R, PP] =
+    new DatasourceModules[F, G, H, I, C, R, PP] {
       def create(i: I, ref: DatasourceRef[C])
-          : EitherT[Resource[F, ?], CreateError[C], QuasarDatasource[T, G, H, R, PP]] =
-        self.create(i, ref) map { QuasarDatasource.widenPathType[T, G, H, R, P, PP](_) }
+          : EitherT[Resource[F, ?], CreateError[C], DS[H, R, PP]] =
+        self.create(i, ref) map { Datasource.widenPathType[G, H, InterpretedRead[ResourcePath], R, P, PP](_) }
 
       def sanitizeRef(inp: DatasourceRef[C]): F[DatasourceRef[C]] =
         self.sanitizeRef(inp)
@@ -123,34 +124,33 @@ trait DatasourceModules[T[_[_]], F[_], G[_], H[_], I, C, R, P <: ResourcePathTyp
 }
 
 object DatasourceModules {
-  type Modules[T[_[_]], F[_], I] =
-    DatasourceModules[T, F, Resource[F, ?], Stream[F, ?], I, Json, QueryResult[F], ResourcePathType.Physical]
+  type Modules[F[_], I] =
+    DatasourceModules[F, Resource[F, ?], Stream[F, ?], I, Json, QueryResult[F], ResourcePathType.Physical]
 
-  type MDS[T[_[_]], F[_]] =
-    QuasarDatasource[T, Resource[F, ?], Stream[F, ?], QueryResult[F], ResourcePathType.Physical]
+  type MDS[F[_]] =
+    Datasource[Resource[F, ?], Stream[F, ?], InterpretedRead[ResourcePath], QueryResult[F], ResourcePathType.Physical]
 
   private[impl] def apply[
-      T[_[_]]: BirecursiveT: EqualT: ShowT: RenderTreeT,
       F[_]: ConcurrentEffect: ContextShift: Timer: MonadResourceErr: MonadPlannerErr,
       I, A: Hash](
-      modules: List[DatasourceModule],
+      modules: List[LightweightDatasourceModule],
       rateLimiting: RateLimiting[F, A],
       byteStores: ByteStores[F, I],
       getAuth: UUID => F[Option[ExternalCredentials[F]]])(
       implicit
       ec: ExecutionContext)
-      : Modules[T, F, I] = {
+      : Modules[F, I] = {
 
     lazy val moduleSet: ISet[DatasourceType] =
       ISet.fromList(modules.map(_.kind))
 
-    def findModule(ref: DatasourceRef[Json]): Option[DatasourceModule] =
-      modules.find { (m: DatasourceModule) =>
+    def findModule(ref: DatasourceRef[Json]): Option[LightweightDatasourceModule] =
+      modules.find { (m: LightweightDatasourceModule) =>
         m.kind.name === ref.kind.name && m.kind.version >= ref.kind.version && ref.kind.version >= m.minVersion
       }
 
     def findAndMigrate(ref: DatasourceRef[Json])
-        : EitherT[F, CreateError[Json], (DatasourceModule, DatasourceRef[Json])] =
+        : EitherT[F, CreateError[Json], (LightweightDatasourceModule, DatasourceRef[Json])] =
       findModule(ref) match {
         case Some(m) if m.kind.version === ref.kind.version =>
           EitherT.pure((m, ref))
@@ -162,17 +162,15 @@ object DatasourceModules {
           EitherT.leftT(DatasourceUnsupported(ref.kind, moduleSet))
       }
 
-    new DatasourceModules[T, F, Resource[F, ?], Stream[F, ?], I, Json, QueryResult[F], ResourcePathType.Physical] {
+    new DatasourceModules[F, Resource[F, ?], Stream[F, ?], I, Json, QueryResult[F], ResourcePathType.Physical] {
       def create(i: I, inp: DatasourceRef[Json])
-          : EitherT[Resource[F, ?], CreateError[Json], MDS[T, F]] =
+          : EitherT[Resource[F, ?], CreateError[Json], MDS[F]] =
         for {
-          (module, ref) <- findAndMigrate(inp).mapK(λ[F ~> Resource[F, ?]](Resource.liftF(_)))
+          (lw, ref) <- findAndMigrate(inp).mapK(λ[F ~> Resource[F, ?]](Resource.liftF(_)))
           store <- EitherT.right[CreateError[Json]](Resource.liftF(byteStores.get(i)))
-          res <- module match {
-            case DatasourceModule.Lightweight(lw) =>
-              handleInitErrors(module.kind, lw.lightweightDatasource[F, A](ref.config, rateLimiting, store, getAuth))
-                .map(QuasarDatasource.lightweight[T](_))
-          }
+          res <- handleInitErrors(
+            lw.kind,
+            lw.lightweightDatasource[F, A](ref.config, rateLimiting, store, getAuth))
         } yield res
 
       def sanitizeRef(inp: DatasourceRef[Json]): F[DatasourceRef[Json]] =
