@@ -18,13 +18,14 @@ package quasar.impl.datasources
 
 import slamdata.Predef._
 
-import quasar.{RateLimiting, RenderTreeT}
+import quasar.RateLimiting
 import quasar.api.datasource._
 import quasar.api.datasource.DatasourceError._
 import quasar.api.resource._
+import quasar.impl.{QuasarDatasource, DatasourceModule}
 import quasar.impl.IncompatibleModuleException.linkDatasource
 import quasar.connector.{ExternalCredentials, MonadResourceErr, QueryResult}
-import quasar.connector.datasource.{Reconfiguration, Datasource, LightweightDatasourceModule}
+import quasar.connector.datasource.{Reconfiguration, Datasource}
 import quasar.qscript.{MonadPlannerErr, InterpretedRead}
 
 import scala.concurrent.ExecutionContext
@@ -40,14 +41,12 @@ import cats.kernel.Hash
 
 import fs2.Stream
 
-import matryoshka.{BirecursiveT, EqualT, ShowT}
-
 import scalaz.ISet
 
 import java.util.UUID
 
 trait DatasourceModules[F[_], G[_], H[_], I, C, R, P <: ResourcePathType] { self =>
-  type DS[FF[_], RR, PP <: ResourcePathType] = Datasource[G, FF, InterpretedRead[ResourcePath], RR, PP]
+  type DS[FF[_], RR, PP <: ResourcePathType] = QuasarDatasource[G, FF, RR, PP]
 
   def create(i: I, ref: DatasourceRef[C])
       : EitherT[Resource[F, ?], CreateError[C], DS[H, R, P]]
@@ -128,12 +127,12 @@ object DatasourceModules {
     DatasourceModules[F, Resource[F, ?], Stream[F, ?], I, Json, QueryResult[F], ResourcePathType.Physical]
 
   type MDS[F[_]] =
-    Datasource[Resource[F, ?], Stream[F, ?], InterpretedRead[ResourcePath], QueryResult[F], ResourcePathType.Physical]
+    QuasarDatasource[Resource[F, *], Stream[F, *], QueryResult[F], ResourcePathType.Physical]
 
   private[impl] def apply[
       F[_]: ConcurrentEffect: ContextShift: Timer: MonadResourceErr: MonadPlannerErr,
       I, A: Hash](
-      modules: List[LightweightDatasourceModule],
+      modules: List[DatasourceModule],
       rateLimiting: RateLimiting[F, A],
       byteStores: ByteStores[F, I],
       getAuth: UUID => F[Option[ExternalCredentials[F]]])(
@@ -144,13 +143,13 @@ object DatasourceModules {
     lazy val moduleSet: ISet[DatasourceType] =
       ISet.fromList(modules.map(_.kind))
 
-    def findModule(ref: DatasourceRef[Json]): Option[LightweightDatasourceModule] =
-      modules.find { (m: LightweightDatasourceModule) =>
+    def findModule(ref: DatasourceRef[Json]): Option[DatasourceModule] =
+      modules.find { (m: DatasourceModule) =>
         m.kind.name === ref.kind.name && m.kind.version >= ref.kind.version && ref.kind.version >= m.minVersion
       }
 
     def findAndMigrate(ref: DatasourceRef[Json])
-        : EitherT[F, CreateError[Json], (LightweightDatasourceModule, DatasourceRef[Json])] =
+        : EitherT[F, CreateError[Json], (DatasourceModule, DatasourceRef[Json])] =
       findModule(ref) match {
         case Some(m) if m.kind.version === ref.kind.version =>
           EitherT.pure((m, ref))

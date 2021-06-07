@@ -16,7 +16,10 @@
 
 package quasar
 
+import quasar.api.resource._
+import quasar.connector.datasource.{Datasource, LightweightDatasourceModule}
 import quasar.contrib.scalaz.MonadError_
+import quasar.qscript.InterpretedRead
 
 import java.lang.String
 import java.util.UUID
@@ -33,4 +36,10 @@ package object impl {
 
   type MonadQuasarErr[F[_]] = MonadError_[F, QuasarError]
   def MonadQuasarErr[F[_]](implicit ev: MonadQuasarErr[F]): MonadQuasarErr[F] = ev
+
+
+  private [impl] type QuasarDatasource[F[_], G[_], R, P <: ResourcePathType] =
+    Datasource[F, G, InterpretedRead[ResourcePath], R, P]
+
+  private [impl] type DatasourceModule = LightweightDatasourceModule
 }

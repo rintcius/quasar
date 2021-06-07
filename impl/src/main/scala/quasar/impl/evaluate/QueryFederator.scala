@@ -20,12 +20,13 @@ import slamdata.Predef.{None, Option, Some}
 
 import quasar.api.resource.{ResourcePath, ResourcePathType}
 import quasar.connector.{MonadResourceErr, Offset, ResourceError}
-import quasar.connector.datasource.{BatchLoader, Loader, Datasource}
+import quasar.connector.datasource.{BatchLoader, Loader}
 import quasar.connector.evaluate._
 import quasar.contrib.cats.writerT._
 import quasar.contrib.iota.copkTraverse
 import quasar.contrib.pathy._
 import quasar.contrib.scalaz.MonadTell_
+import quasar.impl.QuasarDatasource
 import quasar.fp.PrismNT
 import quasar.qscript.{Read => QRead, _}
 
@@ -52,7 +53,7 @@ object QueryFederator {
 
   class PartiallyApplied[T[_[_]]: BirecursiveT] {
     def apply[F[_]: Monad: MonadResourceErr, G[_], H[_], R, P <: ResourcePathType](
-        sources: AFile => F[Option[Source[Datasource[G, H, InterpretedRead[ResourcePath], R, P]]]])
+        sources: AFile => F[Option[Source[QuasarDatasource[G, H, R, P]]]])
         : Kleisli[F, (T[QScriptEducated[T, ?]], Option[Offset]), FederatedQuery[T, QueryAssociate[T, G, R]]] =
       Kleisli(new QueryFederatorImpl(sources).tupled)
   }
@@ -63,7 +64,7 @@ private[evaluate] final class QueryFederatorImpl[
     F[_]: Monad: MonadResourceErr,
     G[_], H[_],
     R, P <: ResourcePathType](
-    sources: AFile => F[Option[Source[Datasource[G, H, InterpretedRead[ResourcePath], R, P]]]])
+    sources: AFile => F[Option[Source[QuasarDatasource[G, H, R, P]]]])
     extends ((T[QScriptEducated[T, ?]], Option[Offset]) => F[FederatedQuery[T, QueryAssociate[T, G, R]]]) {
 
   def apply(query: T[QScriptEducated[T, ?]], offset: Option[Offset])
@@ -79,7 +80,7 @@ private[evaluate] final class QueryFederatorImpl[
 
   ////
 
-  private type Src = Source[Datasource[G, H, InterpretedRead[ResourcePath], R, P]]
+  private type Src = Source[QuasarDatasource[G, H, R, P]]
   private type Srcs = Chain[(AFile, Src)]
   private type SrcsT[X[_], A] = WriterT[X, Srcs, A]
   private type M[A] = SrcsT[F, A]

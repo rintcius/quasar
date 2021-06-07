@@ -16,13 +16,13 @@
 
 package quasar.impl.discovery
 
-import quasar.{IdStatus, RenderTreeT, ScalarStages}
+import quasar.ScalarStages
 import quasar.api.discovery._
 import quasar.api.resource._
 import quasar.connector.ResourceSchema
-import quasar.connector.datasource.{Loader, Datasource}
-import quasar.contrib.iota._
-import quasar.qscript.{construction, educatedToTotal, InterpretedRead, QScriptEducated}
+import quasar.connector.datasource.Loader
+import quasar.impl.QuasarDatasource
+import quasar.qscript.InterpretedRead
 
 import scala.{Boolean, Option}
 import scala.util.Either
@@ -31,12 +31,10 @@ import cats.Monad
 import cats.data.{EitherT, OptionT}
 import cats.effect.Resource
 
-import matryoshka.{BirecursiveT, EqualT, ShowT}
-
 final class DefaultDiscovery[
     F[_]: Monad, G[_],
     I, S <: SchemaConfig, R] private (
-    quasarDatasource: I => F[Option[Datasource[Resource[F, ?], G, InterpretedRead[ResourcePath], R, ResourcePathType]]],
+    quasarDatasource: I => F[Option[QuasarDatasource[Resource[F, ?], G, R, ResourcePathType]]],
     schema: ResourceSchema[F, S, (ResourcePath, R)])
     extends Discovery[Resource[F, ?], G, I, S] {
 
@@ -77,7 +75,7 @@ final class DefaultDiscovery[
 
   ////
 
-  private type DS = Datasource[Resource[F, ?], G, InterpretedRead[ResourcePath], R, ResourcePathType]
+  private type DS = QuasarDatasource[Resource[F, ?], G, R, ResourcePathType]
 
   private def lookupDatasource[E >: DatasourceNotFound[I] <: DiscoveryError[I]](i: I)
       : EitherT[Resource[F, ?], E, DS] =
@@ -88,7 +86,7 @@ object DefaultDiscovery {
   def apply[
       F[_]: Monad, G[_],
       I, S <: SchemaConfig, R](
-      quasarDatasource: I => F[Option[Datasource[Resource[F, ?], G, InterpretedRead[ResourcePath], R, ResourcePathType]]],
+      quasarDatasource: I => F[Option[QuasarDatasource[Resource[F, ?], G, R, ResourcePathType]]],
       schema: ResourceSchema[F, S, (ResourcePath, R)])
       : Discovery[Resource[F, ?], G, I, S] =
     new DefaultDiscovery(quasarDatasource, schema)

@@ -22,11 +22,10 @@ import quasar.Condition
 import quasar.api.datasource._
 import quasar.api.datasource.DatasourceError._
 import quasar.api.resource._
-import quasar.connector.datasource.{Datasource, Reconfiguration}
+import quasar.connector.datasource.Reconfiguration
 import quasar.contrib.scalaz.MonadError_
-import quasar.impl.{CachedGetter, IndexedSemaphore, ResourceManager}, CachedGetter.Signal._
+import quasar.impl.{CachedGetter, IndexedSemaphore, ResourceManager, QuasarDatasource}, CachedGetter.Signal._
 import quasar.impl.storage.IndexedStore
-import quasar.qscript.InterpretedRead
 
 import cats.~>
 import cats.data.{EitherT, OptionT}
@@ -48,7 +47,7 @@ private[impl] final class DefaultDatasources[
     refs: IndexedStore[F, I, DatasourceRef[C]],
     modules: DatasourceModules[F, G, H, I, C, R, ResourcePathType],
     getter: CachedGetter[F, I, DatasourceRef[C]],
-    cache: ResourceManager[F, I, Datasource[G, H, InterpretedRead[ResourcePath], R, ResourcePathType]],
+    cache: ResourceManager[F, I, QuasarDatasource[G, H, R, ResourcePathType]],
     errors: DatasourceErrors[F, I],
     byteStores: ByteStores[F, I])
     extends Datasources[F, Stream[F, ?], I, C] {
@@ -153,7 +152,7 @@ private[impl] final class DefaultDatasources[
   def supportedDatasourceTypes: F[ISet[DatasourceType]] =
     modules.supportedTypes
 
-  type DS = Datasource[G, H, InterpretedRead[ResourcePath], R, ResourcePathType]
+  type DS = QuasarDatasource[G, H, R, ResourcePathType]
 
   def quasarDatasourceOf(i: I): F[Option[DS]] = {
     def create(ref: DatasourceRef[C]): F[DS] =
@@ -252,7 +251,7 @@ object DefaultDatasources {
       freshId: F[I],
       refs: IndexedStore[F, I, DatasourceRef[C]],
       modules: DatasourceModules[F, G, H, I, C, R, ResourcePathType],
-      cache: ResourceManager[F, I, Datasource[G, H, InterpretedRead[ResourcePath], R, ResourcePathType]],
+      cache: ResourceManager[F, I, QuasarDatasource[G, H, R, ResourcePathType]],
       errors: DatasourceErrors[F, I],
       byteStores: ByteStores[F, I])
       : F[DefaultDatasources[F, G, H, I, C, R]] = for {

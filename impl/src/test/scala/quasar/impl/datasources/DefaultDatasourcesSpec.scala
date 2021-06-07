@@ -98,7 +98,7 @@ object DefaultDatasourcesSpec extends DatasourcesSpec[IO, Stream[IO, ?], String,
         }
     }
 
-  def lightMod(
+  def mod(
       mp: Map[Json, InitializationError[Json]],
       sanitize: Option[Json => Json] = None,
       reconfig: Option[(Json, Json) => Either[ConfigurationError[Json], (Reconfiguration, Json)]] = None)
@@ -190,7 +190,7 @@ object DefaultDatasourcesSpec extends DatasourcesSpec[IO, Stream[IO, ?], String,
       byteStores <- Resource.liftF(ByteStores.ephemeral[IO, String])
 
       modules =
-        DatasourceModules[IO, String, UUID](List(lightMod(mp, sanitize, reconfigure)), rateLimiting, byteStores, x => IO(None))
+        DatasourceModules[IO, String, UUID](List(mod(mp, sanitize, reconfigure)), rateLimiting, byteStores, x => IO(None))
           .widenPathType[PathType]
           .withMiddleware((i: String, mds: QDS) => starts.update(i :: _) as mds)
           .withFinalizer((i: String, mds: QDS) => shuts.update(i :: _))

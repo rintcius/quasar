@@ -18,13 +18,12 @@ package quasar.impl.datasources.middleware
 
 import quasar.Condition
 import quasar.api.resource._
-import quasar.connector.datasource.Datasource
+import quasar.impl.QuasarDatasource
 import quasar.impl.datasource.ConditionReportingDatasource
-import quasar.qscript.InterpretedRead
 
 import scala.Unit
 
-import cats.{MonadError, ~>}
+import cats.MonadError
 import cats.effect.Resource
 import cats.syntax.functor._
 
@@ -35,14 +34,12 @@ object ConditionReportingMiddleware {
 
   final class PartiallyApplied[F[_], I, E](onChange: (I, Condition[E]) => F[Unit]) {
     def apply[T[_[_]], G[_], R, P <: ResourcePathType](
-        id: I, ds: Datasource[Resource[F, ?], G, InterpretedRead[ResourcePath], R, P])(
+        id: I, ds: QuasarDatasource[Resource[F, ?], G, R, P])(
         implicit
         F: MonadError[F, E])
-        : F[Datasource[Resource[F, ?], G, InterpretedRead[ResourcePath], R, P]] =
+        : F[QuasarDatasource[Resource[F, ?], G, R, P]] =
       onChange(id, Condition.normal()) as {
-        //mds.modify(λ[Datasource[Resource[F, ?], G, ?, R, P] ~> Datasource[Resource[F, ?], G, ?, R, P]] { ds =>
-          ConditionReportingDatasource((c: Condition[E]) => Resource.liftF(onChange(id, c)), ds)
-        //})
+        ConditionReportingDatasource((c: Condition[E]) => Resource.liftF(onChange(id, c)), ds)
       }
   }
 }

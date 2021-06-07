@@ -17,7 +17,7 @@
 package quasar.connector.evaluate
 
 import quasar.api.resource.ResourcePath
-import quasar.qscript.{QScriptEducated, InterpretedRead}
+import quasar.qscript.InterpretedRead
 
 import cats.{~>, Functor}
 import cats.syntax.functor._

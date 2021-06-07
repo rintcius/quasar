@@ -17,25 +17,23 @@
 package quasar.impl
 package datasources.middleware
 
-import quasar.api.resource.{ResourcePath, ResourcePathType}
+import quasar.api.resource.ResourcePathType
 import quasar.connector.MonadResourceErr
-import quasar.connector.datasource.Datasource
+import quasar.impl.QuasarDatasource
 import quasar.impl.datasource.{AggregateResult, AggregatingDatasource, MonadCreateErr}
-import quasar.qscript.{InterpretedRead, QScriptEducated}
+import quasar.qscript.InterpretedRead
 
-import scala.util.{Either, Left}
+import scala.util.Either
 
 import cats.effect.{Resource, Sync}
 
 import fs2.Stream
 
-import shims.{functorToCats, functorToScalaz}
-
 object AggregatingMiddleware {
   def apply[T[_[_]], F[_]: MonadResourceErr: MonadCreateErr: Sync, I, R](
       datasourceId: I,
-      ds: Datasource[Resource[F, ?], Stream[F, ?], InterpretedRead[ResourcePath], R, ResourcePathType.Physical])
-      : F[Datasource[Resource[F, ?], Stream[F, ?], InterpretedRead[ResourcePath], Either[R, AggregateResult[F, R]], ResourcePathType]] =
+      ds: QuasarDatasource[Resource[F, ?], Stream[F, ?], R, ResourcePathType.Physical])
+      : F[QuasarDatasource[Resource[F, ?], Stream[F, ?], Either[R, AggregateResult[F, R]], ResourcePathType]] =
     Sync[F].pure {
         AggregatingDatasource(ds, InterpretedRead.path)
     }
