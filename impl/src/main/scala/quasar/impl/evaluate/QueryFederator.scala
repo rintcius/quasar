@@ -54,7 +54,7 @@ object QueryFederator {
   class PartiallyApplied[T[_[_]]: BirecursiveT] {
     def apply[F[_]: Monad: MonadResourceErr, G[_], H[_], R, P <: ResourcePathType](
         sources: AFile => F[Option[Source[QuasarDatasource[G, H, R, P]]]])
-        : Kleisli[F, (T[QScriptEducated[T, ?]], Option[Offset]), FederatedQuery[T, QueryAssociate[T, G, R]]] =
+        : Kleisli[F, (T[QScriptEducated[T, ?]], Option[Offset]), FederatedQuery[T, QueryAssociate[G, R]]] =
       Kleisli(new QueryFederatorImpl(sources).tupled)
   }
 }
@@ -65,10 +65,10 @@ private[evaluate] final class QueryFederatorImpl[
     G[_], H[_],
     R, P <: ResourcePathType](
     sources: AFile => F[Option[Source[QuasarDatasource[G, H, R, P]]]])
-    extends ((T[QScriptEducated[T, ?]], Option[Offset]) => F[FederatedQuery[T, QueryAssociate[T, G, R]]]) {
+    extends ((T[QScriptEducated[T, ?]], Option[Offset]) => F[FederatedQuery[T, QueryAssociate[G, R]]]) {
 
   def apply(query: T[QScriptEducated[T, ?]], offset: Option[Offset])
-      : F[FederatedQuery[T, QueryAssociate[T, G, R]]] =
+      : F[FederatedQuery[T, QueryAssociate[G, R]]] =
     for {
       (srcs, qr) <- Trans.applyTrans(federate, ReadPath)(query).run
 
@@ -122,7 +122,7 @@ private[evaluate] final class QueryFederatorImpl[
     }
 
   private def extractAssocs(srcs: SortedMap[AFile, Src], offset0: Option[Offset])
-      : F[SortedMap[AFile, Source[QueryAssociate[T, G, R]]]] = {
+      : F[SortedMap[AFile, Source[QueryAssociate[G, R]]]] = {
 
     def orElseSeekUnsupported[A](file: AFile, a: Option[A]): F[A] =
       a match {
@@ -144,14 +144,14 @@ private[evaluate] final class QueryFederatorImpl[
           case (path, lw) =>
             orElseSeekUnsupported(path, lw.loaders.toList collectFirst {
               case Loader.Batch(BatchLoader.Seek(f)) =>
-                QueryAssociate.lightweight[T](f(_, offset))
+                Kleisli(f(_, offset))
             })
         }
 
       case None =>
         Monad[F].pure(TMS.map(srcs) { lw =>
             lw.loaders.head match {
-              case Loader.Batch(b) => QueryAssociate.lightweight[T](b.loadFull)
+              case Loader.Batch(b) => Kleisli(b.loadFull)
             }
 
         })

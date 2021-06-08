@@ -97,7 +97,7 @@ object Quasar extends Logging {
       schedulerRefs: IndexedStore[F, UUID, SchedulerRef[Json]],
       pushes: PrefixStore.SCodec[F, UUID :: ResourcePath :: HNil, ∃[Push[?, SqlQuery]]],
       offsets: Store[F, UUID :: ResourcePath :: HNil, ∃[OffsetKey.Actual]],
-      queryFederation: QueryFederation[Fix, Resource[F, ?], QueryAssociate[Fix, Resource[F, ?], EvalResult[F]], R],
+      queryFederation: QueryFederation[Fix, Resource[F, ?], QueryAssociate[Resource[F, ?], EvalResult[F]], R],
       resultRender: ResultRender[F, R],
       resourceSchema: ResourceSchema[F, C, (ResourcePath, CompositeResult[F, QueryResult[F]])],
       rateLimiting: RateLimiting[F, A],
