@@ -24,17 +24,44 @@ import matryoshka._
 import matryoshka.data._
 import matryoshka.patterns.{CoEnv, EnvT}
 import scalaz._, Scalaz._
-import simulacrum.typeclass
 import iotaz.{CopK, TListK}
 import shims.monadToScalaz
 
-@typeclass trait RenderTree[A] {
+trait RenderTree[A] {
   def render(a: A): RenderedTree
 }
 
 @SuppressWarnings(Array("org.wartremover.warts.ImplicitConversion"))
 object RenderTree extends RenderTreeInstances {
   import ops._
+
+  def apply[A](implicit ev: RenderTree[A]): RenderTree[A] = ev
+
+  trait Ops[A] {
+    def typeClassInstance: RenderTree[A]
+    def self: A
+    def render: RenderedTree = typeClassInstance.render(self)
+  }
+
+  trait ToRenderTreeOps {
+    implicit def toRenderTreeOps[A](target: A)(implicit tc: RenderTree[A]): Ops[A] = new Ops[A] {
+      val self = target
+      val typeClassInstance = tc
+    }
+  }
+
+  object nonInheritedOps extends ToRenderTreeOps
+
+  trait AllOps[A] extends Ops[A] {
+    def typeClassInstance: RenderTree[A]
+  }
+
+  object ops {
+    implicit def toAllRenderTreeOps[A](target: A)(implicit tc: RenderTree[A]): AllOps[A] = new AllOps[A] {
+      val self = target
+      val typeClassInstance = tc
+    }
+  }
 
   def contramap[A, B: RenderTree](f: A => B): RenderTree[A] =
     new RenderTree[A] { def render(v: A) = RenderTree[B].render(f(v)) }
