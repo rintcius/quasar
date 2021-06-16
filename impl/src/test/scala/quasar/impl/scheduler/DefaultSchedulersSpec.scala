@@ -85,10 +85,10 @@ class DefaultSchedulersSpec(implicit ec: ExecutionContext) extends EffectfulQSpe
     val rCache = ResourceManager[IO, String, Scheduler[IO, Array[Byte], Json]]
 
     for {
-      refs <- Resource.liftF(fRefs)
+      refs <- Resource.eval(fRefs)
       cache <- rCache
-      builders <- Resource.liftF(SchedulerBuilders[IO](List(builder(testType, errors))))
-      result <- Resource.liftF(DefaultSchedulers(freshId, refs, cache, builders))
+      builders <- Resource.eval(SchedulerBuilders[IO](List(builder(testType, errors))))
+      result <- Resource.eval(DefaultSchedulers(freshId, refs, cache, builders))
     } yield (refs, result, cache)
   }
 

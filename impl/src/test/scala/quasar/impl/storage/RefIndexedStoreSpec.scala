@@ -31,7 +31,7 @@ object RefIndexedStoreSpec extends RefSpec(Ref.unsafe[IO, Int](0))
 
 abstract class RefSpec(idxRef: Ref[IO, Int]) extends IndexedStoreSpec[IO, Int, String] {
   val emptyStore =
-    Resource.liftF(Ref.of[IO, IMap[Int, String]](IMap.empty).map(RefIndexedStore(_)))
+    Resource.eval(Ref.of[IO, IMap[Int, String]](IMap.empty).map(RefIndexedStore(_)))
 
   val freshIndex = idxRef.modify(i => (i + 1, i + 1))
 

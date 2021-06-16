@@ -43,7 +43,7 @@ object ConditionReportingMiddlewareSpec extends quasar.EffectfulQSpec[IO] with C
     val kind: DatasourceType = DatasourceType("tester", 7)
 
     val loaders = NonEmptyList.of(Loader.Batch(BatchLoader.Full { (ir: InterpretedRead[ResourcePath]) =>
-      Resource liftF {
+      Resource eval {
         if (ResourcePath.root.nonEmpty(ir.path))
           IO.raiseError(thatsRoot)
         else

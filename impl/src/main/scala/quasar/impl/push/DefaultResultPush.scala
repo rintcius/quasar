@@ -814,12 +814,12 @@ private[impl] object DefaultResultPush {
         : Resource[F, ResultPush[F, D, Q]] =
       for {
         active <-
-          Resource liftF {
+          Resource eval {
             Sync[F].delay(new ConcurrentSkipListMap[D :: Option[ResourcePath] :: HNil, ActiveState[F, Q]](
               prefixComparator))
           }
 
-        log <- Resource.liftF(Slf4jLogger.create[F])
+        log <- Resource.eval(Slf4jLogger.create[F])
 
         _ <- Concurrent[F].background(jobManager.events.evalMap(handleEvent(active, log)).compile.drain)
 
