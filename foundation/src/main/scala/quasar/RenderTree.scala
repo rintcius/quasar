@@ -78,28 +78,12 @@ object RenderTree extends RenderTreeInstances {
   }
 
   trait Ops[A] {
-    def typeClassInstance: RenderTree[A]
-    def self: A
-    def render: RenderedTree = typeClassInstance.render(self)
-  }
-
-  trait ToRenderTreeOps {
-    implicit def toRenderTreeOps[A](target: A)(implicit tc: RenderTree[A]): Ops[A] = new Ops[A] {
-      val self = target
-      val typeClassInstance = tc
-    }
-  }
-
-  object nonInheritedOps extends ToRenderTreeOps
-
-  trait AllOps[A] extends Ops[A] {
-    def typeClassInstance: RenderTree[A]
+    def render: RenderedTree
   }
 
   object ops {
-    implicit def toAllRenderTreeOps[A](target: A)(implicit tc: RenderTree[A]): AllOps[A] = new AllOps[A] {
-      val self = target
-      val typeClassInstance = tc
+    implicit def toRenderTreeOps[A](target: A)(implicit tc: RenderTree[A]): Ops[A] = new Ops[A] {
+      def render: RenderedTree = RenderTree[A].render(target)
     }
   }
 }

@@ -25,28 +25,12 @@ object RenderDSL {
   def apply[A](implicit ev: RenderDSL[A]): RenderDSL[A] = ev
 
   trait Ops[A] {
-    def typeClassInstance: RenderDSL[A]
-    def self: A
-    def toDsl: DSLTree = typeClassInstance.toDsl(self)
-  }
-
-  trait ToRenderDslOps {
-    implicit def toRenderDslOps[A](target: A)(implicit tc: RenderDSL[A]): Ops[A] = new Ops[A] {
-      val self = target
-      val typeClassInstance = tc
-    }
-  }
-
-  object nonInheritedOps extends ToRenderDslOps
-
-  trait AllOps[A] extends Ops[A] {
-    def typeClassInstance: RenderDSL[A]
+    def toDsl: DSLTree
   }
 
   object ops {
-    implicit def toAllRenderDSLOps[A](target: A)(implicit tc: RenderDSL[A]): AllOps[A] = new AllOps[A] {
-      val self = target
-      val typeClassInstance = tc
+    implicit def toRenderDSLOps[A](target: A)(implicit tc: RenderDSL[A]): Ops[A] = new Ops[A] {
+      def toDsl: DSLTree = RenderDSL[A].toDsl(target)
     }
   }
 }
