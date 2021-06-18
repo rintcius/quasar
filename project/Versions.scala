@@ -16,7 +16,7 @@ object Versions {
   val scalacheckVersion   = "1.15.4"
   val scalazVersion       = "7.2.30"
   val shapelessVersion    = "2.3.3"
-  val specsVersion        = "4.10.5"
+  val specsVersion        = "4.10.6"
   val spireVersion        = "0.17.0"
   val fs2Version          = "2.5.6"
   val slf4sVersion        = "1.7.25"
