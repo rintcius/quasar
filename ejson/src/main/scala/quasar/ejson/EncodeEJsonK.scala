@@ -42,6 +42,8 @@ trait EncodeEJsonK[F[_]] {
 }
 
 object EncodeEJsonK extends EncodeEJsonKInstances {
+  def apply[F[_]](implicit ev: EncodeEJsonK[F]): EncodeEJsonK[F] = ev
+
   def envT[E: EncodeEJson, F[_]: EncodeEJsonK](
     askLabel: String,
     lowerLabel: String

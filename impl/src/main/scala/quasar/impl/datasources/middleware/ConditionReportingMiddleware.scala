@@ -41,7 +41,7 @@ object ConditionReportingMiddleware {
         : F[QuasarDatasource[T, Resource[F, ?], G, R, P]] =
       onChange(id, Condition.normal()) as {
         mds.modify(λ[Datasource[Resource[F, ?], G, ?, R, P] ~> Datasource[Resource[F, ?], G, ?, R, P]] { ds =>
-          ConditionReportingDatasource((c: Condition[E]) => Resource.liftF(onChange(id, c)), ds)
+          ConditionReportingDatasource((c: Condition[E]) => Resource.eval(onChange(id, c)), ds)
         })
       }
   }

@@ -61,14 +61,14 @@ final class AntiEntropyStoreSpec extends IndexedStoreSpec[IO, String, String] {
       underlying: UnderlyingStore)
       : Resource[IO, Store] = for {
     atomix <- Atomix.resource[IO](me, seeds.map(_.address))
-    storage <- Resource.liftF(IO(new ConcurrentHashMap[String, Timestamped[String]]()))
+    storage <- Resource.eval(IO(new ConcurrentHashMap[String, Timestamped[String]]()))
     timestamped <- TimestampedStore.bounded[IO, String, String](underlying, 64)
     cluster = Atomix.cluster[IO](atomix, blocker).contramap(printMessage(_))
     store <- AntiEntropyStore.default[IO, String, String]("default", cluster, timestamped, blocker)
   } yield store
 
   val underlyingResource: Resource[IO, UnderlyingStore] =
-    Resource.liftF[IO, Persistence](IO(new ConcurrentHashMap[String, Timestamped[String]]()))
+    Resource.eval[IO, Persistence](IO(new ConcurrentHashMap[String, Timestamped[String]]()))
       .map(ConcurrentMapIndexedStore.unhooked[IO, String, Timestamped[String]](_, blocker))
 
   def mkStore(me: NodeInfo, seeds: List[NodeInfo]): Resource[IO, Store] =
@@ -82,7 +82,7 @@ final class AntiEntropyStoreSpec extends IndexedStoreSpec[IO, String, String] {
     rawRes.map(_.map(_._1))
   }
 
-  val emptyStore: Resource[IO, Store] = Resource.liftF(mkNode("default")).flatMap(mkStore(_, List()))
+  val emptyStore: Resource[IO, Store] = Resource.eval(mkNode("default")).flatMap(mkStore(_, List()))
   val valueA = "A"
   val valueB = "B"
   val freshIndex = IO(Random.nextInt().toString)
@@ -123,7 +123,7 @@ final class AntiEntropyStoreSpec extends IndexedStoreSpec[IO, String, String] {
     "1234 - 12 - 34 - 1234" >>* {
       val underlying: Resource[IO, List[(UnderlyingStore, NodeInfo)]] = {
         val nodesR: Resource[IO, List[NodeInfo]] =
-          Resource.liftF(List("0", "1", "2", "3").traverse(mkNode(_)))
+          Resource.eval(List("0", "1", "2", "3").traverse(mkNode(_)))
         val underlyingsR: Resource[IO, List[UnderlyingStore]] =
           List(underlyingResource, underlyingResource, underlyingResource, underlyingResource)
             .sequence
@@ -174,7 +174,7 @@ final class AntiEntropyStoreSpec extends IndexedStoreSpec[IO, String, String] {
     "1234 - 12 - 34 - 1234 -- deletion" >>* {
       val underlying: Resource[IO, List[(UnderlyingStore, NodeInfo)]] = {
         val nodesR: Resource[IO, List[NodeInfo]] =
-          Resource.liftF(List("0", "1", "2", "3").traverse(mkNode(_)))
+          Resource.eval(List("0", "1", "2", "3").traverse(mkNode(_)))
         val underlyingsR: Resource[IO, List[UnderlyingStore]] =
           List(underlyingResource, underlyingResource, underlyingResource, underlyingResource)
             .sequence
@@ -226,7 +226,7 @@ final class AntiEntropyStoreSpec extends IndexedStoreSpec[IO, String, String] {
           seeds = List(node0)
           nodes = List(node0, node1, node2)
         } yield parallelResource(nodes.map(mkStore(_, seeds)))
-        Resource.liftF(ioRes).flatten
+        Resource.eval(ioRes).flatten
       }
 
       storesR.use { (stores: List[Store]) => for {

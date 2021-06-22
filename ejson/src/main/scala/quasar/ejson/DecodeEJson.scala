@@ -68,6 +68,8 @@ trait DecodeEJson[A] {
 }
 
 object DecodeEJson extends DecodeEJsonInstances {
+  def apply[A](implicit ev: DecodeEJson[A]): DecodeEJson[A] = ev
+
   def always[A](r: Decoded[A]): DecodeEJson[A] =
     new DecodeEJson[A] {
       def decode[J](j: J)(implicit JC: Corecursive.Aux[J, EJson], JR: Recursive.Aux[J, EJson]): Decoded[A] =

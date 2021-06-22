@@ -100,7 +100,7 @@ abstract class LocalDatasourceSpec
     local
       .flatMap(
         _.loadFull(InterpretedRead(ResourcePath.root() / ResourceName("smallZips.ldjson"), ScalarStages.Id))
-          .semiflatMap(qr => Resource.liftF(compileData(qr)))
+          .semiflatMap(qr => Resource.eval(compileData(qr)))
           .value)
       .use(r => IO.pure(r must beSome(be_>(0))))
   }
@@ -146,7 +146,7 @@ object LocalParsedDatasourceSpec extends LocalDatasourceSpec {
     make(DataFormat.precise(DataFormat.json))
       .flatMap(
         _.loadFull(iread)
-          .semiflatMap(qr => Resource.liftF(compileData(qr)))
+          .semiflatMap(qr => Resource.eval(compileData(qr)))
           .value)
       .use(r => IO.pure(r must_=== Some(100)))
   }
@@ -158,7 +158,7 @@ object LocalParsedDatasourceSpec extends LocalDatasourceSpec {
     make(DataFormat.SeparatedValues.Default)
       .flatMap(
         _.loadFull(iread)
-          .semiflatMap(qr => Resource.liftF(compileData(qr)))
+          .semiflatMap(qr => Resource.eval(compileData(qr)))
           .value)
       .use(r => IO.pure(r must_=== Some(100)))
   }
@@ -171,7 +171,7 @@ object LocalParsedDatasourceSpec extends LocalDatasourceSpec {
       make(DataFormat.gzipped(DataFormat.precise(DataFormat.json)))
         .flatMap(
           _.loadFull(iread)
-            .semiflatMap(qr => Resource.liftF(compileData(qr)))
+            .semiflatMap(qr => Resource.eval(compileData(qr)))
             .value)
         .use(r => IO.pure(r must_=== Some(100)))
     }
@@ -183,7 +183,7 @@ object LocalParsedDatasourceSpec extends LocalDatasourceSpec {
       make(DataFormat.zipped(DataFormat.precise(DataFormat.json)))
         .flatMap(
           _.loadFull(iread)
-            .semiflatMap(qr => Resource.liftF(compileData(qr)))
+            .semiflatMap(qr => Resource.eval(compileData(qr)))
             .value)
         .use(r => IO.pure(r must_=== Some(100)))
     }
@@ -195,7 +195,7 @@ object LocalParsedDatasourceSpec extends LocalDatasourceSpec {
       make(DataFormat.zipped(DataFormat.precise(DataFormat.ldjson)))
         .flatMap(
           _.loadFull(iread)
-            .semiflatMap(qr => Resource.liftF(compileData(qr)))
+            .semiflatMap(qr => Resource.eval(compileData(qr)))
             .value)
         .use(r => IO.pure(r must_=== Some(3)))
     }
@@ -207,7 +207,7 @@ object LocalParsedDatasourceSpec extends LocalDatasourceSpec {
       make(DataFormat.zipped(DataFormat.precise(DataFormat.ldjson)))
         .flatMap(
           _.loadFull(iread)
-            .semiflatMap(qr => Resource.liftF(compileData(qr)))
+            .semiflatMap(qr => Resource.eval(compileData(qr)))
             .value)
         .use(r => IO.pure(r must_=== Some(3)))
     }
@@ -219,7 +219,7 @@ object LocalParsedDatasourceSpec extends LocalDatasourceSpec {
       make(DataFormat.zipped(DataFormat.precise(DataFormat.ldjson)))
         .flatMap(
           _.loadFull(iread)
-            .semiflatMap(qr => Resource.liftF(compileData(qr)))
+            .semiflatMap(qr => Resource.eval(compileData(qr)))
             .value)
         .use(r => IO.pure(r must_=== Some(30)))
     }
@@ -231,7 +231,7 @@ object LocalParsedDatasourceSpec extends LocalDatasourceSpec {
       make(DataFormat.zipped(DataFormat.precise(DataFormat.ldjson)))
         .flatMap(
           _.loadFull(iread)
-            .semiflatMap(qr => Resource.liftF(compileData(qr)))
+            .semiflatMap(qr => Resource.eval(compileData(qr)))
             .value)
         .use(r => IO.pure(r must_=== Some(30)))
     }

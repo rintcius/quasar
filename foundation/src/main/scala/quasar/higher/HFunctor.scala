@@ -17,9 +17,11 @@
 package quasar.higher
 
 import scalaz.~>
-import simulacrum._
 
-@typeclass
 trait HFunctor[F[_[_]]] {
   def hmap[A[_], B[_]](fa: F[A])(f: A ~> B): F[B]
+}
+
+object HFunctor {
+  def apply[F[_[_]]](implicit ev: HFunctor[F]): HFunctor[F] = ev
 }

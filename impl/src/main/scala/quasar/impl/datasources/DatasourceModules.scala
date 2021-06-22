@@ -67,7 +67,7 @@ trait DatasourceModules[T[_[_]], F[_], G[_], H[_], I, C, R, P <: ResourcePathTyp
       def create(i: I, ref: DatasourceRef[C])
           : EitherT[Resource[F, ?], CreateError[C], QuasarDatasource[T, G, HH, S, Q]] =
         self.create(i, ref) flatMap { (mds: QuasarDatasource[T, G, H, R, P]) =>
-          EitherT.right(Resource.liftF(f(i, mds)))
+          EitherT.right(Resource.eval(f(i, mds)))
         }
 
       def sanitizeRef(inp: DatasourceRef[C]): F[DatasourceRef[C]] =
@@ -166,8 +166,8 @@ object DatasourceModules {
       def create(i: I, inp: DatasourceRef[Json])
           : EitherT[Resource[F, ?], CreateError[Json], MDS[T, F]] =
         for {
-          (module, ref) <- findAndMigrate(inp).mapK(λ[F ~> Resource[F, ?]](Resource.liftF(_)))
-          store <- EitherT.right[CreateError[Json]](Resource.liftF(byteStores.get(i)))
+          (module, ref) <- findAndMigrate(inp).mapK(λ[F ~> Resource[F, ?]](Resource.eval(_)))
+          store <- EitherT.right[CreateError[Json]](Resource.eval(byteStores.get(i)))
           res <- module match {
             case DatasourceModule.Lightweight(lw) =>
               handleInitErrors(module.kind, lw.lightweightDatasource[F, A](ref.config, rateLimiting, store, getAuth))

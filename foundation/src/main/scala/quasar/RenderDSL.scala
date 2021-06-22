@@ -16,8 +16,21 @@
 
 package quasar
 
-import simulacrum.typeclass
-
-@typeclass trait RenderDSL[A] {
+trait RenderDSL[A] {
   def toDsl(a: A): DSLTree
+}
+
+
+object RenderDSL {
+  def apply[A](implicit ev: RenderDSL[A]): RenderDSL[A] = ev
+
+  trait Ops[A] {
+    def toDsl: DSLTree
+  }
+
+  object ops {
+    implicit def toRenderDSLOps[A](target: A)(implicit tc: RenderDSL[A]): Ops[A] = new Ops[A] {
+      def toDsl: DSLTree = RenderDSL[A].toDsl(target)
+    }
+  }
 }

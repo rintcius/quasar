@@ -24,7 +24,6 @@ import quasar.ejson.implicits._
 
 import cats.data.State
 import cats.instances.symbol._
-import cats.instances.tuple._
 import cats.syntax.eq._
 import cats.syntax.bifunctor._
 

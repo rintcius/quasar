@@ -66,7 +66,7 @@ class AtomixSpec (implicit ec: ExecutionContext) extends EffectfulQSpec[IO]{
           seeds = List(node0)
           nodes = List(node0, node1, node2)
         } yield nodes.map(Atomix.resource[IO](_, seeds.map(_.address))).sequence
-        Resource.liftF(ioRes).flatten
+        Resource.eval(ioRes).flatten
       }
 
       clusterRes.use { (cs: List[AtomixCluster]) => for {
@@ -92,7 +92,7 @@ class AtomixSpec (implicit ec: ExecutionContext) extends EffectfulQSpec[IO]{
         node2 <- mkNode("2")
         nodes = List(node0, node1, node2)
       } yield nodes.map(resource(_, nodes.map(_.address))).sequence
-      Resource.liftF(ioRes).flatten.evalMap { (x: List[Cluster[IO, String]]) =>
+      Resource.eval(ioRes).flatten.evalMap { (x: List[Cluster[IO, String]]) =>
         waitABit as x
       }
     }

@@ -355,11 +355,11 @@ object DefaultResultPushSpec extends EffectfulQSpec[IO] with ConditionMatchers {
 
   def mkEvaluator(f: PartialFunction[(String, Option[Offset]), IO[Stream[IO, String]]])
       : QueryEvaluator[Resource[IO, ?], (String, Option[Offset]), Stream[IO, String]] =
-    QueryEvaluator(f).mapF(Resource.liftF(_))
+    QueryEvaluator(f).mapF(Resource.eval(_))
 
   def constEvaluator(s: IO[Stream[IO, String]])
       : QueryEvaluator[Resource[IO, ?], (String, Option[Offset]), Stream[IO, String]] =
-    QueryEvaluator(_ => Resource.liftF(s))
+    QueryEvaluator(_ => Resource.eval(s))
 
   val emptyEvaluator: QueryEvaluator[Resource[IO, ?], (String, Option[Offset]), Stream[IO, String]] =
     constEvaluator(IO(Stream()))
@@ -420,14 +420,14 @@ object DefaultResultPushSpec extends EffectfulQSpec[IO] with ConditionMatchers {
     for {
       db <- storage.offheapMVStore[IO]
 
-      pushes <- Resource liftF {
+      pushes <- Resource eval {
         SerializableStore[IO, Int :: ResourcePath :: HNil, ∃[Push[?, String]]](
           db,
           "default-result-push-spec",
           Blocker.liftExecutionContext(global))
       }
 
-      ref <- Resource.liftF(Ref[IO].of(IMap.empty[Int :: ResourcePath :: HNil, ∃[OffsetKey.Actual]]))
+      ref <- Resource.eval(Ref[IO].of(IMap.empty[Int :: ResourcePath :: HNil, ∃[OffsetKey.Actual]]))
 
       offsets = RefIndexedStore(ref)
 

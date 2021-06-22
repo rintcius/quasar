@@ -85,9 +85,9 @@ object DefaultDestinationsSpec extends quasar.EffectfulQSpec[IO] with ConditionM
     val rCache = ResourceManager[IO, String, Destination[IO]]
     val modules = DestinationModules[IO](List(MockDestinationModule(initErrors)), pushPull)
     for {
-      refs <- Resource.liftF(fRefs)
+      refs <- Resource.eval(fRefs)
       cache <- rCache
-      result <- Resource.liftF(DefaultDestinations(freshId, refs, cache, modules))
+      result <- Resource.eval(DefaultDestinations(freshId, refs, cache, modules))
     } yield (refs, result, cache)
   }
 
