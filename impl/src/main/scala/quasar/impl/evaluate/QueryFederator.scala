@@ -49,11 +49,12 @@ import shims.{orderToCats, monadToScalaz}
   */
 object QueryFederator {
 
-  def apply[T[_[_]]: BirecursiveT]: PartiallyApplied[T] = new PartiallyApplied[T]
+  def apply[T[_[_]]]: PartiallyApplied[T] = new PartiallyApplied[T]
 
-  class PartiallyApplied[T[_[_]]: BirecursiveT] {
+  class PartiallyApplied[T[_[_]]] {
     def apply[F[_]: Monad: MonadResourceErr, G[_], H[_], R, P <: ResourcePathType](
-        sources: AFile => F[Option[Source[QuasarDatasource[G, H, R, P]]]])
+        sources: AFile => F[Option[Source[QuasarDatasource[G, H, R, P]]]])(
+        implicit T: BirecursiveT[T])
         : Kleisli[F, (T[QScriptEducated[T, ?]], Option[Offset]), FederatedQuery[T, QueryAssociate[G, R]]] =
       Kleisli(new QueryFederatorImpl(sources).tupled)
   }

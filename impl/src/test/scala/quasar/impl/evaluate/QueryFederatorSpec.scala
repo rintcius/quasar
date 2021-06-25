@@ -78,7 +78,7 @@ final class QueryFederatorSpec extends Qspec with TreeMatchers {
     xys -> Source(xys, xysSrc))(
     Order[ResourcePath].toOrdering)
 
-  val federator = QueryFederator[Fix].apply { (f: AFile) =>
+  val federator = QueryFederator[Fix] { (f: AFile) =>
     srcs.get(ResourcePath.leaf(f)).asRight[ResourceError]
   }
 
