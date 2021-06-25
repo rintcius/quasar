@@ -20,13 +20,15 @@ import quasar.api.resource.ResourcePath
 import quasar.qscript.InterpretedRead
 import cats.data.Kleisli
 
+import matryoshka.data.Fix
+
 package object evaluate {
-  type QueryFederation[T[_[_]], F[_], S, R] = Kleisli[F, FederatedQuery[T, S], R]
+  type QueryFederation[F[_], S, R] = Kleisli[F, FederatedQuery[Fix, S], R]
 
   type QueryAssociate[F[_], A] = Kleisli[F, InterpretedRead[ResourcePath], A]
 
   object QueryFederation {
-    def apply[T[_[_]], F[_], S, R](f: FederatedQuery[T, S] => F[R]): QueryFederation[T, F, S, R] =
+    def apply[F[_], S, R](f: FederatedQuery[Fix, S] => F[R]): QueryFederation[F, S, R] =
       Kleisli(f)
   }
 }
