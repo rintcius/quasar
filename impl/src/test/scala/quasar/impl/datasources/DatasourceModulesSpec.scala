@@ -51,9 +51,6 @@ import scala.concurrent.ExecutionContext.Implicits.global
 import shims.{showToCats, showToScalaz}
 
 object DatasourceModulesSpec extends EffectfulQSpec[IO] {
-  val DatasourceModule = LightweightDatasourceModule
-  type DatasourceModule = LightweightDatasourceModule.type
-
   implicit val tmr = IO.timer(global)
 
   final case class PlannerErrorException(pe: PlannerError)
@@ -100,8 +97,8 @@ object DatasourceModulesSpec extends EffectfulQSpec[IO] {
   }
 
   def mod(k: DatasourceType, err: Option[InitializationError[Json]] = None, minV: Option[Long] = None)
-      : LightweightDatasourceModule =
-    new LightweightDatasourceModule {
+      : DatasourceModule =
+    new DatasourceModule {
       val kind = k
 
       override def minVersion = minV getOrElse k.version
@@ -118,7 +115,7 @@ object DatasourceModulesSpec extends EffectfulQSpec[IO] {
           : Either[ConfigurationError[Json], (Reconfiguration, Json)] =
         Right((Reconfiguration.Reset, jArray(List(original, patch))))
 
-      def lightweightDatasource[
+      def datasource[
           F[_]: ConcurrentEffect: ContextShift: MonadResourceErr: Timer,
           A: Hash](
           config: Json,

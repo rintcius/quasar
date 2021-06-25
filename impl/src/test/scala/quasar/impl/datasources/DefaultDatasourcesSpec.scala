@@ -102,8 +102,8 @@ object DefaultDatasourcesSpec extends DatasourcesSpec[IO, Stream[IO, ?], String,
       mp: Map[Json, InitializationError[Json]],
       sanitize: Option[Json => Json] = None,
       reconfig: Option[(Json, Json) => Either[ConfigurationError[Json], (Reconfiguration, Json)]] = None)
-      : LightweightDatasourceModule =
-    new LightweightDatasourceModule {
+      : DatasourceModule =
+    new DatasourceModule {
       val kind = supportedType
 
       override def minVersion = 1
@@ -128,7 +128,7 @@ object DefaultDatasourcesSpec extends DatasourcesSpec[IO, Stream[IO, ?], String,
           case Some(f) => f(orig, patch)
         }
 
-      def lightweightDatasource[
+      def datasource[
           F[_]: ConcurrentEffect: ContextShift: MonadResourceErr: Timer,
           A: Hash](
           config: Json,

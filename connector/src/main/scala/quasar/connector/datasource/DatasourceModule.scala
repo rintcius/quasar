@@ -35,7 +35,7 @@ import fs2.Stream
 import java.util.UUID
 import scala.Long
 
-trait LightweightDatasourceModule {
+trait DatasourceModule {
   def kind: DatasourceType
 
   def sanitizeConfig(config: Json): Json
@@ -49,7 +49,7 @@ trait LightweightDatasourceModule {
   def reconfigure(original: Json, patch: Json)
       : Either[ConfigurationError[Json], (Reconfiguration, Json)]
 
-  def lightweightDatasource[
+  def datasource[
       F[_]: ConcurrentEffect: ContextShift: MonadResourceErr: Timer,
       A: Hash](
       config: Json,
@@ -57,10 +57,13 @@ trait LightweightDatasourceModule {
       byteStore: ByteStore[F],
       auth: UUID => F[Option[ExternalCredentials[F]]])(
       implicit ec: ExecutionContext)
-      : Resource[F, Either[InitializationError[Json], LightweightDatasourceModule.DS[F]]]
+      : Resource[F, Either[InitializationError[Json], DatasourceModule.DS[F]]]
 }
 
-object LightweightDatasourceModule {
-  type DSP[F[_], P <: ResourcePathType] = Datasource[Resource[F, ?], Stream[F, ?], InterpretedRead[ResourcePath], QueryResult[F], P]
-  type DS[F[_]] = DSP[F, ResourcePathType.Physical]
+object DatasourceModule {
+  type DSP[F[_], P <: ResourcePathType] =
+    Datasource[Resource[F, ?], Stream[F, ?], InterpretedRead[ResourcePath], QueryResult[F], P]
+
+  type DS[F[_]] =
+    DSP[F, ResourcePathType.Physical]
 }

@@ -22,10 +22,10 @@ import quasar.RateLimiting
 import quasar.api.datasource._
 import quasar.api.datasource.DatasourceError._
 import quasar.api.resource._
-import quasar.impl.{QuasarDatasource, DatasourceModule}
+import quasar.impl.QuasarDatasource
 import quasar.impl.IncompatibleModuleException.linkDatasource
 import quasar.connector.{ExternalCredentials, MonadResourceErr, QueryResult}
-import quasar.connector.datasource.{Reconfiguration, Datasource}
+import quasar.connector.datasource.{Reconfiguration, Datasource, DatasourceModule}
 import quasar.qscript.{MonadPlannerErr, InterpretedRead}
 
 import scala.concurrent.ExecutionContext
@@ -165,11 +165,11 @@ object DatasourceModules {
       def create(i: I, inp: DatasourceRef[Json])
           : EitherT[Resource[F, ?], CreateError[Json], MDS[F]] =
         for {
-          (lw, ref) <- findAndMigrate(inp).mapK(λ[F ~> Resource[F, ?]](Resource.eval(_)))
+          (ds, ref) <- findAndMigrate(inp).mapK(λ[F ~> Resource[F, ?]](Resource.eval(_)))
           store <- EitherT.right[CreateError[Json]](Resource.eval(byteStores.get(i)))
           res <- handleInitErrors(
-            lw.kind,
-            lw.lightweightDatasource[F, A](ref.config, rateLimiting, store, getAuth))
+            ds.kind,
+            ds.datasource[F, A](ref.config, rateLimiting, store, getAuth))
         } yield res
 
       def sanitizeRef(inp: DatasourceRef[Json]): F[DatasourceRef[Json]] =

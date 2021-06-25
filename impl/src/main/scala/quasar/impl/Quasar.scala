@@ -30,7 +30,7 @@ import quasar.api.scheduler.SchedulerType
 import quasar.api.scheduler.{Schedulers, SchedulerRef}
 import quasar.common.PhaseResultTell
 import quasar.connector.{ExternalCredentials, Offset, QueryResult, ResourceSchema}
-import quasar.connector.datasource.Datasource
+import quasar.connector.datasource.{Datasource, DatasourceModule}
 import quasar.connector.destination.{Destination, DestinationModule, PushmiPullyu}
 import quasar.connector.evaluate._
 import quasar.connector.render.ResultRender

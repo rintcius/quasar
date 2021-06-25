@@ -17,7 +17,7 @@
 package quasar
 
 import quasar.api.resource._
-import quasar.connector.datasource.{Datasource, LightweightDatasourceModule}
+import quasar.connector.datasource.Datasource
 import quasar.contrib.scalaz.MonadError_
 import quasar.qscript.InterpretedRead
 
@@ -41,5 +41,4 @@ package object impl {
   private [impl] type QuasarDatasource[F[_], G[_], R, P <: ResourcePathType] =
     Datasource[F, G, InterpretedRead[ResourcePath], R, P]
 
-  private [impl] type DatasourceModule = LightweightDatasourceModule
 }

@@ -52,7 +52,7 @@ final class EvaluableLocalDatasource[F[_]: ContextShift: Timer] private (
     root: JPath,
     queryResult: InterpretedRead[JPath] => QueryResult[F])(
     implicit F: Effect[F], RE: MonadResourceErr[F])
-    extends LightweightDatasource[Resource[F, ?], Stream[F, ?], QueryResult[F]] {
+    extends DatasourceModule.DS[F] {
 
   val kind: DatasourceType = dsType
 
@@ -110,6 +110,6 @@ object EvaluableLocalDatasource {
       dsType: DatasourceType,
       root: JPath)(
       queryResult: InterpretedRead[JPath] => QueryResult[F])
-      : LightweightDatasourceModule.DS[F] =
+      : DatasourceModule.DS[F] =
     new EvaluableLocalDatasource[F](dsType, root, queryResult)
 }

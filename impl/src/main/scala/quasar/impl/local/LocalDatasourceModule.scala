@@ -28,7 +28,7 @@ import quasar.api.datasource.DatasourceError.{
 }
 import quasar.concurrent._
 import quasar.connector._
-import quasar.connector.datasource.{LightweightDatasourceModule, Reconfiguration}
+import quasar.connector.datasource.{DatasourceModule, Reconfiguration}
 
 import scala.concurrent.ExecutionContext
 
@@ -41,7 +41,7 @@ import cats.implicits._
 
 import java.util.UUID
 
-object LocalDatasourceModule extends LightweightDatasourceModule with LocalDestinationModule {
+object LocalDatasourceModule extends DatasourceModule with LocalDestinationModule {
   val kind: DatasourceType = LocalType
 
   def sanitizeConfig(config: Json): Json = config
@@ -60,7 +60,7 @@ object LocalDatasourceModule extends LightweightDatasourceModule with LocalDesti
       : Either[ConfigurationError[Json], (Reconfiguration, Json)] =
     Right((Reconfiguration.Preserve, patch))
 
-  def lightweightDatasource[
+  def datasource[
       F[_]: ConcurrentEffect: ContextShift: MonadResourceErr: Timer,
       A: Hash](
       config: Json,
@@ -68,7 +68,7 @@ object LocalDatasourceModule extends LightweightDatasourceModule with LocalDesti
       stateStore: ByteStore[F],
       auth: UUID => F[Option[ExternalCredentials[F]]])(
       implicit ec: ExecutionContext)
-      : Resource[F, Either[InitializationError[Json], LightweightDatasourceModule.DS[F]]] =
+      : Resource[F, Either[InitializationError[Json], DatasourceModule.DS[F]]] =
     Blocker.cached[F]("local-datasource") evalMap { blocker =>
       val ds = for {
         lc <- attemptConfig[F, LocalConfig, InitializationError[Json]](
