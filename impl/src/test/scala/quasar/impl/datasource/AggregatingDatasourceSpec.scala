@@ -114,7 +114,7 @@ object AggregatingDatasourceSpec extends DatasourceSpec[IO, Stream[IO, ?], Resou
 
       val result = for {
         dres <- ds.prefixedChildPaths(ResourcePath.root())
-        meta <- Resource.liftF(dres.traverse(_.compile.to(List)))
+        meta <- Resource.eval(dres.traverse(_.compile.to(List)))
         qres <- ds.loadFull(z).value
       } yield {
         meta must beSome(equal[List[(ResourceName, ResourcePathType)]](List(
@@ -173,7 +173,7 @@ object AggregatingDatasourceSpec extends DatasourceSpec[IO, Stream[IO, ?], Resou
 
       aggregating
         .loadFull(ResourcePath.root() / ResourceName("a") / ResourceName("**"))
-        .semiflatMap(r => Resource.liftF(r.traverse(_.compile.to(List))))
+        .semiflatMap(r => Resource.eval(r.traverse(_.compile.to(List))))
         .value
         .use(x => IO.pure(x must beSome(beRight(contain(exactly((b, 1), (c, 2), (r, 3), (s, 4), (t, 5)))))))
     }

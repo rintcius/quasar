@@ -23,8 +23,6 @@ import quasar.fp.ski.κ
 
 import cats.data.StateT
 
-import simulacrum.typeclass
-
 import scalaz.{StateT => _, _}
 import scalaz.syntax.bind._
 
@@ -33,7 +31,7 @@ import shims.monadToCats
 /** A source of strings unique within `F[_]`, an implementation must have the
   * property that, if Applicative[F], then (freshName |@| freshName)(_ != _).
   */
-@typeclass trait NameGenerator[F[_]] {
+trait NameGenerator[F[_]] {
   /** Returns a fresh name, guaranteed to be unique among all the other names
     * generated from `F`.
     */
@@ -44,7 +42,9 @@ import shims.monadToCats
     freshName map (prefix + _)
 }
 
-object NameGenerator extends NameGeneratorInstances
+object NameGenerator extends NameGeneratorInstances {
+  def apply[F[_]](implicit ev: NameGenerator[F]): NameGenerator[F] = ev
+}
 
 sealed abstract class NameGeneratorInstances extends NameGeneratorInstances0 {
   implicit def sequenceNameGenerator[F[_]: Monad](implicit F: MonadState_[F, Long]): NameGenerator[F] =

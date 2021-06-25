@@ -39,7 +39,7 @@ object ConditionReportingMiddleware {
         F: MonadError[F, E])
         : F[QuasarDatasource[Resource[F, ?], G, R, P]] =
       onChange(id, Condition.normal()) as {
-        ConditionReportingDatasource((c: Condition[E]) => Resource.liftF(onChange(id, c)), ds)
+        ConditionReportingDatasource((c: Condition[E]) => Resource.eval(onChange(id, c)), ds)
       }
   }
 }

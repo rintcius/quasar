@@ -120,12 +120,12 @@ object Quasar extends Logging {
       DestinationModules[F](destinationModules, pushPull)
 
     for {
-      _ <- Resource.liftF(warnDuplicates[F, DatasourceModule, DatasourceType](datasourceModules)(_.kind))
-      _ <- Resource.liftF(warnDuplicates[F, DestinationModule, DestinationType](destinationModules)(_.destinationType))
+      _ <- Resource.eval(warnDuplicates[F, DatasourceModule, DatasourceType](datasourceModules)(_.kind))
+      _ <- Resource.eval(warnDuplicates[F, DestinationModule, DestinationType](destinationModules)(_.destinationType))
 
       freshUUID = Sync[F].delay(UUID.randomUUID)
 
-      (dsErrors, onCondition) <- Resource.liftF(DefaultDatasourceErrors[F, UUID])
+      (dsErrors, onCondition) <- Resource.eval(DefaultDatasourceErrors[F, UUID])
 
       report = (id: UUID, c: Condition[Throwable]) => c match {
         case cond @ Condition.Abnormal(ex: Exception) => onCondition(id, Condition.abnormal(ex))
@@ -140,14 +140,14 @@ object Quasar extends Logging {
 
       dsCache <- ResourceManager[
         F, UUID, QuasarDatasource[Resource[F, *], Stream[F, *], CompositeResult[F, QueryResult[F]], ResourcePathType]]
-      datasources <- Resource.liftF(DefaultDatasources(freshUUID, datasourceRefs, dsModules, dsCache, dsErrors, byteStores))
+      datasources <- Resource.eval(DefaultDatasources(freshUUID, datasourceRefs, dsModules, dsCache, dsErrors, byteStores))
 
       destCache <- ResourceManager[F, UUID, Destination[F]]
-      destinations <- Resource.liftF(DefaultDestinations(freshUUID, destinationRefs, destCache, destModules))
+      destinations <- Resource.eval(DefaultDestinations(freshUUID, destinationRefs, destCache, destModules))
 
-      sBuilders <- Resource.liftF(SchedulerBuilders[F](schedulerBuilders))
+      sBuilders <- Resource.eval(SchedulerBuilders[F](schedulerBuilders))
       sCache <- ResourceManager[F, UUID, Scheduler[F, Array[Byte], Json]]
-      schedulers <- Resource.liftF(DefaultSchedulers(freshUUID, schedulerRefs, sCache, sBuilders))
+      schedulers <- Resource.eval(DefaultSchedulers(freshUUID, schedulerRefs, sCache, sBuilders))
 
       lookupRunning =
         (id: UUID) => datasources.quasarDatasourceOf(id).map(_.map(reifiedAggregateDs(_)))
@@ -155,8 +155,8 @@ object Quasar extends Logging {
       sqlEvaluator =
         Sql2Compiler[Fix, F]
           .first[Option[Offset]]
-          .andThen(QueryFederator[Fix].apply(ResourceRouter(UuidString, lookupRunning)))
-          .mapF(Resource.liftF(_))
+          .andThen(QueryFederator[Fix](ResourceRouter(UuidString, lookupRunning)))
+          .mapF(Resource.eval(_))
           .andThen(queryFederation)
 
       discovery = DefaultDiscovery(datasources.quasarDatasourceOf, resourceSchema)

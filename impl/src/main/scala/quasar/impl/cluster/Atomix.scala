@@ -74,10 +74,10 @@ object Atomix extends Logging {
   }
 
   private def start[F[_]: Async: ContextShift](cluster: AtomixCluster): F[Unit] =
-    Sync[F].suspend(cfToAsync(cluster.start).void)
+    Sync[F].defer(cfToAsync(cluster.start).void)
 
   private def stop[F[_]: Async: ContextShift](cluster: AtomixCluster): F[Unit] =
-    Sync[F].suspend(cfToAsync(cluster.stop).void)
+    Sync[F].defer(cfToAsync(cluster.stop).void)
 
   private def cfToAsync[F[_]: Async: ContextShift, A](cf: CompletableFuture[A]): F[A] =
     if (cf.isDone) cf.get.pure[F]
@@ -134,7 +134,7 @@ object Atomix extends Logging {
 
     def unicast[P: Codec](tag: String, payload: P, target: MemberId): F[Unit] =
       Codec[P].encode(payload).map((b: BitVector) => {
-        F.suspend(cfToAsync {
+        F.defer(cfToAsync {
           service.unicast(
             tag,
             b.toByteArray,

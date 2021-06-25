@@ -41,6 +41,8 @@ trait EncodeEJson[A] {
 }
 
 object EncodeEJson extends EncodeEJsonInstances {
+  def apply[A](implicit ev: EncodeEJson[A]): EncodeEJson[A] = ev
+
   def encodeEJsonR[T, F[_]: Functor](
     implicit T: Recursive.Aux[T, F], F: EncodeEJsonK[F]
   ): EncodeEJson[T] =

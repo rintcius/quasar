@@ -67,7 +67,7 @@ trait DatasourceModules[F[_], G[_], H[_], I, C, R, P <: ResourcePathType] { self
       def create(i: I, ref: DatasourceRef[C])
           : EitherT[Resource[F, ?], CreateError[C], DS[HH, S, Q]] =
         self.create(i, ref) flatMap { (mds: DS[H, R, P]) =>
-          EitherT.right(Resource.liftF(f(i, mds)))
+          EitherT.right(Resource.eval(f(i, mds)))
         }
 
       def sanitizeRef(inp: DatasourceRef[C]): F[DatasourceRef[C]] =
@@ -165,8 +165,8 @@ object DatasourceModules {
       def create(i: I, inp: DatasourceRef[Json])
           : EitherT[Resource[F, ?], CreateError[Json], MDS[F]] =
         for {
-          (lw, ref) <- findAndMigrate(inp).mapK(λ[F ~> Resource[F, ?]](Resource.liftF(_)))
-          store <- EitherT.right[CreateError[Json]](Resource.liftF(byteStores.get(i)))
+          (lw, ref) <- findAndMigrate(inp).mapK(λ[F ~> Resource[F, ?]](Resource.eval(_)))
+          store <- EitherT.right[CreateError[Json]](Resource.eval(byteStores.get(i)))
           res <- handleInitErrors(
             lw.kind,
             lw.lightweightDatasource[F, A](ref.config, rateLimiting, store, getAuth))

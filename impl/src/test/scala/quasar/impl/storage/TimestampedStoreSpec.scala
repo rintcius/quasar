@@ -61,10 +61,10 @@ final class TimestampedStoreSpec extends IndexedStoreSpec[IO, String, String] {
     "lookup for timestamped" >>* {
       val resource = for {
         us <- underlying
-        bar <- Resource.liftF(Timestamped.tagged[IO, String]("bar"))
-        _ <- Resource.liftF(us.insert("foo", bar))
+        bar <- Resource.eval(Timestamped.tagged[IO, String]("bar"))
+        _ <- Resource.eval(us.insert("foo", bar))
         ts <- timestampedStore(us)
-        res <- Resource.liftF(ts.lookup("foo"))
+        res <- Resource.eval(ts.lookup("foo"))
       } yield {
         res mustEqual Some("bar")
       }
@@ -74,8 +74,8 @@ final class TimestampedStoreSpec extends IndexedStoreSpec[IO, String, String] {
       val resource = for {
         us <- underlying
         ts <- timestampedStore(us)
-        _ <- Resource.liftF(ts.insert("foo", "bar"))
-        bar <- Resource.liftF(us.lookup("foo"))
+        _ <- Resource.eval(ts.insert("foo", "bar"))
+        bar <- Resource.eval(us.lookup("foo"))
       } yield {
         bar.flatMap(Timestamped.raw(_)) mustEqual Some("bar")
       }
@@ -84,12 +84,12 @@ final class TimestampedStoreSpec extends IndexedStoreSpec[IO, String, String] {
     "deletion preserves tombstones" >>* {
       val resource = for {
         us <- underlying
-        start <- Resource.liftF(timer.clock.realTime(MILLISECONDS))
+        start <- Resource.eval(timer.clock.realTime(MILLISECONDS))
         ts <- timestampedStore(us)
-        _ <- Resource.liftF(ts.insert("foo", "bar"))
-        _ <- Resource.liftF(ts.delete("foo"))
-        t <- Resource.liftF(us.lookup("foo"))
-        stop <- Resource.liftF(timer.clock.realTime(MILLISECONDS))
+        _ <- Resource.eval(ts.insert("foo", "bar"))
+        _ <- Resource.eval(ts.delete("foo"))
+        t <- Resource.eval(us.lookup("foo"))
+        stop <- Resource.eval(timer.clock.realTime(MILLISECONDS))
       } yield {
         t must beLike {
           case Some(Timestamped.Tombstone(stamp)) =>
@@ -103,15 +103,15 @@ final class TimestampedStoreSpec extends IndexedStoreSpec[IO, String, String] {
       val resource = for {
         us <- underlying
         ts <- timestampedStore(us)
-        _ <- Resource.liftF(for {
+        _ <- Resource.eval(for {
           _ <- ts.insert("foo", "bar")
           _ <- ts.delete("foo")
           _ <- ts.insert("foo", "baz")
           _ <- ts.insert("bar", "foo")
         } yield ())
-        foo <- Resource.liftF(us.lookup("foo"))
-        bar <- Resource.liftF(us.lookup("bar"))
-        timestamps <- Resource.liftF(ts.timestamps)
+        foo <- Resource.eval(us.lookup("foo"))
+        bar <- Resource.eval(us.lookup("bar"))
+        timestamps <- Resource.eval(ts.timestamps)
       } yield {
         timestamps.size mustEqual 2
         timestamps.get("foo") mustEqual(foo.map(Timestamped.timestamp(_)))

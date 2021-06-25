@@ -184,10 +184,10 @@ object DefaultDatasourcesSpec extends DatasourcesSpec[IO, Stream[IO, ?], String,
 
     for {
       rateLimiting <-RateLimiter[IO, UUID](IO.delay(UUID.randomUUID()))
-      starts <- Resource.liftF(Ref.of[IO, List[String]](List()))
-      shuts <- Resource.liftF(Ref.of[IO, List[String]](List()))
+      starts <- Resource.eval(Ref.of[IO, List[String]](List()))
+      shuts <- Resource.eval(Ref.of[IO, List[String]](List()))
 
-      byteStores <- Resource.liftF(ByteStores.ephemeral[IO, String])
+      byteStores <- Resource.eval(ByteStores.ephemeral[IO, String])
 
       modules =
         DatasourceModules[IO, String, UUID](List(mod(mp, sanitize, reconfigure)), rateLimiting, byteStores, x => IO(None))
@@ -195,9 +195,9 @@ object DefaultDatasourcesSpec extends DatasourcesSpec[IO, Stream[IO, ?], String,
           .withMiddleware((i: String, mds: QDS) => starts.update(i :: _) as mds)
           .withFinalizer((i: String, mds: QDS) => shuts.update(i :: _))
 
-      refs <- Resource.liftF(fRefs)
+      refs <- Resource.eval(fRefs)
       cache <- rCache
-      result <- Resource.liftF {
+      result <- Resource.eval {
         DefaultDatasources[IO, Resource[IO, ?], Stream[IO, ?], String, Json, QueryResult[IO]](freshId, refs, modules, cache, errors, byteStores)
       }
     } yield (result, byteStores, refs, starts, shuts)

@@ -236,7 +236,7 @@ private[impl] final class DefaultDatasources[
   private val createErrorHandling: EitherT[Resource[F, ?], CreateError[C], ?] ~> Resource[F, ?] =
     λ[EitherT[Resource[F, ?], CreateError[C], ?] ~> Resource[F, ?]]( inp =>
       inp.value.flatMap(_.fold(
-        (x: CreateError[C]) => Resource.liftF(MonadError_[F, CreateError[C]].raiseError(x)),
+        (x: CreateError[C]) => Resource.eval(MonadError_[F, CreateError[C]].raiseError(x)),
         _.pure[Resource[F, ?]])))
 
   private def throughSemaphore(i: I): F ~> F =

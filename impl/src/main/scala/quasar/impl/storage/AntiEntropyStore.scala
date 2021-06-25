@@ -175,7 +175,7 @@ final class AntiEntropyStore[F[_]: ConcurrentEffect: ContextShift: Timer, K: Cod
       .map(_.evalMap {
         case (id, mp) => for {
           _ <- updateHandler(id, mp)
-          _ <- Sync[F].suspend(stopper.complete(Right(())))
+          _ <- Sync[F].defer(stopper.complete(Right(())))
         } yield ()
       })
 
@@ -243,7 +243,7 @@ object AntiEntropyStore {
       val storeStream = Stream.emit[F, IndexedStore[F, K, V]](store)
       for {
         resource <- storeStream.concurrently(merged).compile.resource.lastOrError
-        _ <- Resource.liftF(stopper.get)
+        _ <- Resource.eval(stopper.get)
       } yield resource
     }
     Resource.suspend(res).mapK(λ[F ~> F](ContextShift[F].blockOn(blocker)(_)))

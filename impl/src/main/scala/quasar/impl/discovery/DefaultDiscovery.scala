@@ -67,7 +67,7 @@ final class DefaultDiscovery[
         }
       }
 
-      s <- EitherT.right[DiscoveryError[I]](Resource.liftF(schema(schemaConfig, (path, result))))
+      s <- EitherT.right[DiscoveryError[I]](Resource.eval(schema(schemaConfig, (path, result))))
     } yield s
 
     discoverSchema.value
@@ -79,7 +79,7 @@ final class DefaultDiscovery[
 
   private def lookupDatasource[E >: DatasourceNotFound[I] <: DiscoveryError[I]](i: I)
       : EitherT[Resource[F, ?], E, DS] =
-    OptionT(Resource.liftF(quasarDatasource(i))).toRight(datasourceNotFound[I, E](i))
+    OptionT(Resource.eval(quasarDatasource(i))).toRight(datasourceNotFound[I, E](i))
 }
 
 object DefaultDiscovery {

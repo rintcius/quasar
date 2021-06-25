@@ -112,7 +112,7 @@ final class AggregatingDatasource[F[_]: MonadResourceErr: Sync, Q, R] private(
     def aggregate(p: ResourcePath): Resource[F, AggregateResult[F, R]] =
       aggPath(p)
         .map(doAggregate)
-        .getOrElse(Resource.liftF(MonadResourceErr[F].raiseError(ResourceError.pathNotFound(p))))
+        .getOrElse(Resource.eval(MonadResourceErr[F].raiseError(ResourceError.pathNotFound(p))))
 
     @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
     def doAggregate(p: ResourcePath): Resource[F, AggregateResult[F, R]] =
@@ -135,7 +135,7 @@ final class AggregatingDatasource[F[_]: MonadResourceErr: Sync, Q, R] private(
           (children ++ nested).pure[Resource[F, ?]]
 
         case None =>
-          Resource.liftF(MonadResourceErr[F].raiseError(ResourceError.pathNotFound(p)))
+          Resource.eval(MonadResourceErr[F].raiseError(ResourceError.pathNotFound(p)))
       }
 
     val qpath = queryPath.get(q)

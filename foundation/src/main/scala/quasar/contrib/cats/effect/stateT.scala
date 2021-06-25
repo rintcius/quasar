@@ -63,7 +63,7 @@ object stateT {
       asyncStateT.tailRecM(a)(f)
 
     override def suspend[A](thunk: => StateT[F, S, A]): StateT[F, S, A] =
-      asyncStateT.suspend(thunk)
+      asyncStateT.defer(thunk)
 
     override def runAsync[A](fa: StateT[F, S, A])(cb: Either[Throwable, A] => IO[Unit]): SyncIO[Unit] =
       F.runAsync(fa.runA(S.empty)(F))(cb)

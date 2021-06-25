@@ -56,8 +56,8 @@ object SchedulerBuilders {
         def create(ref: SchedulerRef[Json])
             : EitherT[Resource[F, ?], CreateError[Json], Scheduler[F, Array[Byte], Json]] =
           for {
-            tys <- EitherT.right(Resource.liftF(supportedTypes))
-            builder <- OptionT(Resource.liftF(getBuilder(ref.kind))).toRight(SchedulerUnsupported(ref.kind, tys))
+            tys <- EitherT.right(Resource.eval(supportedTypes))
+            builder <- OptionT(Resource.eval(getBuilder(ref.kind))).toRight(SchedulerUnsupported(ref.kind, tys))
             res <- handleInitErrors(ref.kind, builder.scheduler(ref.config))
           } yield res
 

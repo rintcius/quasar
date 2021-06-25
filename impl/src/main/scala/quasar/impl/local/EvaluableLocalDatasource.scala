@@ -58,7 +58,7 @@ final class EvaluableLocalDatasource[F[_]: ContextShift: Timer] private (
 
   val loaders: NonEmptyList[Loader[Resource[F, ?], InterpretedRead[ResourcePath], QueryResult[F]]] =
     NonEmptyList.of(Loader.Batch(BatchLoader.Full { (ir: InterpretedRead[ResourcePath]) =>
-      Resource.liftF(for {
+      Resource.eval(for {
         (jp, _) <- attributesOf(ir.path).getOrElseF(RE.raiseError(pathNotFound(ir.path)))
         candidate <- isCandidate(jp)
         _ <- candidate.unlessM(RE.raiseError(notAResource(ir.path)))
@@ -66,7 +66,7 @@ final class EvaluableLocalDatasource[F[_]: ContextShift: Timer] private (
     }))
 
   def pathIsResource(path: ResourcePath): Resource[F, Boolean] =
-    Resource.liftF(
+    Resource.eval(
       resolvedResourcePath[F](root, path)
         .flatMap(_.fold(false.pure[F])(isCandidate)))
 
@@ -83,7 +83,7 @@ final class EvaluableLocalDatasource[F[_]: ContextShift: Timer] private (
       case _ => Stream.empty
     }
 
-    Resource.liftF(res.run)
+    Resource.eval(res.run)
   }
 
   ////

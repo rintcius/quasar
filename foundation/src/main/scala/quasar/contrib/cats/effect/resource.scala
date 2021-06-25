@@ -26,6 +26,6 @@ object resource {
       implicit F: MonadTell_[F, W])
       : MonadTell_[Resource[F, ?], W] =
     new MonadTell_[Resource[F, ?], W] {
-      def writer[A](w: W, a: A) = Resource.liftF(F.writer(w, a))
+      def writer[A](w: W, a: A) = Resource.eval(F.writer(w, a))
     }
 }
