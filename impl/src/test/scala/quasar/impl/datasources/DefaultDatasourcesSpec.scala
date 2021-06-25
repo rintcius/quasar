@@ -65,7 +65,7 @@ object DefaultDatasourcesSpec extends DatasourcesSpec[IO, Stream[IO, ?], String,
   type PathType = ResourcePathType
   type Self = Datasources[IO, Stream[IO, ?], String, Json]
   type R[F[_], A] = Either[InitializationError[Json], Datasource[Resource[F, ?], Stream[F, ?], A, QueryResult[F], ResourcePathType.Physical]]
-  type QDS = Datasource[Resource[IO, *], Stream[IO, *], InterpretedRead[ResourcePath], QueryResult[IO], PathType]
+  type QDS = DatasourceModule.DSP[IO, PathType]
 
   implicit val ioResourceErrorME: MonadError_[IO, ResourceError] =
     MonadError_.facet[IO](ResourceError.throwableP)
