@@ -16,23 +16,26 @@
 
 package quasar.connector.datasource
 
-import quasar.RenderTreeT
+import quasar.RateLimiting
+
 import quasar.api.datasource.DatasourceType
 import quasar.api.datasource.DatasourceError.{ConfigurationError, InitializationError}
-import quasar.api.resource.ResourcePathType
-import quasar.connector.{ByteStore, QueryResult}
-import quasar.qscript.{MonadPlannerErr, QScriptEducated}
+import quasar.api.resource.{ResourcePath, ResourcePathType}
+import quasar.connector.{ByteStore, ExternalCredentials, MonadResourceErr, QueryResult}
+import quasar.qscript.InterpretedRead
 
-import scala.Long
+import scala.Option
 import scala.concurrent.ExecutionContext
 import scala.util.Either
 
 import argonaut.Json
 import cats.effect.{ConcurrentEffect, ContextShift, Timer, Resource, Sync}
+import cats.kernel.Hash
 import fs2.Stream
-import matryoshka.{BirecursiveT, EqualT, ShowT}
+import java.util.UUID
+import scala.Long
 
-trait HeavyweightDatasourceModule {
+trait DatasourceModule {
   def kind: DatasourceType
 
   def sanitizeConfig(config: Json): Json
@@ -46,15 +49,21 @@ trait HeavyweightDatasourceModule {
   def reconfigure(original: Json, patch: Json)
       : Either[ConfigurationError[Json], (Reconfiguration, Json)]
 
-  def heavyweightDatasource[
-      T[_[_]]: BirecursiveT: EqualT: ShowT: RenderTreeT,
-      F[_]: ConcurrentEffect: ContextShift: MonadPlannerErr: Timer](
+  def datasource[
+      F[_]: ConcurrentEffect: ContextShift: MonadResourceErr: Timer,
+      A: Hash](
       config: Json,
-      byteStore: ByteStore[F])(
+      rateLimiting: RateLimiting[F, A],
+      byteStore: ByteStore[F],
+      auth: UUID => F[Option[ExternalCredentials[F]]])(
       implicit ec: ExecutionContext)
-      : Resource[F, Either[InitializationError[Json], HeavyweightDatasourceModule.DS[T, F]]]
+      : Resource[F, Either[InitializationError[Json], DatasourceModule.DS[F]]]
 }
 
-object HeavyweightDatasourceModule {
-  type DS[T[_[_]], F[_]] = Datasource[Resource[F, ?], Stream[F, ?], T[QScriptEducated[T, ?]], QueryResult[F], ResourcePathType.Physical]
+object DatasourceModule {
+  type DSP[F[_], P <: ResourcePathType] =
+    Datasource[Resource[F, ?], Stream[F, ?], InterpretedRead[ResourcePath], QueryResult[F], P]
+
+  type DS[F[_]] =
+    DSP[F, ResourcePathType.Physical]
 }

@@ -16,14 +16,13 @@
 
 package quasar.impl.discovery
 
-import quasar.{IdStatus, RenderTreeT, ScalarStages}
+import quasar.ScalarStages
 import quasar.api.discovery._
 import quasar.api.resource._
 import quasar.connector.ResourceSchema
 import quasar.connector.datasource.Loader
-import quasar.contrib.iota._
 import quasar.impl.QuasarDatasource
-import quasar.qscript.{construction, educatedToTotal, InterpretedRead, QScriptEducated}
+import quasar.qscript.InterpretedRead
 
 import scala.{Boolean, Option}
 import scala.util.Either
@@ -32,13 +31,10 @@ import cats.Monad
 import cats.data.{EitherT, OptionT}
 import cats.effect.Resource
 
-import matryoshka.{BirecursiveT, EqualT, ShowT}
-
 final class DefaultDiscovery[
-    T[_[_]]: BirecursiveT: EqualT: ShowT: RenderTreeT,
     F[_]: Monad, G[_],
     I, S <: SchemaConfig, R] private (
-    quasarDatasource: I => F[Option[QuasarDatasource[T, Resource[F, ?], G, R, ResourcePathType]]],
+    quasarDatasource: I => F[Option[QuasarDatasource[Resource[F, ?], G, R, ResourcePathType]]],
     schema: ResourceSchema[F, S, (ResourcePath, R)])
     extends Discovery[Resource[F, ?], G, I, S] {
 
@@ -63,19 +59,13 @@ final class DefaultDiscovery[
   def resourceSchema(i: I, path: ResourcePath, schemaConfig: S)
       : Resource[F, Either[DiscoveryError[I], schemaConfig.Schema]] = {
     val discoverSchema = for {
-      qds <- lookupDatasource(i)
+      ds <- lookupDatasource(i)
 
-      result <- EitherT.right[DiscoveryError[I]](qds match {
-        case QuasarDatasource.Lightweight(lw) =>
-          lw.loaders.head match {
-            case Loader.Batch(b) => b.loadFull(InterpretedRead(path, ScalarStages.Id))
-          }
-
-        case QuasarDatasource.Heavyweight(hw) =>
-          hw.loaders.head match {
-            case Loader.Batch(b) => b.loadFull(dsl.Read(path, IdStatus.ExcludeId))
-          }
-      })
+      result <- EitherT.right[DiscoveryError[I]]{
+        ds.loaders.head match {
+          case Loader.Batch(b) => b.loadFull(InterpretedRead(path, ScalarStages.Id))
+        }
+      }
 
       s <- EitherT.right[DiscoveryError[I]](Resource.eval(schema(schemaConfig, (path, result))))
     } yield s
@@ -85,21 +75,18 @@ final class DefaultDiscovery[
 
   ////
 
-  private type QDS = QuasarDatasource[T, Resource[F, ?], G, R, ResourcePathType]
-
-  private val dsl = construction.mkGeneric[T, QScriptEducated[T, ?]]
+  private type DS = QuasarDatasource[Resource[F, ?], G, R, ResourcePathType]
 
   private def lookupDatasource[E >: DatasourceNotFound[I] <: DiscoveryError[I]](i: I)
-      : EitherT[Resource[F, ?], E, QDS] =
+      : EitherT[Resource[F, ?], E, DS] =
     OptionT(Resource.eval(quasarDatasource(i))).toRight(datasourceNotFound[I, E](i))
 }
 
 object DefaultDiscovery {
   def apply[
-      T[_[_]]: BirecursiveT: EqualT: ShowT: RenderTreeT,
       F[_]: Monad, G[_],
       I, S <: SchemaConfig, R](
-      quasarDatasource: I => F[Option[QuasarDatasource[T, Resource[F, ?], G, R, ResourcePathType]]],
+      quasarDatasource: I => F[Option[QuasarDatasource[Resource[F, ?], G, R, ResourcePathType]]],
       schema: ResourceSchema[F, S, (ResourcePath, R)])
       : Discovery[Resource[F, ?], G, I, S] =
     new DefaultDiscovery(quasarDatasource, schema)

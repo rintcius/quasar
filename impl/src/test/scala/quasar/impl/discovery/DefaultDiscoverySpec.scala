@@ -21,7 +21,9 @@ import quasar.api.datasource._
 import quasar.api.discovery._
 import quasar.api.resource._
 import quasar.connector.ResourceSchema
-import quasar.impl.{EmptyDatasource, QuasarDatasource}
+import quasar.connector.datasource.Datasource
+import quasar.impl.EmptyDatasource
+import quasar.qscript.InterpretedRead
 
 import scala.{Int, List, None, Option, Some}
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -32,17 +34,15 @@ import java.lang.String
 import cats.effect.{IO, Resource}
 import cats.implicits._
 
-import matryoshka.data.Fix
-
 import shims.{eqToScalaz, showToScalaz}
 
 object DefaultDiscoverySpec extends EffectfulQSpec[IO] {
 
   import DiscoveryError._
 
-  val lookup: String => IO[Option[QuasarDatasource[Fix, Resource[IO, ?], List, Int, ResourcePathType]]] = {
+  val lookup: String => IO[Option[Datasource[Resource[IO, ?], List, InterpretedRead[ResourcePath], Int, ResourcePathType]]] = {
     case "extant" =>
-      IO.pure(Some(QuasarDatasource.lightweight[Fix](EmptyDatasource(DatasourceType("testing", 1), 0))))
+      IO.pure(Some(EmptyDatasource(DatasourceType("testing", 1), 0)))
 
     case _ =>
       IO.pure(None)
@@ -55,7 +55,7 @@ object DefaultDiscoverySpec extends EffectfulQSpec[IO] {
     }
 
   val discovery =
-    DefaultDiscovery[Fix, IO, List, String, MockSchemaConfig.type, Int](lookup, schema)
+    DefaultDiscovery[IO, List, String, MockSchemaConfig.type, Int](lookup, schema)
 
   "path is resource" >> {
     discoveryExamples(discovery.pathIsResource(_, _))

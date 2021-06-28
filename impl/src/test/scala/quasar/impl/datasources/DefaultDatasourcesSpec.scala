@@ -26,7 +26,7 @@ import quasar.concurrent.unsafe._
 import quasar.connector._
 import quasar.connector.datasource._
 import quasar.contrib.scalaz._
-import quasar.impl.{DatasourceModule, EmptyDatasource, QuasarDatasource, ResourceManager}
+import quasar.impl.{EmptyDatasource, ResourceManager}
 import quasar.impl.storage.{IndexedStore, ConcurrentMapIndexedStore}
 import quasar.qscript.{PlannerError, InterpretedRead}
 
@@ -47,8 +47,6 @@ import cats.syntax.traverse._
 
 import fs2.Stream
 
-import matryoshka.data.Fix
-
 import scalaz.{IMap, NonEmptyList, \/-, -\/}
 
 import java.util.UUID
@@ -67,7 +65,7 @@ object DefaultDatasourcesSpec extends DatasourcesSpec[IO, Stream[IO, ?], String,
   type PathType = ResourcePathType
   type Self = Datasources[IO, Stream[IO, ?], String, Json]
   type R[F[_], A] = Either[InitializationError[Json], Datasource[Resource[F, ?], Stream[F, ?], A, QueryResult[F], ResourcePathType.Physical]]
-  type QDS = QuasarDatasource[Fix, Resource[IO, ?], Stream[IO, ?], QueryResult[IO], PathType]
+  type QDS = DatasourceModule.DSP[IO, PathType]
 
   implicit val ioResourceErrorME: MonadError_[IO, ResourceError] =
     MonadError_.facet[IO](ResourceError.throwableP)
@@ -100,12 +98,12 @@ object DefaultDatasourcesSpec extends DatasourcesSpec[IO, Stream[IO, ?], String,
         }
     }
 
-  def lightMod(
+  def mod(
       mp: Map[Json, InitializationError[Json]],
       sanitize: Option[Json => Json] = None,
       reconfig: Option[(Json, Json) => Either[ConfigurationError[Json], (Reconfiguration, Json)]] = None)
-      : DatasourceModule = DatasourceModule.Lightweight {
-    new LightweightDatasourceModule {
+      : DatasourceModule =
+    new DatasourceModule {
       val kind = supportedType
 
       override def minVersion = 1
@@ -130,7 +128,7 @@ object DefaultDatasourcesSpec extends DatasourcesSpec[IO, Stream[IO, ?], String,
           case Some(f) => f(orig, patch)
         }
 
-      def lightweightDatasource[
+      def datasource[
           F[_]: ConcurrentEffect: ContextShift: MonadResourceErr: Timer,
           A: Hash](
           config: Json,
@@ -157,7 +155,6 @@ object DefaultDatasourcesSpec extends DatasourcesSpec[IO, Stream[IO, ?], String,
           })
       }
     }
-  }
 
   val blocker: Blocker = Blocker.unsafeCached("rdatasources-spec")
 
@@ -193,7 +190,7 @@ object DefaultDatasourcesSpec extends DatasourcesSpec[IO, Stream[IO, ?], String,
       byteStores <- Resource.eval(ByteStores.ephemeral[IO, String])
 
       modules =
-        DatasourceModules[Fix, IO, String, UUID](List(lightMod(mp, sanitize, reconfigure)), rateLimiting, byteStores, x => IO(None))
+        DatasourceModules[IO, String, UUID](List(mod(mp, sanitize, reconfigure)), rateLimiting, byteStores, x => IO(None))
           .widenPathType[PathType]
           .withMiddleware((i: String, mds: QDS) => starts.update(i :: _) as mds)
           .withFinalizer((i: String, mds: QDS) => shuts.update(i :: _))
@@ -201,7 +198,7 @@ object DefaultDatasourcesSpec extends DatasourcesSpec[IO, Stream[IO, ?], String,
       refs <- Resource.eval(fRefs)
       cache <- rCache
       result <- Resource.eval {
-        DefaultDatasources[Fix, IO, Resource[IO, ?], Stream[IO, ?], String, Json, QueryResult[IO]](freshId, refs, modules, cache, errors, byteStores)
+        DefaultDatasources[IO, Resource[IO, ?], Stream[IO, ?], String, Json, QueryResult[IO]](freshId, refs, modules, cache, errors, byteStores)
       }
     } yield (result, byteStores, refs, starts, shuts)
   }

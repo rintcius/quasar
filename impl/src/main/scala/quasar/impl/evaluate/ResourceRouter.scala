@@ -19,9 +19,9 @@ package quasar.impl.evaluate
 import slamdata.Predef._
 
 import quasar.api.resource._
+import quasar.connector.datasource.Datasource
 import quasar.connector.evaluate.Source
 import quasar.contrib.pathy.AFile
-import quasar.impl.QuasarDatasource
 
 import cats.Applicative
 import cats.data.OptionT
@@ -33,11 +33,11 @@ import monocle.Prism
 object ResourceRouter {
   val DatasourceResourcePrefix = "datasource"
 
-  def apply[T[_[_]], F[_]: Applicative, G[_], H[_], A, P <: ResourcePathType, I](
+  def apply[F[_]: Applicative, G[_], H[_], A, B, P <: ResourcePathType, I](
       IdString: Prism[String, I],
-      lookupRunning: I => F[Option[QuasarDatasource[T, G, H, A, P]]])(
+      lookupRunning: I => F[Option[Datasource[G, H, A, B, P]]])(
       file: AFile)
-      : F[Option[Source[QuasarDatasource[T, G, H, A, P]]]] =
+      : F[Option[Source[Datasource[G, H, A, B, P]]]] =
     ResourcePath.leaf(file) match {
       case DatasourceResourcePrefix /: IdString(id) /: srcPath =>
         OptionT(lookupRunning(id))
@@ -45,6 +45,6 @@ object ResourceRouter {
           .value
 
       case _ =>
-        (None: Option[Source[QuasarDatasource[T, G, H, A, P]]]).pure[F]
+        (None: Option[Source[Datasource[G, H, A, B, P]]]).pure[F]
     }
 }

@@ -18,15 +18,15 @@ package quasar.impl.datasources
 
 import slamdata.Predef._
 
-import quasar.{EffectfulQSpec, RateLimiter, RateLimiting, RenderTreeT, ScalarStages}
+import quasar.{EffectfulQSpec, RateLimiter, RateLimiting, ScalarStages}
 import quasar.api.datasource._
 import quasar.api.datasource.DatasourceError._
 import quasar.api.resource._
-import quasar.impl.{DatasourceModule, EmptyDatasource, QuasarDatasource}
+import quasar.impl.EmptyDatasource
 import quasar.connector._
 import quasar.connector.datasource._
 import quasar.contrib.scalaz._
-import quasar.qscript.{MonadPlannerErr, PlannerError, InterpretedRead, QScriptEducated}
+import quasar.qscript.{PlannerError, InterpretedRead}
 
 import fs2.Stream
 
@@ -41,9 +41,6 @@ import cats.kernel.Hash
 import cats.kernel.instances.uuid._
 import cats.syntax.applicative._
 import cats.syntax.applicativeError._
-
-import matryoshka.{BirecursiveT, EqualT, ShowT}
-import matryoshka.data.Fix
 
 import scalaz.{ISet, NonEmptyList}
 
@@ -99,9 +96,9 @@ object DatasourceModulesSpec extends EffectfulQSpec[IO] {
         ScalarStages.Id))
   }
 
-  def lightMod(k: DatasourceType, err: Option[InitializationError[Json]] = None, minV: Option[Long] = None)
+  def mod(k: DatasourceType, err: Option[InitializationError[Json]] = None, minV: Option[Long] = None)
       : DatasourceModule =
-    DatasourceModule.Lightweight(new LightweightDatasourceModule {
+    new DatasourceModule {
       val kind = k
 
       override def minVersion = minV getOrElse k.version
@@ -118,7 +115,7 @@ object DatasourceModulesSpec extends EffectfulQSpec[IO] {
           : Either[ConfigurationError[Json], (Reconfiguration, Json)] =
         Right((Reconfiguration.Reset, jArray(List(original, patch))))
 
-      def lightweightDatasource[
+      def datasource[
           F[_]: ConcurrentEffect: ContextShift: MonadResourceErr: Timer,
           A: Hash](
           config: Json,
@@ -133,41 +130,7 @@ object DatasourceModulesSpec extends EffectfulQSpec[IO] {
           case Some(e) => Left(e)
         })
       }
-    })
-
-  def heavyMod(k: DatasourceType, err: Option[InitializationError[Json]] = None, minV: Option[Long] = None)
-      : DatasourceModule =
-    DatasourceModule.Heavyweight(new HeavyweightDatasourceModule {
-      val kind = k
-
-      override def minVersion = minV getOrElse k.version
-
-      def sanitizeConfig(config: Json): Json = jString("sanitized")
-
-      def migrateConfig[F[_]: Sync](from: Long, to: Long, config: Json)
-          : F[Either[ConfigurationError[Json], Json]] = {
-        val back: Either[ConfigurationError[Json], Json] = Right(jArray(List(jNumber(from), jNumber(to), jString("migrated"))))
-        back.pure[F]
-      }
-
-      def reconfigure(original: Json, patch: Json)
-          : Either[ConfigurationError[Json], (Reconfiguration, Json)] =
-        Right((Reconfiguration.Reset, jArray(List(original, patch))))
-
-      def heavyweightDatasource[
-          T[_[_]]: BirecursiveT: EqualT: ShowT: RenderTreeT,
-          F[_]: ConcurrentEffect: ContextShift: MonadPlannerErr: Timer](
-          config: Json,
-          byteStore: ByteStore[F])(
-          implicit ec: ExecutionContext)
-          : Resource[F, R[F, T[QScriptEducated[T, ?]]]] = {
-
-        Resource.pure(err match {
-          case None => Right(mkDatasource(k))
-          case Some(e) => Left(e)
-        })
-      }
-    })
+    }
 
   def makeRateLimiter = RateLimiter[IO, UUID](IO.delay(UUID.randomUUID())).use(IO(_))
 
@@ -175,7 +138,7 @@ object DatasourceModulesSpec extends EffectfulQSpec[IO] {
     "empty" >>* {
       for {
         rl <- makeRateLimiter
-        modules = DatasourceModules[Fix, IO, Int, UUID](List(), rl, ByteStores.void[IO, Int], x => IO(None) )
+        modules = DatasourceModules[IO, Int, UUID](List(), rl, ByteStores.void[IO, Int], x => IO(None) )
         tys <- modules.supportedTypes
       } yield {
         tys === ISet.empty
@@ -184,16 +147,15 @@ object DatasourceModulesSpec extends EffectfulQSpec[IO] {
     "non-empty" >>* {
       for {
         rl <- makeRateLimiter
-        modules = DatasourceModules[Fix, IO, Int, UUID](List(
-          lightMod(DatasourceType("a", 1)),
-          lightMod(DatasourceType("b", 2)),
-          heavyMod(DatasourceType("c", 3))),
+        modules = DatasourceModules[IO, Int, UUID](List(
+          mod(DatasourceType("a", 1)),
+          mod(DatasourceType("b", 2))),
           rl,
           ByteStores.void[IO, Int],
           x => IO(None))
         tys <- modules.supportedTypes
       } yield {
-        tys === ISet.fromList(List(DatasourceType("a", 1), DatasourceType("b", 2), DatasourceType("c", 3)))
+        tys === ISet.fromList(List(DatasourceType("a", 1), DatasourceType("b", 2)))
       }
     }
   }
@@ -216,7 +178,7 @@ object DatasourceModulesSpec extends EffectfulQSpec[IO] {
 
     for {
       rl <- makeRateLimiter
-      modules = DatasourceModules[Fix, IO, Int, UUID](List(lightMod(aType), heavyMod(bType)), rl, ByteStores.void[IO, Int], x => IO(None))
+      modules = DatasourceModules[IO, Int, UUID](List(mod(aType), mod(bType)), rl, ByteStores.void[IO, Int], x => IO(None))
       aRes <- modules.sanitizeRef(aRef)
       bRes <- modules.sanitizeRef(bRef)
       cRes <- modules.sanitizeRef(cRef)
@@ -253,8 +215,8 @@ object DatasourceModulesSpec extends EffectfulQSpec[IO] {
 
     for {
       rl <- makeRateLimiter
-      modules = DatasourceModules[Fix, IO, Int, UUID](
-        List(lightMod(aType), heavyMod(bType2, None, Some(1))),
+      modules = DatasourceModules[IO, Int, UUID](
+        List(mod(aType), mod(bType2, None, Some(1))),
         rl,
         ByteStores.void[IO, Int],
         x => IO(None))
@@ -297,32 +259,32 @@ object DatasourceModulesSpec extends EffectfulQSpec[IO] {
     "works with provided modules" >>* {
       for {
         rl <- makeRateLimiter
-        modules = DatasourceModules[Fix, IO, Int, UUID](List(lightMod(lightType), heavyMod(heavyType)), rl, ByteStores.void[IO, Int], x => IO(None))
+        modules = DatasourceModules[IO, Int, UUID](List(mod(lightType), mod(heavyType)), rl, ByteStores.void[IO, Int], x => IO(None))
         (lightRes, finalizer1) <- modules.create(0, lightRef).value.allocated
         (heavyRes, finalizer2) <- modules.create(1, heavyRef).value.allocated
         _ <- finalizer1
         _ <- finalizer2
       } yield {
-        lightRes must beLike { case Right(QuasarDatasource.Lightweight(lw)) => lw.kind === lightType }
-        heavyRes must beLike { case Right(QuasarDatasource.Heavyweight(hw)) => hw.kind === heavyType }
+        lightRes must beLike { case Right(lw) => lw.kind === lightType }
+        heavyRes must beLike { case Right(hw) => hw.kind === heavyType }
       }
     }
 
     "works with modules supported by version range" >>* {
       for {
         rl <- makeRateLimiter
-        modules = DatasourceModules[Fix, IO, Int, UUID](List(heavyMod(heavyType, None, Some(1))), rl, ByteStores.void[IO, Int], x => IO(None))
+        modules = DatasourceModules[IO, Int, UUID](List(mod(heavyType, None, Some(1))), rl, ByteStores.void[IO, Int], x => IO(None))
         (res, fin) <- modules.create(0, migrationRef).value.allocated
         _ <- fin
       } yield {
-        res must beLike { case Right(QuasarDatasource.Heavyweight(hw)) => hw.kind === heavyType }
+        res must beLike { case Right(hw) => hw.kind === heavyType }
       }
     }
 
     "errors with incompatible refs" >>* {
       for {
         rl <- makeRateLimiter
-        modules = DatasourceModules[Fix, IO, Int, UUID](List(lightMod(lightType), heavyMod(heavyType)), rl, ByteStores.void[IO, Int], x => IO(None))
+        modules = DatasourceModules[IO, Int, UUID](List(mod(lightType), mod(heavyType)), rl, ByteStores.void[IO, Int], x => IO(None))
         (res, fin0) <- modules.create(0, incompatRef).value.allocated
         (tooRes, fin1) <- modules.create(1, tooNew).value.allocated
         (oldRes, fin2) <- modules.create(2, tooOld).value.allocated
@@ -355,11 +317,11 @@ object DatasourceModulesSpec extends EffectfulQSpec[IO] {
 
       for {
         rl <- makeRateLimiter
-        modules = DatasourceModules[Fix, IO, Int, UUID](List(
-          lightMod(malformed, Some(MalformedConfiguration(malformed, jString("a"), "malformed configuration"))),
-          heavyMod(invalid, Some(InvalidConfiguration(invalid, jString("b"), NonEmptyList("invalid configuration")))),
-          lightMod(connFailed, Some(ConnectionFailed(connFailed, jString("c"), new Exception("conn failed")))),
-          heavyMod(accessDenied, Some(AccessDenied(accessDenied, jString("d"), "access denied")))),
+        modules = DatasourceModules[IO, Int, UUID](List(
+          mod(malformed, Some(MalformedConfiguration(malformed, jString("a"), "malformed configuration"))),
+          mod(invalid, Some(InvalidConfiguration(invalid, jString("b"), NonEmptyList("invalid configuration")))),
+          mod(connFailed, Some(ConnectionFailed(connFailed, jString("c"), new Exception("conn failed")))),
+          mod(accessDenied, Some(AccessDenied(accessDenied, jString("d"), "access denied")))),
           rl,
           ByteStores.void[IO, Int],
           x => IO(None)

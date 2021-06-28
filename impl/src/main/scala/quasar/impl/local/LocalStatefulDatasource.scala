@@ -18,7 +18,7 @@ package quasar.impl.local
 
 import slamdata.Predef._
 import quasar.connector._
-import quasar.connector.datasource.LightweightDatasourceModule
+import quasar.connector.datasource.DatasourceModule
 
 import java.nio.file.{Path => JPath}
 
@@ -35,13 +35,13 @@ object LocalStatefulDatasource {
       format: DataFormat,
       pageSize: Long,
       blocker: Blocker)
-      : LightweightDatasourceModule.DS[F] = {
+      : DatasourceModule.DS[F] = {
 
     EvaluableLocalDatasource[F](LocalType, root) { iRead =>
 
       val plate = Effect[F].delay(new LocalStatefulPlate())
 
-      def data(more: Option[Long]): Stream[F, Byte] = 
+      def data(more: Option[Long]): Stream[F, Byte] =
         more match {
           case Some(start) =>
             io.file.readRange[F](

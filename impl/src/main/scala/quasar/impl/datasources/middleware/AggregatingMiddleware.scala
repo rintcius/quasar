@@ -17,36 +17,24 @@
 package quasar.impl
 package datasources.middleware
 
-import quasar.api.resource.{ResourcePath, ResourcePathType}
+import quasar.api.resource.ResourcePathType
 import quasar.connector.MonadResourceErr
-import quasar.connector.datasource.Datasource
+import quasar.impl.QuasarDatasource
 import quasar.impl.datasource.{AggregateResult, AggregatingDatasource, MonadCreateErr}
-import quasar.qscript.{InterpretedRead, QScriptEducated}
+import quasar.qscript.InterpretedRead
 
-import scala.util.{Either, Left}
+import scala.util.Either
 
 import cats.effect.{Resource, Sync}
 
 import fs2.Stream
 
-import shims.{functorToCats, functorToScalaz}
-
 object AggregatingMiddleware {
   def apply[T[_[_]], F[_]: MonadResourceErr: MonadCreateErr: Sync, I, R](
       datasourceId: I,
-      mds: QuasarDatasource[T, Resource[F, ?], Stream[F, ?], R, ResourcePathType.Physical])
-      : F[QuasarDatasource[T, Resource[F, ?], Stream[F, ?], Either[R, AggregateResult[F, R]], ResourcePathType]] =
-    Sync[F].pure(mds match {
-      case QuasarDatasource.Lightweight(lw) =>
-        val ds: Datasource[Resource[F, ?], Stream[F, ?], InterpretedRead[ResourcePath], R, ResourcePathType.Physical] = lw
-        QuasarDatasource.lightweight[T](AggregatingDatasource(ds, InterpretedRead.path))
-
-      // TODO: union all in QScript?
-      case QuasarDatasource.Heavyweight(hw) =>
-        type Q = T[QScriptEducated[T, ?]]
-        val ds: Datasource[Resource[F, ?], Stream[F, ?], Q, Either[R, AggregateResult[F, R]], ResourcePathType.Physical] =
-          Datasource.ploaders[Resource[F, ?], Stream[F, ?], Q, R, Q, Either[R, AggregateResult[F, R]], ResourcePathType.Physical]
-            .modify(_.map(Left(_)))(hw)
-        QuasarDatasource.heavyweight(Datasource.widenPathType(ds))
-    })
+      ds: QuasarDatasource[Resource[F, ?], Stream[F, ?], R, ResourcePathType.Physical])
+      : F[QuasarDatasource[Resource[F, ?], Stream[F, ?], Either[R, AggregateResult[F, R]], ResourcePathType]] =
+    Sync[F].pure {
+        AggregatingDatasource(ds, InterpretedRead.path)
+    }
 }

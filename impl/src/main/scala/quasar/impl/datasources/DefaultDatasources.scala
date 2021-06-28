@@ -24,7 +24,7 @@ import quasar.api.datasource.DatasourceError._
 import quasar.api.resource._
 import quasar.connector.datasource.Reconfiguration
 import quasar.contrib.scalaz.MonadError_
-import quasar.impl.{CachedGetter, IndexedSemaphore, QuasarDatasource, ResourceManager}, CachedGetter.Signal._
+import quasar.impl.{CachedGetter, IndexedSemaphore, ResourceManager, QuasarDatasource}, CachedGetter.Signal._
 import quasar.impl.storage.IndexedStore
 
 import cats.~>
@@ -39,16 +39,15 @@ import scalaz.{\/, ISet, Equal}
 import shims.{equalToCats, functorToCats}
 
 private[impl] final class DefaultDatasources[
-    T[_[_]],
     F[_]: Sync: MonadError_[?[_], CreateError[C]],
     G[_], H[_],
     I: Equal, C: Equal, R] private (
     semaphore: IndexedSemaphore[F, I],
     freshId: F[I],
     refs: IndexedStore[F, I, DatasourceRef[C]],
-    modules: DatasourceModules[T, F, G, H, I, C, R, ResourcePathType],
+    modules: DatasourceModules[F, G, H, I, C, R, ResourcePathType],
     getter: CachedGetter[F, I, DatasourceRef[C]],
-    cache: ResourceManager[F, I, QuasarDatasource[T, G, H, R, ResourcePathType]],
+    cache: ResourceManager[F, I, QuasarDatasource[G, H, R, ResourcePathType]],
     errors: DatasourceErrors[F, I],
     byteStores: ByteStores[F, I])
     extends Datasources[F, Stream[F, ?], I, C] {
@@ -153,25 +152,25 @@ private[impl] final class DefaultDatasources[
   def supportedDatasourceTypes: F[ISet[DatasourceType]] =
     modules.supportedTypes
 
-  type QDS = QuasarDatasource[T, G, H, R, ResourcePathType]
+  type DS = QuasarDatasource[G, H, R, ResourcePathType]
 
-  def quasarDatasourceOf(i: I): F[Option[QDS]] = {
-    def create(ref: DatasourceRef[C]): F[QDS] =
+  def quasarDatasourceOf(i: I): F[Option[DS]] = {
+    def create(ref: DatasourceRef[C]): F[DS] =
       for {
         allocated <- createErrorHandling(modules.create(i, ref)).allocated
         _ <- cache.manage(i, allocated)
       } yield allocated._1
 
-    def fromCacheOrCreate(ref: DatasourceRef[C]): F[QDS] =
+    def fromCacheOrCreate(ref: DatasourceRef[C]): F[DS] =
       OptionT(cache.get(i)) getOrElseF create(ref)
 
     throughSemaphore(i) {
       getter(i) flatMap {
         case Empty =>
-          (None: Option[QDS]).pure[F]
+          (None: Option[DS]).pure[F]
 
         case Removed(_) =>
-          dispose(i, true).as(None: Option[QDS])
+          dispose(i, true).as(None: Option[DS])
 
         case Updated(incoming, old) if DatasourceRef.atMostRenamed(incoming, old) =>
           fromCacheOrCreate(incoming).map(_.some)
@@ -246,17 +245,16 @@ private[impl] final class DefaultDatasources[
 
 object DefaultDatasources {
   private[impl] def apply[
-      T[_[_]],
       F[_]: Concurrent: ContextShift: MonadError_[?[_], CreateError[C]],
       G[_], H[_],
       I: Equal, C: Equal, R](
       freshId: F[I],
       refs: IndexedStore[F, I, DatasourceRef[C]],
-      modules: DatasourceModules[T, F, G, H, I, C, R, ResourcePathType],
-      cache: ResourceManager[F, I, QuasarDatasource[T, G, H, R, ResourcePathType]],
+      modules: DatasourceModules[F, G, H, I, C, R, ResourcePathType],
+      cache: ResourceManager[F, I, QuasarDatasource[G, H, R, ResourcePathType]],
       errors: DatasourceErrors[F, I],
       byteStores: ByteStores[F, I])
-      : F[DefaultDatasources[T, F, G, H, I, C, R]] = for {
+      : F[DefaultDatasources[F, G, H, I, C, R]] = for {
     semaphore <- IndexedSemaphore[F, I]
     getter <- CachedGetter(refs.lookup(_))
   } yield new DefaultDatasources(semaphore, freshId, refs, modules, getter, cache, errors, byteStores)

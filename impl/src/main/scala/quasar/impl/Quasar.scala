@@ -30,7 +30,7 @@ import quasar.api.scheduler.SchedulerType
 import quasar.api.scheduler.{Schedulers, SchedulerRef}
 import quasar.common.PhaseResultTell
 import quasar.connector.{ExternalCredentials, Offset, QueryResult, ResourceSchema}
-import quasar.connector.datasource.Datasource
+import quasar.connector.datasource.{Datasource, DatasourceModule}
 import quasar.connector.destination.{Destination, DestinationModule, PushmiPullyu}
 import quasar.connector.evaluate._
 import quasar.connector.render.ResultRender
@@ -55,7 +55,7 @@ import scala.concurrent.ExecutionContext
 import argonaut.Json
 import argonaut.JsonScalaz._
 
-import cats.{~>, Functor, Show}
+import cats.{Functor, Show}
 import cats.effect.{ConcurrentEffect, ContextShift, Resource, Sync, Timer}
 import cats.instances.uuid._
 import cats.kernel.Hash
@@ -97,7 +97,7 @@ object Quasar extends Logging {
       schedulerRefs: IndexedStore[F, UUID, SchedulerRef[Json]],
       pushes: PrefixStore.SCodec[F, UUID :: ResourcePath :: HNil, ∃[Push[?, SqlQuery]]],
       offsets: Store[F, UUID :: ResourcePath :: HNil, ∃[OffsetKey.Actual]],
-      queryFederation: QueryFederation[Fix, Resource[F, ?], QueryAssociate[Fix, Resource[F, ?], EvalResult[F]], R],
+      queryFederation: QueryFederation[Resource[F, ?], QueryAssociate[Resource[F, ?], EvalResult[F]], R],
       resultRender: ResultRender[F, R],
       resourceSchema: ResourceSchema[F, C, (ResourcePath, CompositeResult[F, QueryResult[F]])],
       rateLimiting: RateLimiting[F, A],
@@ -134,12 +134,12 @@ object Quasar extends Logging {
       }
 
       dsModules =
-        DatasourceModules[Fix, F, UUID, A](datasourceModules, rateLimiting, byteStores, getAuth)
+        DatasourceModules[F, UUID, A](datasourceModules, rateLimiting, byteStores, getAuth)
           .withMiddleware(AggregatingMiddleware(_, _))
           .withMiddleware(ConditionReportingMiddleware(report)(_, _))
 
       dsCache <- ResourceManager[
-        F, UUID, QuasarDatasource[Fix, Resource[F, ?], Stream[F, ?], CompositeResult[F, QueryResult[F]], ResourcePathType]]
+        F, UUID, QuasarDatasource[Resource[F, *], Stream[F, *], CompositeResult[F, QueryResult[F]], ResourcePathType]]
       datasources <- Resource.eval(DefaultDatasources(freshUUID, datasourceRefs, dsModules, dsCache, dsErrors, byteStores))
 
       destCache <- ResourceManager[F, UUID, Destination[F]]
@@ -150,12 +150,12 @@ object Quasar extends Logging {
       schedulers <- Resource.eval(DefaultSchedulers(freshUUID, schedulerRefs, sCache, sBuilders))
 
       lookupRunning =
-        (id: UUID) => datasources.quasarDatasourceOf(id).map(_.map(_.modify(reifiedAggregateDs)))
+        (id: UUID) => datasources.quasarDatasourceOf(id).map(_.map(reifiedAggregateDs(_)))
 
       sqlEvaluator =
         Sql2Compiler[Fix, F]
           .first[Option[Offset]]
-          .andThen(QueryFederator(ResourceRouter(UuidString, lookupRunning)))
+          .andThen(QueryFederator[Fix](ResourceRouter(UuidString, lookupRunning)))
           .mapF(Resource.eval(_))
           .andThen(queryFederation)
 
@@ -199,14 +199,12 @@ object Quasar extends Logging {
 
   private val rec = construction.RecFunc[Fix]
 
-  private def reifiedAggregateDs[F[_]: Functor, G[_], H[_], P <: ResourcePathType]
-      : Datasource[F, G, ?, CompositeResult[H, QueryResult[H]], P] ~> Datasource[F, G, ?, EvalResult[H], P] =
-    new (Datasource[F, G, ?, CompositeResult[H, QueryResult[H]], P] ~> Datasource[F, G, ?, EvalResult[H], P]) {
-      def apply[A](ds: Datasource[F, G, A, CompositeResult[H, QueryResult[H]], P]) = {
-        val l = Datasource.ploaders[F, G, A, CompositeResult[H, QueryResult[H]], A, EvalResult[H], P]
-        l.modify(_.map(_.map(reifyAggregateStructure)))(ds)
-      }
-    }
+  private def reifiedAggregateDs[F[_]: Functor, G[_], H[_], R, P <: ResourcePathType](
+      inp: Datasource[F, G, R, CompositeResult[H, QueryResult[H]], P])
+      : Datasource[F, G, R, EvalResult[H], P] = {
+    val l = Datasource.ploaders[F, G, R, CompositeResult[H, QueryResult[H]], R, EvalResult[H], P]
+    l.modify(_.map(_.map(reifyAggregateStructure)))(inp)
+  }
 
   private def reifyAggregateStructure[F[_], A](s: Stream[F, (ResourcePath, A)])
       : Stream[F, (ResourcePath, QSMap[Fix, A])] =
